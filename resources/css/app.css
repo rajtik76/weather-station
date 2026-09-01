@@ -11,5 +11,56 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
     --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-    --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+    --font-display: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Leaflet: strip the default chrome so the map reads as part of the instrument panel. */
+.leaflet-container {
+    background: var(--color-zinc-100);
+    font-family: var(--font-mono);
+}
+
+.dark .leaflet-container {
+    background: var(--color-zinc-900);
+}
+
+/* OpenStreetMap ships one colourful style; calm it down and invert it for dark mode. */
+.leaflet-tile-pane {
+    filter: grayscale(1) contrast(0.82) brightness(1.08);
+}
+
+.dark .leaflet-tile-pane {
+    filter: grayscale(1) invert(1) hue-rotate(180deg) brightness(0.88) contrast(0.85);
+}
+
+.leaflet-bar a,
+.leaflet-control-attribution {
+    border-color: --alpha(var(--color-zinc-900) / 10%);
+    background: var(--color-white);
+    color: var(--color-zinc-600);
+}
+
+.dark .leaflet-bar a,
+.dark .leaflet-control-attribution {
+    border-color: --alpha(var(--color-white) / 10%);
+    background: var(--color-zinc-900);
+    color: var(--color-zinc-400);
+}
+
+.leaflet-bar a:hover {
+    background: var(--color-zinc-100);
+}
+
+.dark .leaflet-bar a:hover {
+    background: var(--color-zinc-800);
+}
+
+.leaflet-control-attribution {
+    font-size: 10px;
+    letter-spacing: 0.05em;
+}
+
+.leaflet-control-attribution a {
+    color: inherit;
+    text-decoration: underline;
 }

@@ -15,8 +15,8 @@ export default defineConfig({
                 bunny('IBM Plex Mono', {
                     weights: [400, 500, 600],
                 }),
-                bunny('Big Shoulders Display', {
-                    weights: [700, 800],
+                bunny('Bricolage Grotesque', {
+                    weights: [800],
                 }),
             ],
         }),

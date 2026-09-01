@@ -9,6 +9,14 @@ new #[Title('Weather Station')] class extends Component
     /** Measurements arrive from the ESP32 every 10 minutes. */
     private const int STEP_SECONDS = 600;
 
+    /** Sensor location: Galerie Slovany, náměstí Generála Píky, Plzeň-Slovany. */
+    private const float LATITUDE = 49.732343;
+
+    private const float LONGITUDE = 13.400984;
+
+    /** The map shows this radius around the centre, never an exact pin. */
+    private const int LOCATION_RADIUS_METRES = 500;
+
     private const int DAYS = 31;
 
     /**
@@ -147,6 +155,21 @@ new #[Title('Weather Station')] class extends Component
         ];
     }
 
+    /**
+     * Centre and radius of the area shown on the location map.
+     *
+     * @return array{lat: float, lng: float, radius: int}
+     */
+    #[Computed]
+    public function approximateLocation(): array
+    {
+        return [
+            'lat' => self::LATITUDE,
+            'lng' => self::LONGITUDE,
+            'radius' => self::LOCATION_RADIUS_METRES,
+        ];
+    }
+
     #[Computed]
     public function measuredAt(): string
     {
@@ -177,7 +200,7 @@ new #[Title('Weather Station')] class extends Component
     <header class="border-b border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
         <div class="flex flex-wrap items-end justify-between gap-x-16 gap-y-10">
             <div>
-                <flux:heading level="1" class="font-display text-7xl! leading-[0.82] font-extrabold tracking-tight uppercase sm:text-8xl!">
+                <flux:heading level="1" class="font-display text-[clamp(3.5rem,12.5vw,11.5rem)]! leading-[0.78] font-extrabold! tracking-[-0.03em] uppercase">
                     Home<br>Weather<br>Station
                 </flux:heading>
                 <flux:text class="mt-6 max-w-sm text-sm">
@@ -311,6 +334,29 @@ new #[Title('Weather Station')] class extends Component
             </flux:chart>
         </section>
     @endforeach
+
+    {{-- ── Site location ──────────────────────────────────────────── --}}
+    <section aria-label="Station location" class="border-b border-zinc-900/10 dark:border-white/10">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-5 pb-4 sm:px-8">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Site · Plzeň-Slovany, CZ
+            </p>
+            <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                approximate location · {{ number_format($this->approximateLocation['radius']) }} m radius
+            </p>
+        </div>
+
+        <div
+            wire:ignore
+            data-station-map
+            data-lat="{{ $this->approximateLocation['lat'] }}"
+            data-lng="{{ $this->approximateLocation['lng'] }}"
+            data-radius="{{ $this->approximateLocation['radius'] }}"
+            class="h-64 w-full sm:h-72"
+            role="img"
+            aria-label="Map showing the approximate area the station reports from"
+        ></div>
+    </section>
 
     {{-- ── Footer ─────────────────────────────────────────────────── --}}
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-6 font-mono text-[11px] tracking-widest text-zinc-400 uppercase sm:px-8 dark:text-zinc-500">
