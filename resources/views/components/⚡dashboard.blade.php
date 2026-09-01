@@ -76,7 +76,9 @@ new #[Title('Weather Station')] class extends Component
             }
 
             $rows[] = [
-                'd' => date('Y-m-d\TH:i:s', $timestamp),
+                // Tagged UTC: Flux formats tick and tooltip labels with a forced
+                // UTC time zone, so a naive stamp would render shifted.
+                'd' => date('Y-m-d\TH:i:s\Z', $timestamp),
                 't' => round($temperature, 1),
                 'h' => (int) round(max(30.0, min(98.0, $humidity))),
                 'p' => round($pressure, 1),
@@ -254,6 +256,7 @@ new #[Title('Weather Station')] class extends Component
             'tooltipLabel' => 'Temperature',
             'tooltipFormat' => ['style' => 'unit', 'unit' => 'celsius', 'minimumFractionDigits' => 1],
             'summaryFormat' => ['minimumFractionDigits' => 1, 'maximumFractionDigits' => 1],
+            'brush' => true,
         ],
         [
             'channel' => 'CH2',
@@ -269,6 +272,7 @@ new #[Title('Weather Station')] class extends Component
             'tooltipLabel' => 'Humidity',
             'tooltipFormat' => ['style' => 'unit', 'unit' => 'percent'],
             'summaryFormat' => ['maximumFractionDigits' => 0],
+            'brush' => false,
         ],
         [
             'channel' => 'CH3',
@@ -284,17 +288,25 @@ new #[Title('Weather Station')] class extends Component
             'tooltipLabel' => 'Pressure (hPa)',
             'tooltipFormat' => ['minimumFractionDigits' => 1, 'maximumFractionDigits' => 1],
             'summaryFormat' => ['minimumFractionDigits' => 1, 'maximumFractionDigits' => 1, 'useGrouping' => false],
+            'brush' => false,
         ],
     ] as $strip)
         @php($m = $this->metrics[$strip['field']])
-        <section aria-label="{{ $strip['aria'] }}" class="border-b border-zinc-900/10 dark:border-white/10">
+        <section
+            aria-label="{{ $strip['aria'] }}"
+            class="border-b border-zinc-900/10 dark:border-white/10"
+            @if ($strip['brush'])
+                data-brush-field="{{ $strip['field'] }}"
+                data-brush-decimals="{{ $strip['dec'] }}"
+            @endif
+        >
             <flux:chart :value="$this->readings" locale="cs">
                 <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-5 sm:px-8">
                     <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
                         {{ $strip['channel'] }} · {{ $strip['label'] }} · {{ $strip['unit'] }}
                     </p>
                     <flux:chart.summary class="order-last w-full font-mono text-sm sm:order-none sm:w-auto">
-                        <flux:chart.summary.value :field="$strip['field']" :format="$strip['summaryFormat']" class="font-medium tabular-nums" /><span class="text-zinc-400 dark:text-zinc-500"> {{ $strip['unit'] }} · hover to scrub</span>
+                        <flux:chart.summary.value :field="$strip['field']" :format="$strip['summaryFormat']" class="font-medium tabular-nums" /><span class="text-zinc-400 dark:text-zinc-500"> {{ $strip['unit'] }} · hover to scrub @if ($strip['brush'])<span data-brush-hint>· drag to select</span>@endif</span>
                     </flux:chart.summary>
                     <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
                         min {{ number_format($m['min'], $strip['dec'], ',', ' ') }}
@@ -303,7 +315,37 @@ new #[Title('Weather Station')] class extends Component
                     </p>
                 </div>
 
-                <flux:chart.viewport class="{{ $strip['height'] }} w-full">
+                @if ($strip['brush'])
+                    <div
+                        data-brush-readout
+                        style="display: none"
+                        aria-live="polite"
+                        class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-zinc-900/10 bg-zinc-900/[0.03] px-4 py-2 font-mono text-xs text-zinc-500 sm:px-8 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-400"
+                    >
+                        <span class="font-medium tracking-[0.2em] text-zinc-800 uppercase dark:text-zinc-200">Selection</span>
+                        <span data-brush-range class="text-zinc-800 dark:text-zinc-200"></span>
+                        <span aria-hidden="true">·</span>
+                        <span><span data-brush-count class="text-zinc-800 tabular-nums dark:text-zinc-200"></span> readings</span>
+                        <span aria-hidden="true">·</span>
+                        <span>min <span data-brush-min class="text-zinc-800 tabular-nums dark:text-zinc-200"></span></span>
+                        <span aria-hidden="true">·</span>
+                        <span>max <span data-brush-max class="text-zinc-800 tabular-nums dark:text-zinc-200"></span></span>
+                        <span aria-hidden="true">·</span>
+                        <span>avg <span data-brush-avg class="text-zinc-800 tabular-nums dark:text-zinc-200"></span></span>
+                        <button
+                            type="button"
+                            data-brush-clear
+                            class="ml-auto rounded-sm tracking-[0.2em] uppercase underline decoration-zinc-300 underline-offset-4 hover:text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:decoration-zinc-600 dark:hover:text-zinc-200 dark:focus-visible:outline-zinc-100"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                @endif
+
+                <flux:chart.viewport
+                    :class="$strip['height'].' w-full'.($strip['brush'] ? ' cursor-crosshair select-none' : '')"
+                    data-brush-viewport
+                >
                     <flux:chart.svg gutter="10 0 26 48">
                         <flux:chart.line :field="$strip['field']" curve="none" class="{{ $strip['line'] }}" stroke-width="1.5" />
 
@@ -325,6 +367,15 @@ new #[Title('Weather Station')] class extends Component
 
                         <flux:chart.cursor class="text-zinc-400 dark:text-zinc-500" stroke-dasharray="3,3" />
                     </flux:chart.svg>
+
+                    @if ($strip['brush'])
+                        <div
+                            data-brush-band
+                            style="display: none"
+                            aria-hidden="true"
+                            class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
+                        ></div>
+                    @endif
 
                     <flux:chart.tooltip class="top-0 left-0 z-10 pointer-events-none">
                         <flux:chart.tooltip.heading field="d" :format="['day' => 'numeric', 'month' => 'numeric', 'hour' => '2-digit', 'minute' => '2-digit']" />
