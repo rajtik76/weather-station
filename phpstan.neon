@@ -1,0 +1,16 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/pestphp/pest-plugin-phpstan/extension.neon
+
+parameters:
+    level: 8
+
+    paths:
+        - app
+        - bootstrap
+        - database
+        - routes
+        - tests
+
+    excludePaths:
+        - bootstrap/cache
