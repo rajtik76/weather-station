@@ -11,6 +11,7 @@ parameters:
         - database
         - routes
         - tests
+        - resources
 
     excludePaths:
         - bootstrap/cache
