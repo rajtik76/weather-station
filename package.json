@@ -3,20 +3,34 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
-        "dev": "vite"
+        "build": "vp build",
+        "dev": "vp dev",
+        "prepare": "vp config"
+    },
+    "dependencies": {
+        "echarts": "^6.1.0",
+        "leaflet": "^1.9.4"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
         "concurrently": "^10.0.3",
+        "fontaine": "^0.8.1",
         "laravel-vite-plugin": "^3.1",
         "tailwindcss": "^4.0.0",
-        "vite": "^8.0.0"
+        "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+        "vite-plus": "0.3.0"
     },
     "optionalDependencies": {
         "@laravel/multiplex": "^0.4.1"
     },
-    "dependencies": {
-        "leaflet": "^1.9.4"
+    "overrides": {
+        "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0"
+    },
+    "devEngines": {
+        "packageManager": {
+            "name": "npm",
+            "version": "12.0.2",
+            "onFail": "download"
+        }
     }
 }
