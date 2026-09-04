@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Measurement;
 use App\ValueObject\MeasurementDataV1;
+use Illuminate\Support\Facades\Date;
 
 it('renders the readings stored in the database', function (): void {
     $at = now()->subHour();
@@ -22,6 +23,36 @@ it('renders the readings stored in the database', function (): void {
         ->assertSee('48,00')
         ->assertSee('1 013,0')
         ->assertDontSee('Waiting for the first reading');
+});
+
+it('labels readings in Czech local time, not UTC', function (): void {
+    // 12:00 UTC in July is 14:00 in Prague (CEST, UTC+2).
+    Measurement::factory()->create([
+        'timestamp' => Date::parse('2026-07-15 12:00:00', 'UTC')->getTimestamp(),
+    ]);
+
+    $this->travelTo(Date::parse('2026-07-15 13:00:00', 'UTC'));
+
+    $this->get('/')
+        ->assertOk()
+        // Flux forces UTC on its formatters, so the stamp reaches the chart
+        // pre-shifted and tagged `Z`.
+        ->assertSee('2026-07-15T14:00:00Z')
+        ->assertSee('15. 7. 2026 14:00');
+});
+
+it('labels readings in standard time outside the summer window', function (): void {
+    // 12:00 UTC in January is 13:00 in Prague (CET, UTC+1).
+    Measurement::factory()->create([
+        'timestamp' => Date::parse('2026-01-15 12:00:00', 'UTC')->getTimestamp(),
+    ]);
+
+    $this->travelTo(Date::parse('2026-01-15 13:00:00', 'UTC'));
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('2026-01-15T13:00:00Z')
+        ->assertSee('15. 1. 2026 13:00');
 });
 
 it('shows an empty state when nothing has been recorded', function (): void {

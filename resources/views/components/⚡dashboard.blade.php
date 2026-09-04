@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\Measurement;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -10,6 +10,14 @@ new #[Title('Weather Station')] class extends Component
 {
     /** Measurements arrive from the ESP32 every 10 minutes. */
     private const int STEP_SECONDS = 600;
+
+    /**
+     * The station stands in Plzeň, so every label reads in Czech local time.
+     *
+     * Stored stamps are UTC epochs (the firmware sends `time(nullptr)`), and the
+     * app clock stays on UTC; only the presentation layer shifts.
+     */
+    private const string DISPLAY_TIMEZONE = 'Europe/Prague';
 
     /** Sensor location: Galerie Slovany, náměstí Generála Píky, Plzeň-Slovany. */
     private const float LATITUDE = 49.732343;
@@ -39,14 +47,31 @@ new #[Title('Weather Station')] class extends Component
             ->orderBy('timestamp')
             ->get()
             ->map(fn (Measurement $measurement): array => [
-                // Tagged UTC: Flux formats tick and tooltip labels with a forced
-                // UTC time zone, so a naive stamp would render shifted.
-                'd' => date('Y-m-d\TH:i:s\Z', $measurement->timestamp),
+                'd' => $this->wallClock($measurement->timestamp),
                 't' => round($measurement->data->temperature / 100, 2),
                 'h' => round($measurement->data->humidity / 100, 2),
                 'p' => round($measurement->data->pressure / 100, 1),
             ])
             ->all();
+    }
+
+    /**
+     * A UTC epoch as the Prague wall clock, tagged `Z`.
+     *
+     * The tag is a deliberate lie. Flux hard-codes the display zone in every
+     * date formatter it owns - the axis ticks, the tooltip heading and the
+     * summary all do `{...format, timeZone: 'UTC'}`, spreading the caller's
+     * options first, so passing `timeZone` through `:format` is overwritten and
+     * cannot work. Shifting the instant here and labelling it UTC is what makes
+     * those formatters print Czech local time.
+     *
+     * The consequence: `d` is a wall-clock reading, not a real instant. Never
+     * feed it to anything that does time-zone maths, and shift it once only.
+     */
+    private function wallClock(int $timestamp): string
+    {
+        return Date::createFromTimestamp($timestamp, self::DISPLAY_TIMEZONE)
+            ->format('Y-m-d\TH:i:s\Z');
     }
 
     /** No rows yet: the station has never reported, or not within the window. */
@@ -148,6 +173,13 @@ new #[Title('Weather Station')] class extends Component
         ];
     }
 
+    /** Copyright year, read off the station's own clock rather than UTC. */
+    #[Computed]
+    public function currentYear(): int
+    {
+        return now(self::DISPLAY_TIMEZONE)->year;
+    }
+
     #[Computed]
     public function measuredAt(): ?string
     {
@@ -157,7 +189,10 @@ new #[Title('Weather Station')] class extends Component
 
         $last = $this->readings[count($this->readings) - 1];
 
-        return Carbon::parse($last['d'])->format('j. n. Y H:i');
+        // `d` is already the Prague wall clock (see wallClock()). Parsing the
+        // `Z` at face value and formatting in UTC replays those same digits;
+        // converting again would shift the label a second time.
+        return Date::parse($last['d'])->format('j. n. Y H:i');
     }
 };
 ?>
@@ -408,7 +443,7 @@ new #[Title('Weather Station')] class extends Component
         <span>{{ number_format(count($this->readings), 0, ',', ' ') }} records</span>
         <span class="hidden sm:inline">ESP32 → HTTP POST · unix time + t/h/p</span>
         <span>
-            &copy; {{ now()->year }} Vladislav Rajtmajer ·
+            &copy; {{ $this->currentYear }} Vladislav Rajtmajer ·
             <a
                 href="https://github.com/rajtik76"
                 target="_blank"
