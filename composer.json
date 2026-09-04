@@ -1,15 +1,15 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "rajtik76/weather-station",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Weather station dashboard to visualize data from BME280 sent to the server over ESP32.",
     "keywords": [
         "laravel",
         "framework"
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "livewire/flux": "^2.18",
@@ -19,6 +19,7 @@
     "require-dev": {
         "driftingly/rector-laravel": "^2.6",
         "fakerphp/faker": "^1.23",
+        "fruitcake/laravel-debugbar": "^4.4",
         "larastan/larastan": "^3.10",
         "laravel/boost": "^2.2",
         "laravel/pail": "^1.2.5",
@@ -87,6 +88,12 @@
         ],
         "stan": [
             "@php vendor/bin/phpstan analyse --memory-limit=1G"
+        ],
+        "review": [
+            "Composer\\Config::disableProcessTimeout",
+            "@rector",
+            "@stan",
+            "@test"
         ]
     },
     "extra": {
