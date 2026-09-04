@@ -70,7 +70,7 @@
         ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
-            "@php artisan test"
+            "@php artisan test --parallel"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
@@ -92,7 +92,7 @@
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
         ],
         "lint": [
-            "@php vendor/bin/pint"
+            "@php vendor/bin/pint --parallel"
         ],
         "rector": [
             "@php vendor/bin/rector process"
