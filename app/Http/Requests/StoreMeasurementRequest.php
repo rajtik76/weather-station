@@ -8,6 +8,7 @@ use App\Enums\ProtocolVersion;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Stringable;
 
 class StoreMeasurementRequest extends FormRequest
 {
@@ -17,7 +18,7 @@ class StoreMeasurementRequest extends FormRequest
     }
 
     /**
-     * @return array<string, array<int, ValidationRule|\Stringable|string>>
+     * @return array<string, array<int, ValidationRule|Stringable|string>>
      */
     public function rules(): array
     {

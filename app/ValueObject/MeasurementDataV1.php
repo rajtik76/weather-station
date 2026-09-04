@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 use App\Enums\ProtocolVersion;
+use UnexpectedValueException;
 
 final readonly class MeasurementDataV1 implements MeasurementData
 {
@@ -22,7 +23,7 @@ final readonly class MeasurementDataV1 implements MeasurementData
     {
         foreach (['temperature', 'humidity', 'pressure'] as $field) {
             if (! isset($data[$field]) || ! is_numeric($data[$field])) {
-                throw new \UnexpectedValueException("Missing or invalid field [{$field}] for protocol version 1.");
+                throw new UnexpectedValueException("Missing or invalid field [{$field}] for protocol version 1.");
             }
         }
 

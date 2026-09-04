@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+use function Pest\Laravel\withHeader;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -20,7 +22,7 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature')
     ->beforeEach(function (): void {
-        \Pest\Laravel\withHeader('Authorization', 'Bearer '.config('sensor.api_token'));
+        withHeader('Authorization', 'Bearer '.config('sensor.api_token'));
     });
 
 /*

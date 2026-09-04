@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
 use Rector\TypeDeclaration\Rector\StmtsAwareInterface\SafeDeclareStrictTypesRector;
-use RectorLaravel\Set\LaravelLevelSetList;
 use RectorLaravel\Set\LaravelSetList;
 
 return RectorConfig::configure()
@@ -15,6 +14,7 @@ return RectorConfig::configure()
         __DIR__.'/database',
         __DIR__.'/routes',
         __DIR__.'/tests',
+        __DIR__.'/resources',
     ])
     ->withSkip([
         __DIR__.'/bootstrap/cache',
@@ -34,6 +34,7 @@ return RectorConfig::configure()
         earlyReturn: true,
     )
     ->withSets([
-        LaravelLevelSetList::UP_TO_LARAVEL_130,
         LaravelSetList::LARAVEL_CODE_QUALITY,
-    ]);
+    ])
+    ->withComposerBased(laravel: true)
+    ->withImportNames();
