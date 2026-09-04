@@ -4,6 +4,8 @@ declare(strict_types=1);
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\ValueObject\MeasurementDataV1;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\assertDatabaseCount;
 use function Pest\Laravel\assertDatabaseHas;
@@ -123,4 +125,35 @@ it('keeps measurements of different sensors sharing one timestamp', function ():
     }
 
     assertDatabaseCount(Measurement::class, 2);
+});
+
+it('pings the uptime monitor once a batch is stored', function (): void {
+    config()->set('sensor.heartbeat_url', 'https://status.example.com/api/push/abc');
+    Http::fake();
+
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+    ])->assertCreated();
+
+    // Dispatched after the response; the test kernel terminates the request for us.
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://status.example.com/api/push/abc');
+});
+
+it('stores a batch without pinging when no monitor is configured', function (): void {
+    config()->set('sensor.heartbeat_url', null);
+    Http::fake();
+
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000001, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+    ])->assertCreated();
+
+    Http::assertNothingSent();
 });
