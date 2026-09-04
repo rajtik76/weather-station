@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     # The firmware is Arduino sources; nothing here builds or tests it.
-    paths-ignore: ['firmware/**']
+    paths-ignore: ["firmware/**"]
   pull_request:
-    paths-ignore: ['firmware/**']
+    paths-ignore: ["firmware/**"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -22,13 +22,15 @@ jobs:
 
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: "8.4"
           extensions: mbstring, dom, xml, tokenizer, fileinfo, pdo_sqlite
           coverage: none
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Vite+ pins devEngines.packageManager to npm 12, which no earlier
+          # Node ships - npm refuses to run at all when the two disagree.
+          node-version: "24"
           cache: npm
 
       - name: Cache Composer downloads
@@ -39,9 +41,6 @@ jobs:
           restore-keys: composer-
 
       - name: Install PHP dependencies
-        # Flux Pro is a paid package served from composer.fluxui.dev.
-        env:
-          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Build assets
