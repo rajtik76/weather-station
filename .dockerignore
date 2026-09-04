@@ -1,0 +1,33 @@
+# Build context for the deployed Laravel app. The firmware shares this repo,
+# but nothing in the image builds or runs it.
+firmware/
+
+# Restored inside the image by composer install and npm ci.
+/vendor/
+/node_modules/
+
+# Credentials. Coolify keeps the build-time .env outside the context and hands
+# the container its environment with --env-file, and composer authenticates
+# through COMPOSER_AUTH, so neither file has a reason to be in an image. This
+# only matters for a local docker build - both are gitignored, so a Coolify
+# build never sees them anyway.
+.env
+auth.json
+
+# Tooling and editor state.
+/.git/
+/.github/
+/.idea/
+/.vscode/
+/.ai/
+/.agents/
+/.claude/
+/.codex/
+/.junie/
+.DS_Store
+
+# Not used at runtime.
+/tests/
+/phpunit.xml
+/phpstan.neon
+/rector.php
