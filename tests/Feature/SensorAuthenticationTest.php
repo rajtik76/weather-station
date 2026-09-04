@@ -41,7 +41,7 @@ it('rejects a request with a wrong bearer token', function (): void {
 });
 
 it('rejects a request when no token is configured', function (): void {
-    config()->set('sensor.api_token', null);
+    config()->set('sensor.api_token');
 
     postJson('api/v1/measurement', measurementPayload())->assertUnauthorized();
 });
