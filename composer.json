@@ -124,12 +124,5 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true,
-    "repositories": [
-        {
-            "name": "flux-pro",
-            "type": "composer",
-            "url": "https://composer.fluxui.dev"
-        }
-    ]
+    "prefer-stable": true
 }
