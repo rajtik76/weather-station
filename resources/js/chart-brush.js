@@ -25,6 +25,13 @@ function formatNumber(value, decimals) {
     return numberFormats.get(decimals).format(value);
 }
 
+/**
+ * The server hands us `d` already shifted to the station's local wall clock and
+ * tagged `Z` (Flux forces UTC on its own date formatters, so the shift has to
+ * happen before the value reaches the browser). Formatting in UTC therefore
+ * prints those digits back unchanged; anything else would shift them twice, and
+ * the readout would disagree with the axis right above it.
+ */
 const stampFormat = new Intl.DateTimeFormat('cs-CZ', {
     day: 'numeric',
     month: 'numeric',
