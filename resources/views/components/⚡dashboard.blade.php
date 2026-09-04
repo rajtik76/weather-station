@@ -406,6 +406,15 @@ new #[Title('Weather Station')] class extends Component
     {{-- ── Footer ─────────────────────────────────────────────────── --}}
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-6 font-mono text-[11px] tracking-widest text-zinc-400 uppercase sm:px-8 dark:text-zinc-500">
         <span>{{ number_format(count($this->readings), 0, ',', ' ') }} records</span>
-        <span>ESP32 → HTTP POST · unix time + t/h/p</span>
+        <span class="hidden sm:inline">ESP32 → HTTP POST · unix time + t/h/p</span>
+        <span>
+            &copy; {{ now()->year }} Vladislav Rajtmajer ·
+            <a
+                href="https://github.com/rajtik76"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="rounded-sm underline decoration-zinc-300 underline-offset-4 hover:text-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:decoration-zinc-600 dark:hover:text-zinc-300 dark:focus-visible:outline-zinc-100"
+            >GitHub</a>
+        </span>
     </footer>
 </div>
