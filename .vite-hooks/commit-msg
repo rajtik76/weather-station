@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Bridge to the per-clone hook.
+#
+# Vite+ moved core.hooksPath to .vite-hooks/_, so git no longer looks in
+# .git/hooks at all. Anything a developer keeps there - personal rules that
+# have no business being versioned - stopped firing. This hands control back
+# to it when it exists, and does nothing when it does not.
+#
+# Resolved through --git-dir, never --git-path: the latter honours
+# core.hooksPath, so it points back at the dispatcher that called this and the
+# hook recurses until it hangs.
+
+set -eu
+
+hook="$(git rev-parse --git-dir)/hooks/commit-msg"
+
+[ -x "$hook" ] || exit 0
+
+exec "$hook" "$@"
