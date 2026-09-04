@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Measurement;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -20,83 +22,56 @@ new #[Title('Weather Station')] class extends Component
     private const int DAYS = 31;
 
     /**
-     * One month of simulated BME280 readings, oldest first.
+     * Stored readings for the chart window, oldest first.
      *
-     * Stands in for real ESP32 payloads (unix timestamp + temperature,
-     * humidity, pressure) until the backend lands. The `d` field is the
-     * timestamp rendered as ISO 8601 for the chart's time axis.
+     * Columns hold the raw protocol units (see ProtocolVersion::V1):
+     * temperature and humidity in hundredths, pressure in pascals. The chart
+     * wants °C, % and hPa. The `d` field is the timestamp rendered as ISO 8601
+     * for the chart's time axis.
      *
-     * @return list<array{d: string, t: float, h: int, p: float}>
+     * @return list<array{d: string, t: float, h: float, p: float}>
      */
     #[Computed]
     public function readings(): array
     {
-        mt_srand(1898);
-
-        $count = self::DAYS * 86400 / self::STEP_SECONDS + 1;
-        $end = (int) (floor(now()->getTimestamp() / self::STEP_SECONDS) * self::STEP_SECONDS);
-        $start = $end - ($count - 1) * self::STEP_SECONDS;
-
-        $rows = [];
-        $temperatureDrift = 0.0;
-
-        for ($i = 0; $i < $count; $i++) {
-            $timestamp = $start + $i * self::STEP_SECONDS;
-            $days = ($timestamp - $start) / 86400;
-            $hours = ((int) date('G', $timestamp)) + ((int) date('i', $timestamp)) / 60;
-
-            // Passing weather fronts as overlapping slow pressure waves.
-            $pressure = 1013.0
-                + 9.0 * sin(2 * M_PI * $days / 5.3 + 0.9)
-                + 5.0 * sin(2 * M_PI * $days / 2.4 + 2.1)
-                + 2.5 * sin(2 * M_PI * $days / 11.0 + 4.4)
-                + mt_rand(-15, 15) / 100;
-
-            // -1 (deep low) .. +1 (strong high), drives the other two series.
-            $front = max(-1.0, min(1.0, ($pressure - 1013.0) / 11.0));
-
-            // Late-summer cooling plus a diurnal wave peaking at 15:00; clear
-            // high-pressure days swing harder than overcast lows.
-            $temperatureDrift = max(-1.5, min(1.5, $temperatureDrift + mt_rand(-100, 100) / 100 * 0.06));
-            $seasonal = 18.5 - 3.5 * $days / self::DAYS;
-            $amplitude = 5.5 + 2.0 * $front;
-            $temperature = $seasonal
-                + 1.6 * $front
-                + $amplitude * sin(2 * M_PI * ($hours - 9) / 24)
-                + $temperatureDrift
-                + mt_rand(-15, 15) / 100;
-
-            $humidity = 72.0
-                - 2.6 * ($temperature - $seasonal)
-                - 6.0 * $front
-                + mt_rand(-200, 200) / 100;
-
-            if ($front < -0.75) {
-                $humidity += 18.0; // rain under a deep low
-            }
-
-            $rows[] = [
+        return Measurement::query()
+            ->where('timestamp', '>=', now()->subDays(self::DAYS)->getTimestamp())
+            ->orderBy('timestamp')
+            ->get()
+            ->map(fn (Measurement $measurement): array => [
                 // Tagged UTC: Flux formats tick and tooltip labels with a forced
                 // UTC time zone, so a naive stamp would render shifted.
-                'd' => date('Y-m-d\TH:i:s\Z', $timestamp),
-                't' => round($temperature, 1),
-                'h' => (int) round(max(30.0, min(98.0, $humidity))),
-                'p' => round($pressure, 1),
-            ];
-        }
+                'd' => date('Y-m-d\TH:i:s\Z', $measurement->timestamp),
+                't' => round($measurement->data->temperature / 100, 2),
+                'h' => round($measurement->data->humidity / 100, 2),
+                'p' => round($measurement->data->pressure / 100, 1),
+            ])
+            ->all();
+    }
 
-        return $rows;
+    /** No rows yet: the station has never reported, or not within the window. */
+    #[Computed]
+    public function hasReadings(): bool
+    {
+        return $this->readings !== [];
+    }
+
+    /** How far back the chart looks, for the empty state to name. */
+    #[Computed]
+    public function windowDays(): int
+    {
+        return self::DAYS;
     }
 
     /**
      * The trailing 24 hours, for the stat-card sparklines.
      *
-     * @return list<array{d: string, t: float, h: int, p: float}>
+     * @return list<array{d: string, t: float, h: float, p: float}>
      */
     #[Computed]
     public function lastDay(): array
     {
-        return array_slice($this->readings, -145);
+        return array_slice($this->readings, -(86400 / self::STEP_SECONDS + 1));
     }
 
     /**
@@ -112,7 +87,8 @@ new #[Title('Weather Station')] class extends Component
 
         return [
             'now' => $now,
-            'delta' => $now - (float) $day[count($day) - 7], // vs. one hour ago
+            // vs. one hour ago, or the oldest point we have if the window is shorter
+            'delta' => $now - (float) $day[max(0, count($day) - 7)],
             'dayMin' => (float) min($day),
             'dayMax' => (float) max($day),
             'min' => (float) min($all),
@@ -173,11 +149,15 @@ new #[Title('Weather Station')] class extends Component
     }
 
     #[Computed]
-    public function measuredAt(): string
+    public function measuredAt(): ?string
     {
+        if (! $this->hasReadings) {
+            return null;
+        }
+
         $last = $this->readings[count($this->readings) - 1];
 
-        return \Illuminate\Support\Carbon::parse($last['d'])->format('j. n. Y H:i');
+        return Carbon::parse($last['d'])->format('j. n. Y H:i');
     }
 };
 ?>
@@ -187,7 +167,7 @@ new #[Title('Weather Station')] class extends Component
     {{-- ── Top bar ────────────────────────────────────────────────── --}}
     <div class="flex items-center justify-between gap-4 border-b border-zinc-900/10 px-4 py-3 font-mono text-[11px] font-medium tracking-[0.25em] text-zinc-500 uppercase sm:px-8 dark:border-white/10 dark:text-zinc-400">
         <span>Station log · ESP32 + BME280</span>
-        <span class="hidden sm:inline">10-min interval · last {{ $this->measuredAt }}</span>
+        <span class="hidden sm:inline">10-min interval · {{ $this->hasReadings ? 'last '.$this->measuredAt : 'no records yet' }}</span>
         <flux:button
             x-data
             x-on:click="$flux.dark = ! $flux.dark"
@@ -212,10 +192,11 @@ new #[Title('Weather Station')] class extends Component
                 </flux:text>
             </div>
 
+            @if ($this->hasReadings)
             <div class="flex flex-col items-start gap-8 lg:items-end lg:text-right" aria-label="Current conditions">
                 @foreach ([
-                    ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 1, 'accent' => 'text-amber-600'],
-                    ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 0, 'accent' => 'text-cyan-600'],
+                    ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'text-amber-600'],
+                    ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600'],
                     ['key' => 'p', 'label' => 'Pressure', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-500'],
                 ] as $readout)
                     @php($m = $this->metrics[$readout['key']])
@@ -237,10 +218,22 @@ new #[Title('Weather Station')] class extends Component
                     </div>
                 @endforeach
             </div>
+            @endif
         </div>
     </header>
 
     {{-- ── Channel strips ─────────────────────────────────────────── --}}
+    @if (! $this->hasReadings)
+        <section aria-label="No data" class="border-b border-zinc-900/10 px-4 py-20 text-center sm:px-8 dark:border-white/10">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Waiting for the first reading
+            </p>
+            <flux:text class="mx-auto mt-4 max-w-sm text-sm">
+                Nothing has been recorded in the last {{ $this->windowDays }} days. The chart appears
+                once the station posts a measurement.
+            </flux:text>
+        </section>
+    @else
     @foreach ([
         [
             'channel' => 'CH1',
@@ -248,14 +241,14 @@ new #[Title('Weather Station')] class extends Component
             'unit' => '°C',
             'aria' => 'Temperature history',
             'field' => 't',
-            'dec' => 1,
+            'dec' => 2,
             'line' => 'text-amber-600',
             'height' => 'h-72 sm:h-80',
             'tickStart' => 'min',
             'tickValues' => $this->ticks['t'],
             'tooltipLabel' => 'Temperature',
-            'tooltipFormat' => ['style' => 'unit', 'unit' => 'celsius', 'minimumFractionDigits' => 1],
-            'summaryFormat' => ['minimumFractionDigits' => 1, 'maximumFractionDigits' => 1],
+            'tooltipFormat' => ['style' => 'unit', 'unit' => 'celsius', 'minimumFractionDigits' => 2],
+            'summaryFormat' => ['minimumFractionDigits' => 2, 'maximumFractionDigits' => 2],
             'brush' => true,
         ],
         [
@@ -264,14 +257,14 @@ new #[Title('Weather Station')] class extends Component
             'unit' => '%',
             'aria' => 'Humidity history',
             'field' => 'h',
-            'dec' => 0,
+            'dec' => 2,
             'line' => 'text-cyan-600',
             'height' => 'h-48 sm:h-56',
             'tickStart' => null,
             'tickValues' => null,
             'tooltipLabel' => 'Humidity',
-            'tooltipFormat' => ['style' => 'unit', 'unit' => 'percent'],
-            'summaryFormat' => ['maximumFractionDigits' => 0],
+            'tooltipFormat' => ['style' => 'unit', 'unit' => 'percent', 'minimumFractionDigits' => 2],
+            'summaryFormat' => ['minimumFractionDigits' => 2, 'maximumFractionDigits' => 2],
             'brush' => false,
         ],
         [
@@ -385,6 +378,7 @@ new #[Title('Weather Station')] class extends Component
             </flux:chart>
         </section>
     @endforeach
+    @endif
 
     {{-- ── Site location ──────────────────────────────────────────── --}}
     <section aria-label="Station location" class="border-b border-zinc-900/10 dark:border-white/10">
