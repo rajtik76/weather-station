@@ -16,7 +16,7 @@ new #[Title('Weather Station')] class extends Component
 
     private const float LONGITUDE = 13.400984;
 
-    /** The map shows this radius around the centre, never an exact pin. */
+    /** The map draws this radius as a circle, with nothing marking its centre. */
     private const int LOCATION_RADIUS_METRES = 500;
 
     private const int DAYS = 31;

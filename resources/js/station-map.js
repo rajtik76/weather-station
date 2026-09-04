@@ -14,8 +14,11 @@ const INK = {
 const isDark = () => document.documentElement.classList.contains('dark');
 
 /**
- * Render the station's approximate location: a circle rather than a pin,
- * since the published coordinates are deliberately rounded.
+ * Render the area the station reports from, as a circle and nothing else.
+ *
+ * There is deliberately no marker at the centre. A dot on the exact
+ * coordinates would defeat the circle: the radius stops meaning "somewhere in
+ * here" and starts meaning "here, and here is the middle of the ring".
  */
 function createStationMap(el) {
     const lat = Number.parseFloat(el.dataset.lat);
@@ -52,19 +55,10 @@ function createStationMap(el) {
         dashArray: '5 4',
     }).addTo(map);
 
-    const centre = L.circleMarker([lat, lng], {
-        radius: 3,
-        color: ink(),
-        weight: 0,
-        fillColor: ink(),
-        fillOpacity: 1,
-    }).addTo(map);
-
     map.fitBounds(area.getBounds(), { padding: [24, 24] });
 
     const repaint = () => {
         area.setStyle({ color: ink(), fillColor: ink() });
-        centre.setStyle({ color: ink(), fillColor: ink() });
     };
 
     const themeWatcher = new MutationObserver(repaint);
