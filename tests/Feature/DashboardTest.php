@@ -42,6 +42,6 @@ it('credits the author in the footer', function (): void {
     $this->get('/')
         ->assertOk()
         ->assertSee('Vladislav Rajtmajer')
-        ->assertSee(now()->year)
+        ->assertSee((string) now()->year)
         ->assertSee('https://github.com/rajtik76');
 });
