@@ -37,3 +37,11 @@ it('ignores readings older than the chart window', function (): void {
 
     $this->get('/')->assertSee('Waiting for the first reading');
 });
+
+it('credits the author in the footer', function (): void {
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Vladislav Rajtmajer')
+        ->assertSee(now()->year)
+        ->assertSee('https://github.com/rajtik76');
+});
