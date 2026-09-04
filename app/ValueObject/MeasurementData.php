@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 use App\Enums\ProtocolVersion;
+use JsonSerializable;
+use Stringable;
 
-interface MeasurementData extends \JsonSerializable, \Stringable
+interface MeasurementData extends JsonSerializable, Stringable
 {
     public int $temperature { get; }
 

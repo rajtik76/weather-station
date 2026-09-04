@@ -10,6 +10,7 @@ use Database\Factories\MeasurementFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use UnexpectedValueException;
 
 class Measurement extends Model
 {
@@ -24,13 +25,13 @@ class Measurement extends Model
         return Attribute::make(
             get: function (?string $value, array $attributes): MeasurementData {
                 if ($value === null) {
-                    throw new \UnexpectedValueException('Measurement data is not loaded.');
+                    throw new UnexpectedValueException('Measurement data is not loaded.');
                 }
 
                 $decoded = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
 
                 if (! is_array($decoded)) {
-                    throw new \UnexpectedValueException('Malformed measurement data.');
+                    throw new UnexpectedValueException('Malformed measurement data.');
                 }
 
                 // The version lives in its own column, never inside the blob.
