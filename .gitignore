@@ -36,3 +36,6 @@ Thumbs.db
 # Arduino firmware secrets - real WiFi and API credentials
 firmware/**/secrets.h
 firmware/secrets.h
+
+# Playwright MCP scratch output
+/.playwright-mcp

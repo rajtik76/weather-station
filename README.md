@@ -16,6 +16,11 @@ BME280 --I2C--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
+![The dashboard: three channels over a month, with the station's approximate location](docs/dashboard.png)
+
+The screenshot is seeded sample data, not measurements - the live station has
+been reporting for days rather than the month the chart covers.
+
 ## Layout
 
 | Path | Contents |
