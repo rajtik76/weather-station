@@ -19,7 +19,7 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature')
-    ->beforeEach(function () {
+    ->beforeEach(function (): void {
         \Pest\Laravel\withHeader('Authorization', 'Bearer '.config('sensor.api_token'));
     });
 
