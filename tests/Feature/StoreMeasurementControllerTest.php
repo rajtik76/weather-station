@@ -144,7 +144,7 @@ it('pings the uptime monitor once a batch is stored', function (): void {
 });
 
 it('stores a batch without pinging when no monitor is configured', function (): void {
-    config()->set('sensor.heartbeat_url', null);
+    config()->set('sensor.heartbeat_url');
     Http::fake();
 
     postJson('/api/v1/measurement', [

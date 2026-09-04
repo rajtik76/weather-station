@@ -97,12 +97,15 @@
         "rector": [
             "@php vendor/bin/rector process"
         ],
+        "rector:check": [
+            "@php vendor/bin/rector process --dry-run"
+        ],
         "stan": [
             "@php vendor/bin/phpstan analyse --memory-limit=1G"
         ],
         "review": [
             "Composer\\Config::disableProcessTimeout",
-            "@rector",
+            "@rector:check",
             "@stan",
             "@test"
         ]

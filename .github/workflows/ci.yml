@@ -58,8 +58,13 @@ jobs:
       - name: Pint
         run: vendor/bin/pint --test
 
+      # The three steps below are what composer review runs locally, split up
+      # so a failure names itself in the job list instead of hiding in one log.
+      - name: Rector
+        run: vendor/bin/rector process --dry-run --no-progress-bar
+
       - name: PHPStan
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
       - name: Pest
-        run: php artisan test
+        run: php artisan test --parallel
