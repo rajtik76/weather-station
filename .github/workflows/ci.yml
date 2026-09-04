@@ -28,10 +28,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Vite+ pins devEngines.packageManager to npm 12, which no earlier
-          # Node ships - npm refuses to run at all when the two disagree.
           node-version: "24"
           cache: npm
+
+      # Vite+ pins devEngines.packageManager, and npm refuses to run at all
+      # while the installed version disagrees - `npm ci` fails before it
+      # installs anything. Node 24 bundles npm 11, so the pinned version is
+      # installed explicitly. Run from outside the project, or npm applies
+      # that same check to itself and blocks its own upgrade.
+      - name: Install the pinned npm
+        working-directory: ${{ runner.temp }}
+        run: npm install -g npm@12.0.2
 
       - name: Cache Composer downloads
         uses: actions/cache@v4
