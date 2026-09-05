@@ -42,11 +42,14 @@ static const char* TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 // Sanity threshold: any epoch below this means the clock is not set.
 static const uint32_t EPOCH_VALID_MIN = 1700000000UL;
 
-// How stale the clock may get before it is worth the radio time to re-sync.
+// How stale the clock may get before it is re-synced.
 // Deep sleep is timed by the RTC oscillator, which is an internal RC circuit
 // with a tolerance measured in percent, so the clock drifts minutes per week
 // - enough for readings to be stamped ahead of the server that stores them.
-static const uint32_t NTP_RESYNC_AFTER_S = 6UL * 3600UL;
+// One sync an hour is one wakeup in six; the radio is already up for the
+// upload, so it costs a fraction of a second awake and holds the drift to
+// roughly a second.
+static const uint32_t NTP_RESYNC_AFTER_S = 3600UL;
 
 // When NTP last answered, so drift is corrected without syncing every wakeup.
 RTC_DATA_ATTR static uint32_t rtcLastNtpSync;
