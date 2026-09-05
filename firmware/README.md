@@ -33,22 +33,17 @@ bus.
 Deep sleep on this board draws ~15 mA. That is the on-board regulator and the
 USB-serial chip, not the ESP32, and it rules the DevKit out for battery use.
 
-### LED signals
+### LED signal
 
-The on-board LED on GPIO2 (`LED_PIN`) reports the outcome of each wakeup, once,
-just before going back to sleep:
+The on-board LED on GPIO2 (`LED_PIN`) blinks three times, briefly, once the
+server has accepted an upload - the endpoint answers 201 and the buffer is
+cleared. Nothing else is signalled.
 
-| Blink            | Means                                            |
-| ---------------- | ------------------------------------------------ |
-| 3 short (120 ms) | the server accepted the upload                   |
-| 5 long (600 ms)  | something failed - sensor, WiFi, clock or upload |
-
-The length is what the eye reads first; the count only separates the two. Every
-fault looks the same on purpose, because from across the room the question is
-whether the station works at all. The serial log names the part that gave up.
-
-A fault outranks a delivery: buffered readings can still reach the server while
-the sensor is dead, and that is not a working station.
+Faults are deliberately silent. A fault blink would fire on every wakeup for as
+long as the fault lasted, and since the station sleeps for ten minutes between
+them, seeing one means standing over the device anyway. The serial log says what
+failed; the dashboard and the heartbeat monitor are what report a station that
+has gone quiet.
 
 ## Build
 

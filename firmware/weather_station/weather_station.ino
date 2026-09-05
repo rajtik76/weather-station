@@ -34,13 +34,13 @@
 static const uint64_t MEASURE_INTERVAL_US = 10ULL * 60ULL * 1000000ULL;  // 10 min
 static const uint64_t MIN_SLEEP_US = 10ULL * 1000000ULL;                 // safety floor
 
-// Blink lengths. Short for the all-clear, long so a fault is unmistakable
-// without counting: the count only separates the two, the length is what the
-// eye reads first.
+// Only a delivery is signalled. A fault blink would fire on every wakeup for
+// as long as the fault lasted, which is awake time spent on nobody: the
+// station sleeps for ten minutes between blinks, so catching one means
+// standing over it. The dashboard and the heartbeat monitor are what report
+// a station that has gone quiet.
 static const uint8_t LED_OK_BLINKS = 3;
 static const uint16_t LED_OK_MS = 120;
-static const uint8_t LED_FAULT_BLINKS = 5;
-static const uint16_t LED_FAULT_MS = 600;
 static const uint16_t LED_GAP_MS = 200;
 
 static const uint32_t WIFI_FAST_TIMEOUT_MS = 5000;   // known AP, no scan
@@ -320,22 +320,15 @@ void setup() {
   // garbage after a power loss.
   rtcBufferBegin();
 
-  // Every fault blinks the same way. From across the room the question is
-  // whether the station is working at all; the serial log says which part
-  // gave up.
-  bool faulted = false;
   bool delivered = false;
 
   bme280_reading_t reading;
   bool haveMeasurement = bme280Begin() && readBme280(reading);
-  if (!haveMeasurement) faulted = true;
 
   bool online = connectWifi();
-  if (!online) faulted = true;
-
-  // Only a clock that has never been set counts as a fault. A re-sync that
-  // times out leaves a slightly stale clock, which is not worth an alarm.
-  if (online && !syncNtp(NTP_TIMEOUT_MS)) faulted = true;
+  if (online) {
+    syncNtp(NTP_TIMEOUT_MS);
+  }
 
   reading.timestamp = (uint32_t)time(nullptr);  // always UTC
 
@@ -347,7 +340,6 @@ void setup() {
     // Only happens before the very first NTP sync - an unstamped reading
     // would be useless to the server, so it is dropped rather than sent.
     Serial.println("reading discarded: no data or no clock");
-    faulted = true;
   }
 
   Serial.printf("buffered entries: %u\n", rtcBufferCount());
@@ -360,19 +352,13 @@ void setup() {
     if (transmissionToJson(tx, payload, sizeof(payload)) && postTransmission(payload)) {
       rtcBufferClear();  // only after the server confirmed
       delivered = true;
-    } else {
-      faulted = true;
     }
   }
 
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
 
-  // A fault outranks a delivery: readings can still reach the server while
-  // the sensor is dead, and that is not a working station.
-  if (faulted) {
-    blink(LED_FAULT_BLINKS, LED_FAULT_MS);
-  } else if (delivered) {
+  if (delivered) {
     blink(LED_OK_BLINKS, LED_OK_MS);
   }
 
