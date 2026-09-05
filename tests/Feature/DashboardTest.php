@@ -223,6 +223,19 @@ it('reports when the station last transmitted', function (): void {
         ->assertSee('12 minutes ago');
 });
 
+it('does not report a reading as arriving in the future', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // The station syncs NTP once and then free-runs, so its clock can sit
+    // ahead of the server's.
+    Measurement::factory()->create(['timestamp' => now()->addMinutes(4)->getTimestamp()]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('just now')
+        ->assertDontSee('from now');
+});
+
 it('still reports the last transmission when the window holds nothing', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 

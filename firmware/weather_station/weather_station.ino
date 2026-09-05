@@ -5,6 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <esp_sleep.h>
+#include <esp_sntp.h>
 
 #include <Wire.h>
 #include <Adafruit_BME280.h>
@@ -40,6 +41,15 @@ static const char* TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 
 // Sanity threshold: any epoch below this means the clock is not set.
 static const uint32_t EPOCH_VALID_MIN = 1700000000UL;
+
+// How stale the clock may get before it is worth the radio time to re-sync.
+// Deep sleep is timed by the RTC oscillator, which is an internal RC circuit
+// with a tolerance measured in percent, so the clock drifts minutes per week
+// - enough for readings to be stamped ahead of the server that stores them.
+static const uint32_t NTP_RESYNC_AFTER_S = 6UL * 3600UL;
+
+// When NTP last answered, so drift is corrected without syncing every wakeup.
+RTC_DATA_ATTR static uint32_t rtcLastNtpSync;
 
 // Cached AP details, so the next wakeup can skip the channel scan.
 // The radio is the biggest consumer here, so every second of scanning costs.
@@ -166,17 +176,36 @@ static bool connectWifi() {
 }
 
 static bool syncNtp(uint32_t timeoutMs) {
-  // The system clock keeps running across deep sleep on the RTC
-  // oscillator, so this only has work to do after a cold boot.
-  if (time(nullptr) >= EPOCH_VALID_MIN) return true;
+  const bool clockSet = time(nullptr) >= EPOCH_VALID_MIN;
 
+  // The clock keeps running across deep sleep, but on an oscillator that
+  // drifts, so being set is not the same as being right.
+  if (clockSet && rtcLastNtpSync != 0 &&
+      (uint32_t)time(nullptr) - rtcLastNtpSync < NTP_RESYNC_AFTER_S) {
+    return true;
+  }
+
+  // Ask for the completion flag rather than watching the clock: on a re-sync
+  // the clock is already plausible, so waiting for it to look valid would
+  // return before the server had answered and correct nothing.
+  sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
   configTzTime(TZ_PRAGUE, "pool.ntp.org", "time.nist.gov");
+
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
-    if (time(nullptr) >= EPOCH_VALID_MIN) return true;
+    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED &&
+        time(nullptr) >= EPOCH_VALID_MIN) {
+      rtcLastNtpSync = (uint32_t)time(nullptr);
+      Serial.println("clock synced");
+      return true;
+    }
     delay(200);
   }
-  return false;
+
+  // A missed sync is not a reason to drop the reading: an old but plausible
+  // clock still stamps it close enough and still validates the certificate.
+  Serial.println("NTP timed out");
+  return clockSet;
 }
 
 static bool postTransmission(const char* payload) {

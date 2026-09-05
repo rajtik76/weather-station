@@ -306,11 +306,24 @@ class Dashboard extends Component
         return $this->lastTransmission?->format('j. n. Y H:i');
     }
 
-    /** Relative wording, which is what tells you at a glance if it is late. */
+    /**
+     * Relative wording, which is what tells you at a glance if it is late.
+     *
+     * A reading can be stamped slightly ahead of the server: the station syncs
+     * NTP once and its clock then free-runs on the RTC oscillator through
+     * every deep sleep, which drifts. "4 minutes from now" reads as a broken
+     * page, so anything not yet past is reported as having just landed.
+     */
     #[Computed]
     public function measuredAgo(): ?string
     {
-        return $this->lastTransmission?->diffForHumans();
+        if ($this->lastTransmission === null) {
+            return null;
+        }
+
+        return $this->lastTransmission->getTimestamp() > now()->getTimestamp()
+            ? 'just now'
+            : $this->lastTransmission->diffForHumans();
     }
 
     /** Nothing for three slots running: treat the station as off the air. */
