@@ -161,6 +161,33 @@ static bool waitForWifi(uint32_t timeoutMs) {
   return false;
 }
 
+/**
+ * List what the radio can hear, after a failure to associate.
+ *
+ * "WiFi failed" alone cannot tell a wrong password from a site where the AP
+ * is simply out of reach. The number is what settles it: around -70 dBm is
+ * comfortable, -80 is marginal, past -85 an association may still form but
+ * will not survive a TLS upload.
+ */
+static void reportVisibleAps() {
+  int found = WiFi.scanNetworks();
+
+  if (found <= 0) {
+    Serial.println("scan: nothing on the air");
+    return;
+  }
+
+  for (int i = 0; i < found; i++) {
+    Serial.printf("scan: %s  %d dBm  ch %d%s\n",
+                  WiFi.SSID(i).c_str(),
+                  WiFi.RSSI(i),
+                  WiFi.channel(i),
+                  WiFi.SSID(i) == WIFI_SSID ? "  <- ours" : "");
+  }
+
+  WiFi.scanDelete();
+}
+
 static bool connectWifi() {
   WiFi.mode(WIFI_STA);
 
@@ -168,7 +195,7 @@ static bool connectWifi() {
     // Straight to the known AP - no scan across all channels.
     WiFi.begin(WIFI_SSID, WIFI_PASS, rtcApChannel, rtcApBssid);
     if (waitForWifi(WIFI_FAST_TIMEOUT_MS)) {
-      Serial.println("WiFi connected (cached AP)");
+      Serial.printf("WiFi connected (cached AP), RSSI %d dBm\n", WiFi.RSSI());
       return true;
     }
     // The AP moved channel or is gone - fall through to a full scan.
@@ -179,6 +206,7 @@ static bool connectWifi() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   if (!waitForWifi(WIFI_SCAN_TIMEOUT_MS)) {
     Serial.println("WiFi failed");
+    reportVisibleAps();
     return false;
   }
 
@@ -186,7 +214,7 @@ static bool connectWifi() {
   rtcApChannel = WiFi.channel();
   rtcApValid = true;
 
-  Serial.println("WiFi connected (scan)");
+  Serial.printf("WiFi connected (scan), RSSI %d dBm\n", WiFi.RSSI());
   return true;
 }
 
