@@ -22,6 +22,9 @@
 #define BME280_SDA_PIN 21
 #define BME280_SCL_PIN 22
 
+// On-board LED of the ESP32 DevKit. Change to match the wiring.
+#define LED_PIN 2
+
 // Time for the die to shed the heat begin() puts into it. See bme280Begin().
 #define BME280_SETTLE_MS 500
 
@@ -30,6 +33,15 @@
 
 static const uint64_t MEASURE_INTERVAL_US = 10ULL * 60ULL * 1000000ULL;  // 10 min
 static const uint64_t MIN_SLEEP_US = 10ULL * 1000000ULL;                 // safety floor
+
+// Blink lengths. Short for the all-clear, long so a fault is unmistakable
+// without counting: the count only separates the two, the length is what the
+// eye reads first.
+static const uint8_t LED_OK_BLINKS = 3;
+static const uint16_t LED_OK_MS = 120;
+static const uint8_t LED_FAULT_BLINKS = 5;
+static const uint16_t LED_FAULT_MS = 600;
+static const uint16_t LED_GAP_MS = 200;
 
 static const uint32_t WIFI_FAST_TIMEOUT_MS = 5000;   // known AP, no scan
 static const uint32_t WIFI_SCAN_TIMEOUT_MS = 15000;  // full scan fallback
@@ -260,6 +272,25 @@ static bool postTransmission(const char* payload) {
   return code >= 200 && code < 300;
 }
 
+// ---------------------------------------------------------------- signals
+
+/**
+ * Blink the on-board LED, blocking until done.
+ *
+ * Blocking is fine here: this runs once, immediately before deep sleep, and
+ * the sleep that follows subtracts the time spent awake, so the ten-minute
+ * cadence holds either way.
+ */
+static void blink(uint8_t times, uint16_t onMs) {
+  for (uint8_t i = 0; i < times; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(onMs);
+    digitalWrite(LED_PIN, LOW);
+
+    if (i + 1 < times) delay(LED_GAP_MS);
+  }
+}
+
 // ---------------------------------------------------------------- sleep
 
 static void sleepUntilNextMeasurement() {
@@ -282,17 +313,29 @@ static void sleepUntilNextMeasurement() {
 void setup() {
   Serial.begin(115200);
 
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
   // Must run before anything touches the buffer - RTC memory holds
   // garbage after a power loss.
   rtcBufferBegin();
 
+  // Every fault blinks the same way. From across the room the question is
+  // whether the station is working at all; the serial log says which part
+  // gave up.
+  bool faulted = false;
+  bool delivered = false;
+
   bme280_reading_t reading;
   bool haveMeasurement = bme280Begin() && readBme280(reading);
+  if (!haveMeasurement) faulted = true;
 
   bool online = connectWifi();
-  if (online) {
-    syncNtp(NTP_TIMEOUT_MS);
-  }
+  if (!online) faulted = true;
+
+  // Only a clock that has never been set counts as a fault. A re-sync that
+  // times out leaves a slightly stale clock, which is not worth an alarm.
+  if (online && !syncNtp(NTP_TIMEOUT_MS)) faulted = true;
 
   reading.timestamp = (uint32_t)time(nullptr);  // always UTC
 
@@ -304,6 +347,7 @@ void setup() {
     // Only happens before the very first NTP sync - an unstamped reading
     // would be useless to the server, so it is dropped rather than sent.
     Serial.println("reading discarded: no data or no clock");
+    faulted = true;
   }
 
   Serial.printf("buffered entries: %u\n", rtcBufferCount());
@@ -315,11 +359,22 @@ void setup() {
     static char payload[4096];
     if (transmissionToJson(tx, payload, sizeof(payload)) && postTransmission(payload)) {
       rtcBufferClear();  // only after the server confirmed
+      delivered = true;
+    } else {
+      faulted = true;
     }
   }
 
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+
+  // A fault outranks a delivery: readings can still reach the server while
+  // the sensor is dead, and that is not a working station.
+  if (faulted) {
+    blink(LED_FAULT_BLINKS, LED_FAULT_MS);
+  } else if (delivered) {
+    blink(LED_OK_BLINKS, LED_OK_MS);
+  }
 
   sleepUntilNextMeasurement();
 }
