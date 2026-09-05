@@ -15,12 +15,12 @@ BME280 --I2C--> ESP32 --HTTPS--> Laravel API
 
 ESP32 DevKit (WROOM) and a BME280 breakout.
 
-| BME280 | ESP32 |
-|---|---|
-| VIN | 3V3 |
-| GND | GND |
-| SDA | GPIO21 |
-| SCL | GPIO22 |
+| BME280 | ESP32  |
+| ------ | ------ |
+| VIN    | 3V3    |
+| GND    | GND    |
+| SDA    | GPIO21 |
+| SCL    | GPIO22 |
 
 `SDO` and `CSB` can stay unconnected on a breakout - it straps them, and the
 firmware probes both 0x76 and 0x77. Pins are `BME280_SDA_PIN` /
@@ -33,9 +33,26 @@ bus.
 Deep sleep on this board draws ~15 mA. That is the on-board regulator and the
 USB-serial chip, not the ESP32, and it rules the DevKit out for battery use.
 
+### LED signals
+
+The on-board LED on GPIO2 (`LED_PIN`) reports the outcome of each wakeup, once,
+just before going back to sleep:
+
+| Blink            | Means                                            |
+| ---------------- | ------------------------------------------------ |
+| 3 short (120 ms) | the server accepted the upload                   |
+| 5 long (600 ms)  | something failed - sensor, WiFi, clock or upload |
+
+The length is what the eye reads first; the count only separates the two. Every
+fault looks the same on purpose, because from across the room the question is
+whether the station works at all. The serial log names the part that gave up.
+
+A fault outranks a delivery: buffered readings can still reach the server while
+the sensor is dead, and that is not a working station.
+
 ## Build
 
-Arduino IDE, board *ESP32 Dev Module*. Needs `Adafruit BME280 Library` and
+Arduino IDE, board _ESP32 Dev Module_. Needs `Adafruit BME280 Library` and
 `ArduinoJson` v7.
 
 ```
@@ -53,20 +70,20 @@ taken.
 
 ```json
 {
-  "sensor_name": "sensor-001",
-  "protocol_version": 1,
-  "measurements": [
-    {"timestamp": 1757000000, "temperature": 2602, "humidity": 4871, "pressure": 97389}
-  ]
+    "sensor_name": "sensor-001",
+    "protocol_version": 1,
+    "measurements": [
+        { "timestamp": 1757000000, "temperature": 2602, "humidity": 4871, "pressure": 97389 }
+    ]
 }
 ```
 
-| Field | Unit | Range |
-|---|---|---|
-| `timestamp` | UTC Unix seconds | 1 .. 4294967295 |
-| `temperature` | 0.01 °C | -4000 .. 8500 |
-| `humidity` | 0.01 % | 0 .. 10000 |
-| `pressure` | Pa | 30000 .. 110000 |
+| Field         | Unit             | Range           |
+| ------------- | ---------------- | --------------- |
+| `timestamp`   | UTC Unix seconds | 1 .. 4294967295 |
+| `temperature` | 0.01 °C          | -4000 .. 8500   |
+| `humidity`    | 0.01 %           | 0 .. 10000      |
+| `pressure`    | Pa               | 30000 .. 110000 |
 
 Pressure is station pressure. Reducing it to sea level for comparison against a
 weather service needs the station altitude, which is what the GPS field in
