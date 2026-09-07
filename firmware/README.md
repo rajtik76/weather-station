@@ -35,15 +35,17 @@ USB-serial chip, not the ESP32, and it rules the DevKit out for battery use.
 
 ### LED signal
 
-The on-board LED on GPIO2 (`LED_PIN`) blinks three times, briefly, once the
-server has accepted an upload - the endpoint answers 201 and the buffer is
-cleared. Nothing else is signalled.
+The on-board LED on GPIO2 (`LED_PIN`) blinks three times, briefly, on two
+occasions only:
 
-Faults are deliberately silent. A fault blink would fire on every wakeup for as
-long as the fault lasted, and since the station sleeps for ten minutes between
-them, seeing one means standing over the device anyway. The serial log says what
-failed; the dashboard and the heartbeat monitor are what report a station that
-has gone quiet.
+- when the board is powered up or reset, before anything else runs
+- when the server first accepts an upload after that
+
+Every wakeup after that is silent, and so is every fault. The LED is for the
+bench: it tells you the board came up and that the link works, which is what
+you stand there waiting for. Once it is on the balcony nobody is watching, and
+a station that has gone quiet is what the dashboard and the heartbeat monitor
+are for. The serial log says what failed.
 
 ## Build
 
