@@ -34,11 +34,10 @@
 static const uint64_t MEASURE_INTERVAL_US = 10ULL * 60ULL * 1000000ULL;  // 10 min
 static const uint64_t MIN_SLEEP_US = 10ULL * 1000000ULL;                 // safety floor
 
-// Only a delivery is signalled. A fault blink would fire on every wakeup for
-// as long as the fault lasted, which is awake time spent on nobody: the
-// station sleeps for ten minutes between blinks, so catching one means
-// standing over it. The dashboard and the heartbeat monitor are what report
-// a station that has gone quiet.
+// The LED is for the bench, not for the balcony. It confirms the board came
+// up and that the first upload landed, which is what you stand there waiting
+// for. Every wakeup after that would be blinking at nobody, so it stays dark
+// until the next power cycle.
 static const uint8_t LED_OK_BLINKS = 3;
 static const uint16_t LED_OK_MS = 120;
 static const uint16_t LED_GAP_MS = 200;
@@ -65,6 +64,9 @@ static const uint32_t NTP_RESYNC_AFTER_S = 3600UL;
 
 // When NTP last answered, so drift is corrected without syncing every wakeup.
 RTC_DATA_ATTR static uint32_t rtcLastNtpSync;
+
+// Whether the delivery blink has already been spent this power cycle.
+RTC_DATA_ATTR static bool rtcDeliverySignalled;
 
 // Cached AP details, so the next wakeup can skip the channel scan.
 // The radio is the biggest consumer here, so every second of scanning costs.
@@ -344,6 +346,17 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
+  // Waking on the timer is the ordinary case; anything else means the board
+  // was just powered up or reset.
+  const bool coldBoot = esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER;
+
+  if (coldBoot) {
+    // RTC memory holds garbage after a power loss, so the flag is set rather
+    // than trusted.
+    rtcDeliverySignalled = false;
+    blink(LED_OK_BLINKS, LED_OK_MS);
+  }
+
   // Must run before anything touches the buffer - RTC memory holds
   // garbage after a power loss.
   rtcBufferBegin();
@@ -386,8 +399,9 @@ void setup() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
 
-  if (delivered) {
+  if (delivered && !rtcDeliverySignalled) {
     blink(LED_OK_BLINKS, LED_OK_MS);
+    rtcDeliverySignalled = true;
   }
 
   sleepUntilNextMeasurement();
