@@ -251,12 +251,17 @@ it('calls the station silent after three missed slots', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     Measurement::factory()->create(['timestamp' => now()->subMinutes(20)->getTimestamp()]);
-    Livewire::test(Dashboard::class)->assertSee('Station live');
+    Livewire::test(Dashboard::class)
+        ->assertSee('Station live')
+        // The indicator breathes while the link holds.
+        ->assertSee('animate-breathe', escape: false);
 
     Measurement::query()->delete();
 
     Measurement::factory()->create(['timestamp' => now()->subMinutes(40)->getTimestamp()]);
-    Livewire::test(Dashboard::class)->assertSee('Station silent');
+    Livewire::test(Dashboard::class)
+        ->assertSee('Station silent')
+        ->assertDontSee('animate-breathe', escape: false);
 });
 
 it('credits the author in the footer', function (): void {
@@ -265,4 +270,61 @@ it('credits the author in the footer', function (): void {
         ->assertSee('Vladislav Rajtmajer')
         ->assertSee((string) now()->year)
         ->assertSee('https://github.com/rajtik76');
+});
+
+it('lists the last three transmissions as the station sent them', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $packets = [
+        ['ago' => 40, 'temperature' => 1901, 'humidity' => 4401, 'pressure' => 97001],
+        ['ago' => 30, 'temperature' => 2087, 'humidity' => 5941, 'pressure' => 97402],
+        ['ago' => 20, 'temperature' => 2112, 'humidity' => 5890, 'pressure' => 97395],
+        ['ago' => 10, 'temperature' => 2134, 'humidity' => 5812, 'pressure' => 97389],
+    ];
+
+    foreach ($packets as $packet) {
+        Measurement::factory()->create([
+            'timestamp' => now()->subMinutes($packet['ago'])->getTimestamp(),
+            'data' => (string) new MeasurementDataV1(
+                temperature: $packet['temperature'],
+                humidity: $packet['humidity'],
+                pressure: $packet['pressure'],
+            ),
+        ]);
+    }
+
+    $this->get('/')
+        ->assertOk()
+        // The protocol's own fixed point integers, as the endpoint received them.
+        ->assertSee('2134')
+        ->assertSee('5812')
+        ->assertSee('97389')
+        ->assertSee('2112')
+        ->assertSee('2087')
+        // Converted alongside: 97 389 Pa is 973,9 hPa, stamped in Prague time -
+        // 11:50 UTC is 12:50 there in March.
+        ->assertSee('973,9')
+        ->assertSee('15. 3. 2026 12:50')
+        // A fourth packet, and the oldest of them, has scrolled off the tail.
+        ->assertDontSee('1901');
+});
+
+it('keeps listing the newest transmissions while zoomed into the past', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2134, humidity: 5812, pressure: 97389),
+    ]);
+
+    // The tail reads across the whole table, so a window holding nothing still
+    // reports what the station last sent.
+    Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subDays(3)->getTimestamp(), now()->subDays(2)->getTimestamp())
+        ->assertSee('Nothing in this range')
+        ->assertSee('2134');
+});
+
+it('polls for readings that arrive while the page is open', function (): void {
+    Livewire::test(Dashboard::class)->assertSee('wire:poll.60s', escape: false);
 });

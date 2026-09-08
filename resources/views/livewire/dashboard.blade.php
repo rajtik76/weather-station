@@ -1,13 +1,26 @@
-<div class="min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+{{-- The station uploads every ten minutes, so a minute of latency is nothing
+     to a reader. Polling instead of broadcasting keeps a websocket server out
+     of the stack for one packet per ten minutes.
+
+     A zoomed window is a pair of fixed epochs, so a poll re-queries exactly
+     the readings already on screen and the payload attributes below come back
+     byte for byte identical - the charts are never redrawn under a reader who
+     is looking at the past. Only the navigator, which always spans the whole
+     record, takes the new readings. --}}
+<div
+    wire:poll.60s
+    class="min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
+>
 
     {{-- ── Top bar ────────────────────────────────────────────────── --}}
     <div class="flex items-center justify-between gap-4 border-b border-zinc-900/10 px-4 py-3 font-mono text-[11px] font-medium tracking-[0.25em] text-zinc-500 uppercase sm:px-8 dark:border-white/10 dark:text-zinc-400">
-        <span>Station log · ESP32 + BME280</span>
+        <span>ESP32 + BME280</span>
         <span class="flex items-center gap-2 normal-case tracking-normal">
             <span
                 @class([
                     'size-1.5 shrink-0 rounded-full',
-                    'bg-emerald-500' => ! $this->isSilent,
+                    // Breathing only while the link holds; a silent station sits still.
+                    'bg-emerald-500 animate-breathe motion-reduce:animate-none' => ! $this->isSilent,
                     'bg-amber-500' => $this->isSilent,
                 ])
                 aria-hidden="true"
@@ -34,14 +47,16 @@
 
     {{-- ── Hero: title + giant readouts ───────────────────────────── --}}
     <header class="border-b border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
-        <div class="flex flex-wrap items-end justify-between gap-x-16 gap-y-10">
+        <div class="flex flex-wrap items-start justify-between gap-x-16 gap-y-10">
             <div>
                 <flux:heading level="1" class="font-display text-[clamp(3.5rem,12.5vw,11.5rem)]! leading-[0.78] font-extrabold! tracking-[-0.03em] uppercase">
-                    Home<br>Weather<br>Station
+                    Station<br>Log
                 </flux:heading>
                 <flux:text class="mt-6 max-w-sm text-sm">
-                    The station reports every ten minutes, around the clock. Every
-                    point on the chart is a raw record - nothing smoothed, nothing
+                    A BME280 on an ESP32 reads temperature, humidity and station
+                    pressure, uploads them over WiFi and sleeps until the next
+                    slot - ten minutes later, around the clock. Every point on
+                    the chart is a raw record, nothing smoothed and nothing
                     averaged. The longer ranges thin the series out rather than
                     average it, so what you see stays a real reading.
                 </flux:text>
@@ -58,11 +73,15 @@
                     <div>
                         <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase lg:justify-end dark:text-zinc-400">
                             {{ $readout['label'] }}
-                            <flux:icon
-                                :icon="$m['delta'] >= 0.05 ? 'arrow-trending-up' : ($m['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
-                                variant="micro"
-                            />
-                            {{ ($m['delta'] >= 0 ? '+' : '−') . number_format(abs($m['delta']), $readout['dec'], ',', ' ') }}/h
+                            {{-- The trend carries the channel's own colour, so the
+                                 figure reads as belonging to the unit beside it. --}}
+                            <span class="{{ $readout['accent'] }} flex items-center gap-2">
+                                <flux:icon
+                                    :icon="$m['delta'] >= 0.05 ? 'arrow-trending-up' : ($m['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
+                                    variant="micro"
+                                />
+                                {{ ($m['delta'] >= 0 ? '+' : '−') . number_format(abs($m['delta']), $readout['dec'], ',', ' ') }}/h
+                            </span>
                         </p>
                         <p class="font-display mt-1 text-6xl leading-none font-bold sm:text-7xl">
                             {{ number_format($m['now'], $readout['dec'], ',', ' ') }}<span class="{{ $readout['accent'] }} ml-1 align-baseline text-2xl font-bold sm:text-3xl">{{ $readout['unit'] }}</span>
@@ -77,10 +96,59 @@
         </div>
     </header>
 
+    {{-- ── Payload tail ───────────────────────────────────────────── --}}
+    @if ($this->recentTransmissions !== [])
+        <section aria-label="Last transmissions" class="border-b border-zinc-900/10 dark:border-white/10">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
+                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                    Last {{ count($this->recentTransmissions) }} measurements · as received
+                </p>
+                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                    POST /api/v1/measurement · 0,01 °C · 0,01 % · Pa · UTC unix
+                </p>
+            </div>
+
+            @foreach ($this->recentTransmissions as $packet)
+                <div
+                    @class([
+                        'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
+                        // The newest packet is the one the readouts above are showing.
+                        'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
+                    ])
+                >
+                    {{-- The entry exactly as it arrived in `measurements`. It
+                         outruns a phone, so there it breaks into the pretty
+                         printed form, one field per line - a scrollbar would
+                         hide half the packet behind a gesture. From `md` up
+                         the same markup collapses back onto one line, which is
+                         the width where all four fields fit without one. --}}
+                    <p class="font-mono text-xs text-zinc-500 tabular-nums md:overflow-x-auto md:whitespace-nowrap dark:text-zinc-400">
+                        <span class="block text-zinc-400 md:inline dark:text-zinc-600">{</span>
+                        <span class="block pl-4 md:inline md:pl-0">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
+                        <span class="block pl-4 md:inline md:pl-0">"temperature": <span class="text-amber-600">{{ $packet['temperature'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
+                        <span class="block pl-4 md:inline md:pl-0">"humidity": <span class="text-cyan-600">{{ $packet['humidity'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
+                        <span class="block pl-4 md:inline md:pl-0">"pressure": <span class="text-violet-600 dark:text-violet-500">{{ $packet['pressure'] }}</span></span>
+                        <span class="block text-zinc-400 md:inline dark:text-zinc-600">}</span>
+                    </p>
+
+                    <p class="flex flex-wrap gap-x-4 font-mono text-xs text-zinc-500 tabular-nums xl:justify-end dark:text-zinc-400">
+                        <span>{{ $packet['at'] }}</span>
+                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
+                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
+                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa</span>
+                        <span class="hidden md:inline">{{ $packet['ago'] }}</span>
+                    </p>
+                </div>
+            @endforeach
+        </section>
+    @endif
+
     {{-- ── Range switcher ─────────────────────────────────────────── --}}
+    {{-- The chart controls open a new block of the page, so they stand off the
+         transmission tail above instead of stacking flush against it. --}}
     <section
         aria-label="Chart range"
-        class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
+        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
     >
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
