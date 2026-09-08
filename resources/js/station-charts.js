@@ -498,7 +498,10 @@ function bindZoom(chart, element, component) {
 
 let mounting = false;
 
-function mount() {
+/** The channel payload currently on the canvases, to recognise an unchanged one. */
+let painted = null;
+
+function mount(force = false) {
     if (mounting) {
         return;
     }
@@ -512,13 +515,13 @@ function mount() {
     mounting = true;
 
     try {
-        render(payload);
+        render(payload, force);
     } finally {
         mounting = false;
     }
 }
 
-function render(payload) {
+function render(payload, force) {
     try {
         rows = JSON.parse(payload.dataset.chartRows);
     } catch {
@@ -534,6 +537,16 @@ function render(payload) {
     const component = window.Livewire?.find(payload.dataset.chartComponent);
 
     mountNavigator(payload, component);
+
+    // A poll that brought nothing new to this window - most of them, since the
+    // station uploads every ten minutes and a zoomed window never moves - must
+    // not repaint the channels underneath a reader's pointer. The navigator
+    // above has already taken whatever arrived.
+    if (!force && payload.dataset.chartRows === painted) {
+        return;
+    }
+
+    painted = payload.dataset.chartRows;
 
     document.querySelectorAll("[data-channel]").forEach((element) => {
         const channel = CHANNELS.find((candidate) => candidate.key === element.dataset.channel);
@@ -575,17 +588,23 @@ function resize() {
 }
 
 /**
- * Livewire rewrites the payload attribute on every window change.
+ * Livewire rewrites the payload attributes on every window change.
+ *
+ * The navigator's rows are watched as well as the channels': a reader zoomed
+ * into the past holds a window of fixed epochs, so a poll leaves the channel
+ * payload identical while the navigator - which always spans the whole record
+ * - grows a point. Watching only the channels would leave the record ending
+ * wherever the page was opened.
  *
  * Attributes only - never childList. ECharts appends its tooltip to the body
  * and repaints on `setOption`, so an observer watching for added nodes would
  * be re-triggered by the very mount it just ran, and the page would lock up.
  */
 function watchPayload() {
-    new MutationObserver(mount).observe(document.body, {
+    new MutationObserver(() => mount()).observe(document.body, {
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-chart-rows"],
+        attributeFilter: ["data-chart-rows", "data-navigator-rows"],
     });
 }
 
@@ -596,7 +615,8 @@ function watchTheme() {
     new MutationObserver(() => {
         if (dark !== isDark()) {
             dark = isDark();
-            mount();
+            // The rows have not changed, only the palette they are drawn in.
+            mount(true);
         }
     }).observe(document.documentElement, {
         attributes: true,
@@ -610,5 +630,6 @@ document.addEventListener("DOMContentLoaded", () => {
     watchTheme();
 });
 
-document.addEventListener("livewire:navigated", mount);
+// A navigation hands over fresh canvases, so nothing that was painted survives.
+document.addEventListener("livewire:navigated", () => mount(true));
 window.addEventListener("resize", resize);

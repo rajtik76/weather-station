@@ -27,6 +27,7 @@ use UnexpectedValueException;
  * @property-read bool $hasReadings
  * @property-read list<array{t: float, h: float, p: float}> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, min: float, max: float, avg: float}> $metrics
+ * @property-read list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastTransmission
@@ -36,7 +37,7 @@ use UnexpectedValueException;
  * @property-read array{from: string, to: string} $window
  * @property-read bool $isZoomed
  */
-#[Title('Weather Station')]
+#[Title('Station Log')]
 class Dashboard extends Component
 {
     /** Measurements arrive from the ESP32 every 10 minutes. */
@@ -69,6 +70,9 @@ class Dashboard extends Component
 
     /** Below this a zoom would frame fewer readings than make a line. */
     private const int MIN_SPAN_SECONDS = 4 * self::STEP_SECONDS;
+
+    /** How many transmissions the payload tail lists. */
+    private const int RECENT_TRANSMISSIONS = 3;
 
     /**
      * The zoomed window as UTC epoch seconds, or null to follow the preset.
@@ -262,6 +266,43 @@ class Dashboard extends Component
     }
 
     /**
+     * The newest transmissions, in the units the station sent them in.
+     *
+     * Read across the whole table rather than the window, so that zooming into
+     * last spring does not empty the tail. Each row keeps the protocol's fixed
+     * point integers - that is what the endpoint received and what the blob
+     * holds - with the converted figures alongside for the second column.
+     *
+     * @return list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}>
+     */
+    #[Computed]
+    public function recentTransmissions(): array
+    {
+        return array_values(
+            Measurement::query()
+                ->orderByDesc('timestamp')
+                ->limit(self::RECENT_TRANSMISSIONS)
+                ->get()
+                ->map(function (Measurement $measurement): array {
+                    $sentAt = $this->localise($measurement->timestamp);
+
+                    return [
+                        'timestamp' => $measurement->timestamp,
+                        'temperature' => $measurement->data->temperature,
+                        'humidity' => $measurement->data->humidity,
+                        'pressure' => $measurement->data->pressure,
+                        'at' => $sentAt->format('j. n. Y H:i'),
+                        'ago' => $this->ago($sentAt),
+                        't' => round($measurement->data->temperature / 100, 2),
+                        'h' => round($measurement->data->humidity / 100, 2),
+                        'p' => round($measurement->data->pressure / 100, 1),
+                    ];
+                })
+                ->all()
+        );
+    }
+
+    /**
      * Centre and radius of the area shown on the location map.
      *
      * @return array{lat: float, lng: float, radius: int}
@@ -306,24 +347,12 @@ class Dashboard extends Component
         return $this->lastTransmission?->format('j. n. Y H:i');
     }
 
-    /**
-     * Relative wording, which is what tells you at a glance if it is late.
-     *
-     * A reading can be stamped slightly ahead of the server: the station syncs
-     * NTP once and its clock then free-runs on the RTC oscillator through
-     * every deep sleep, which drifts. "4 minutes from now" reads as a broken
-     * page, so anything not yet past is reported as having just landed.
-     */
     #[Computed]
     public function measuredAgo(): ?string
     {
-        if ($this->lastTransmission === null) {
-            return null;
-        }
-
-        return $this->lastTransmission->getTimestamp() > now()->getTimestamp()
-            ? 'just now'
-            : $this->lastTransmission->diffForHumans();
+        return $this->lastTransmission === null
+            ? null
+            : $this->ago($this->lastTransmission);
     }
 
     /** Nothing for three slots running: treat the station as off the air. */
@@ -371,6 +400,21 @@ class Dashboard extends Component
 
         $this->to = min($this->to, now()->getTimestamp());
         $this->from = max(0, min($this->from, $this->to - self::MIN_SPAN_SECONDS));
+    }
+
+    /**
+     * Relative wording, which is what tells you at a glance if it is late.
+     *
+     * A reading can be stamped slightly ahead of the server: the station syncs
+     * NTP once and its clock then free-runs on the RTC oscillator through
+     * every deep sleep, which drifts. "4 minutes from now" reads as a broken
+     * page, so anything not yet past is reported as having just landed.
+     */
+    private function ago(CarbonInterface $moment): string
+    {
+        return $moment->getTimestamp() > now()->getTimestamp()
+            ? 'just now'
+            : $moment->diffForHumans();
     }
 
     /** The same instant, read off the station's clock instead of UTC. */
