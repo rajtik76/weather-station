@@ -42,3 +42,11 @@ The layout resolves through Livewire's default `component_layout => 'layouts::ap
 ECharts owns its DOM, so each channel's container is `wire:ignore` and a morph must never reach it. New data reaches the canvas through a separate `data-chart-rows` element that Livewire does re-render; `station-charts.js` watches that attribute with a MutationObserver and calls `setOption`.
 
 Controls that appear conditionally in the right-aligned toolbar shift everything beside them. Render them always and disable them instead - a button that pops in on first use slides the neighbouring controls out from under the pointer mid-click.
+
+## The dashboard polls, and a zoomed window freezes the charts
+
+`wire:poll.60s` on the dashboard root refreshes the page. No broadcasting: the station uploads once per ten minutes, so Reverb or Pusher would be a websocket server and a dependency for nothing.
+
+Nothing suppresses the poll while a reader is zoomed - the freeze falls out of the design. A zoomed window is a pair of fixed epochs, so the re-query returns the same readings and `data-chart-rows` morphs back identical; an unchanged attribute produces no MutationObserver record, so the canvases are never repainted under the reader.
+
+`station-charts.js` watches `data-navigator-rows` too, because the navigator always spans the whole record and does grow while zoomed. Since one mount serves both, `render()` repaints the channels only when the chart payload actually changed (`painted`), or when `mount(true)` forces it - a theme switch or a Livewire navigation. Do not call `mount` straight from an observer or event listener: the first argument would land in `force`.
