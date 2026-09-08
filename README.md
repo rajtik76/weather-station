@@ -5,8 +5,8 @@
 [![Readings](https://status.rajtik.com/api/badge/18/status?label=readings)](https://status.rajtik.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.md)
 
-A home weather station, end to end. An ESP32 wakes on a timer, reads a BME280,
-and uploads to a Laravel API that stores the readings and draws them.
+A personal weather station, end to end. An ESP32 wakes on a timer, reads a
+BME280, and uploads to a Laravel API that stores the readings and draws them.
 
 ```
 BME280 --I2C--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
@@ -16,20 +16,20 @@ BME280 --I2C--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
-![The dashboard: three channels over a month, with the station's approximate location](docs/dashboard.png)
+![The dashboard: the last three transmissions, a week of the three channels, and the station's approximate location](docs/dashboard.png)
 
 The screenshot is seeded sample data, not measurements - the live station has
-been reporting for days rather than the month the chart covers.
+been reporting for days rather than the month the seeded record covers.
 
 ## Layout
 
-| Path | Contents |
-|---|---|
-| `firmware/` | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md). |
-| `app/Http/` | The ingest endpoint, its form request, and the bearer token middleware. |
-| `app/ValueObject/` | Per-version decoding of a measurement payload. |
-| `resources/views/components/` | The dashboard, one Livewire single-file component. |
-| `.ai/rules/` | Conventions that are not obvious from reading the code. |
+| Path               | Contents                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`        | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md). |
+| `app/Http/`        | The ingest endpoint, its form request, and the bearer token middleware.                                                    |
+| `app/ValueObject/` | Per-version decoding of a measurement payload.                                                                             |
+| `app/Livewire/`    | The dashboard component, with its view in `resources/views/livewire/`.                                                     |
+| `.ai/rules/`       | Conventions that are not obvious from reading the code.                                                                    |
 
 ## API
 
