@@ -2,9 +2,11 @@
 # but nothing in the image builds or runs it.
 firmware/
 
-# Restored inside the image by composer install and npm ci.
+# Restored inside the image by composer install, npm ci and npm run build.
 /vendor/
 /node_modules/
+/public/build/
+/public/hot
 
 # Credentials. Coolify keeps the build-time .env outside the context and hands
 # the container its environment with --env-file, and composer authenticates
@@ -13,6 +15,17 @@ firmware/
 # build never sees them anyway.
 .env
 auth.json
+
+# Local runtime state. A Coolify build never sees these - they are gitignored -
+# but a local docker build would otherwise bake dev-time caches into the image,
+# including a package manifest that still lists require-dev providers. The
+# directories themselves have to stay: artisan needs them to boot.
+/bootstrap/cache/*.php
+/storage/logs/*.log
+/storage/framework/cache/data/**
+/storage/framework/sessions/*
+/storage/framework/views/*.php
+/storage/debugbar/*.json
 
 # Tooling and editor state.
 /.git/
