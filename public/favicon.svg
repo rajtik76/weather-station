@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+    <title>Station Log</title>
+    <rect width="32" height="32" fill="#18181b"/>
+    <g fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="4,10 10,7 16,11 22,6 28,9" stroke="#f59e0b"/>
+    <polyline points="4,17 10,19 16,16 22,20 28,17" stroke="#06b6d4"/>
+    <polyline points="4,25 10,24 16,26 22,23 28,25" stroke="#8b5cf6"/>
+    </g>
+</svg>
