@@ -328,3 +328,14 @@ it('keeps listing the newest transmissions while zoomed into the past', function
 it('polls for readings that arrive while the page is open', function (): void {
     Livewire::test(Dashboard::class)->assertSee('wire:poll.60s', escape: false);
 });
+
+it('serves the station mark as the favicon', function (): void {
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('href="/favicon.svg"', escape: false)
+        ->assertSee('href="/favicon.ico"', escape: false);
+
+    expect(public_path('favicon.svg'))->toBeReadableFile()
+        ->and(public_path('favicon.ico'))->toBeReadableFile()
+        ->and(public_path('apple-touch-icon.png'))->toBeReadableFile();
+});
