@@ -249,7 +249,7 @@
         <section aria-label="Last transmissions" class="border-b border-zinc-900/10 dark:border-white/10">
             <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
                 <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    Last {{ count($this->recentTransmissions) }} measurements · as received
+                    Last {{ count($this->recentTransmissions) }} measurements · when they arrived
                 </p>
                 <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
                     POST /api/v1/measurement · 0,01 °C · 0,01 % · Pa · UTC unix

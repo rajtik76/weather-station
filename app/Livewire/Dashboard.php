@@ -298,6 +298,12 @@ class Dashboard extends Component
      * holds - with the converted figures alongside for the second column, where
      * pressure is the reduced one the rest of the page shows.
      *
+     * The date is `created_at`, when the row reached the server - the reading's
+     * own stamp is already printed in the JSON beside it, and repeating it as
+     * a formatted date would say the same thing twice. Arrival is the other
+     * half of the story: a buffered batch lands minutes or hours after it was
+     * measured, and this is the only place that shows the gap.
+     *
      * @return list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}>
      */
     #[Computed]
@@ -309,15 +315,19 @@ class Dashboard extends Component
                 ->limit(self::RECENT_TRANSMISSIONS)
                 ->get()
                 ->map(function (Measurement $measurement): array {
-                    $sentAt = $this->localise($measurement->timestamp);
+                    // Rows written before the column existed fall back to the
+                    // station's own stamp rather than dropping out of the tail.
+                    $receivedAt = $this->localise(
+                        $measurement->created_at?->getTimestamp() ?? $measurement->timestamp
+                    );
 
                     return [
                         'timestamp' => $measurement->timestamp,
                         'temperature' => $measurement->data->temperature,
                         'humidity' => $measurement->data->humidity,
                         'pressure' => $measurement->data->pressure,
-                        'at' => $sentAt->format('j. n. Y H:i'),
-                        'ago' => $this->ago($sentAt),
+                        'at' => $receivedAt->format('j. n. Y H:i'),
+                        'ago' => $this->ago($receivedAt),
                         't' => round($measurement->data->temperature / 100, 2),
                         'h' => round($measurement->data->humidity / 100, 2),
                         'p' => $this->seaLevelHpa($measurement->data),
@@ -352,6 +362,11 @@ class Dashboard extends Component
     /**
      * When the station last measured anything, across the whole table rather
      * than the window - zooming in must not make the station look silent.
+     *
+     * The station's own stamp, not the row's `created_at`: a lost link buffers
+     * readings on the device and delivers them late, so the arrival of the
+     * newest row says nothing about how long ago the station last read its
+     * sensor. That is the question this answers, and the indicator beside it.
      *
      * This is a real instant, unlike the stamps in the chart payload, so it is
      * the only date here that may be measured against now().
