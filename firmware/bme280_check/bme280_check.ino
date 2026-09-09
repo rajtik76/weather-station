@@ -6,8 +6,8 @@
 #include <Adafruit_BME280.h>
 
 // Must match BME280_SDA_PIN / BME280_SCL_PIN in weather_station.ino.
-#define SDA_PIN 21
-#define SCL_PIN 22
+#define SDA_PIN SDA
+#define SCL_PIN SCL
 
 // Register 0xD0 holds a fixed chip id. It tells a real BME280 apart from
 // a BMP280, which is pin compatible but has no humidity sensor.
