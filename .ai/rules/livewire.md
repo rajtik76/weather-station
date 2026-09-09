@@ -58,3 +58,9 @@ The BME280 sends station pressure, and the record keeps it verbatim - protocol V
 The reduction is hypsometric and uses the reading's own temperature, not the standard atmosphere's fixed 15 °C: at 345 m the difference between a frost and a heatwave is about 6 hPa, and the sensor already measures it.
 
 Consequence for the payload tail: the raw JSON prints station pressure in Pa while the converted column beside it is sea-level hPa. They are meant to differ by ~40 hPa - that is not a bug.
+
+## Thinning by the phase of the epoch misses a drifting station
+
+The station stamps an upload when it wakes, not on the slot, so its timestamps sit a couple of minutes off every multiple of STEP_SECONDS. `whereRaw('timestamp % ? < ?')` only lands on a row while that drift stays under the step, and a record shorter than one bucket holds no such row at all - which is what emptied the navigator on a production database a few hours old.
+
+`overview()` therefore groups (`MIN(timestamp)` per `timestamp / OVERVIEW_BUCKET_SECONDS`) instead, and skips thinning entirely below OVERVIEW_UNTHINNED_ROWS. The window thinning in `readings()` still uses the modulo: its buckets are step-sized, so the current ~2 min drift is harmless there, but a larger one would silently empty the chart the same way.

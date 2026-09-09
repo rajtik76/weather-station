@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\ProtocolVersion;
 use App\Livewire\Dashboard;
 use App\Models\Measurement;
 use App\ValueObject\MeasurementDataV1;
@@ -21,6 +22,14 @@ function chartRows(string $html): string
     preg_match('/data-chart-rows="([^"]*)"/', $html, $matches);
 
     return html_entity_decode($matches[1] ?? '');
+}
+
+/** The navigator's own payload, which always spans the whole record. */
+function navigatorRows(string $html): array
+{
+    preg_match('/data-navigator-rows="([^"]*)"/', $html, $matches);
+
+    return json_decode(html_entity_decode($matches[1] ?? '[]'), true);
 }
 
 it('renders the readings stored in the database', function (): void {
@@ -361,6 +370,42 @@ it('heads the shared strip with a window summary per channel', function (): void
         ->toContain('48,00')
         // Pressure is headed above its own strip, not this one.
         ->not->toContain('Pressure, MSL');
+});
+
+it('draws the navigator for a record shorter than one thinning bucket', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // Three hours of uploads, stamped when the station woke rather than on the
+    // slot - the drift is what a real ESP32 sends. A whole record this short
+    // holds no row at all near a six-hour boundary, and thinning by the phase
+    // of the epoch left the navigator with nothing to draw.
+    foreach (range(1, 18) as $slot) {
+        Measurement::factory()->create([
+            'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
+        ]);
+    }
+
+    expect(navigatorRows(Livewire::test(Dashboard::class)->html()))->toHaveCount(18);
+});
+
+it('thins the navigator to one point per bucket once the record is long', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $data = (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389);
+
+    // Eleven days of ten-minute uploads, drifting off the slot as above. That
+    // is 44 six-hour buckets, and the navigator keeps the first row of each.
+    $rows = collect(range(1, 1584))->map(fn (int $slot): array => [
+        'sensor_name' => 'bme280',
+        'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
+        'protocol_version' => ProtocolVersion::V1->value,
+        'data' => $data,
+    ]);
+
+    Measurement::insert($rows->all());
+
+    expect(navigatorRows(Livewire::test(Dashboard::class)->html()))
+        ->toHaveCount(44);
 });
 
 it('keeps listing the newest transmissions while zoomed into the past', function (): void {

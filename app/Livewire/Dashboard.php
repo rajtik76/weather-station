@@ -12,6 +12,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Date;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -76,6 +77,9 @@ class Dashboard extends Component
 
     /** The navigator spans everything, so it is thinned to one point per bucket. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
+
+    /** Under this the whole record is small enough to draw without thinning. */
+    private const int OVERVIEW_UNTHINNED_ROWS = 1500;
 
     /** Where the page opens, and where "reset" returns to. */
     private const ChartRange DEFAULT_WINDOW = ChartRange::Week;
@@ -168,14 +172,31 @@ class Dashboard extends Component
      * six hours is far below what its few pixels can resolve, which keeps this
      * cheap even once the table runs to years.
      *
+     * The bucket's first row is picked by grouping rather than by the phase of
+     * the epoch: the station stamps an upload when it wakes, not on the slot,
+     * so a modulo window only lands on a row when that drift happens to be
+     * small - and a record shorter than one bucket holds no such row at all.
+     * That is what emptied the navigator on a database a few hours old.
+     *
      * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
      */
     #[Computed]
     public function overview(): array
     {
+        $total = Measurement::query()->count();
+
         return $this->plot(
             Measurement::query()
-                ->whereRaw('timestamp % ? < ?', [self::OVERVIEW_BUCKET_SECONDS, self::STEP_SECONDS])
+                ->when(
+                    $total >= self::OVERVIEW_UNTHINNED_ROWS,
+                    fn (Builder $query): Builder => $query->whereIn(
+                        'timestamp',
+                        fn (QueryBuilder $bucket) => $bucket
+                            ->selectRaw('MIN(timestamp)')
+                            ->from('measurements')
+                            ->groupByRaw('timestamp / ?', [self::OVERVIEW_BUCKET_SECONDS])
+                    )
+                )
                 ->orderBy('timestamp')
                 ->get()
         );
