@@ -27,6 +27,12 @@ export default defineConfig({
                 bunny("Bricolage Grotesque", {
                     weights: [800],
                 }),
+                // Italic only - the serif is the hero's standfirst and nothing
+                // else on the page is set upright in it.
+                bunny("Instrument Serif", {
+                    weights: [400],
+                    styles: ["italic"],
+                }),
             ],
         }),
         tailwindcss(),
