@@ -278,7 +278,7 @@ it('reports when the station last transmitted', function (): void {
 
     $this->get('/')
         ->assertOk()
-        ->assertSee('Last measurement')
+        ->assertSee('Last transmission')
         // 11:48 UTC is 12:48 in Prague, which is still on CET in mid-March.
         ->assertSee('15. 3. 2026 12:48')
         ->assertSee('12 minutes ago');
@@ -346,6 +346,9 @@ it('lists the last three transmissions as the station sent them', function (): v
     foreach ($packets as $packet) {
         Measurement::factory()->create([
             'timestamp' => now()->subMinutes($packet['ago'])->getTimestamp(),
+            // The batch was buffered on the device and landed five minutes ago,
+            // whatever each reading's own stamp says.
+            'created_at' => now()->subMinutes(5),
             'data' => (string) new MeasurementDataV1(
                 temperature: $packet['temperature'],
                 humidity: $packet['humidity'],
@@ -363,11 +366,36 @@ it('lists the last three transmissions as the station sent them', function (): v
         ->assertSee('2112')
         ->assertSee('2087')
         // Converted alongside: 97 389 Pa read at 345 m reduces to 1013,5 hPa at
-        // sea level, stamped in Prague time - 11:50 UTC is 12:50 there in March.
+        // sea level.
         ->assertSee('1 013,5')
-        ->assertSee('15. 3. 2026 12:50')
+        // The date is the arrival, in Prague time - 11:55 UTC is 12:55 there in
+        // March. The reading's own stamp is in the JSON beside it and is not
+        // repeated as a date.
+        ->assertSee('15. 3. 2026 12:55')
+        ->assertDontSee('15. 3. 2026 11:50')
         // A fourth packet, and the oldest of them, has scrolled off the tail.
         ->assertDontSee('1901');
+});
+
+it('dates the tail by arrival while the readout dates the measurement', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // Measured half an hour ago, delivered two minutes ago - the shape of a
+    // batch the station buffered while its link was down.
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(30)->getTimestamp(),
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The readout answers how long the station has been quiet, so it reads the
+    // measurement: 11:30 UTC is 12:30 in Prague.
+    expect(Str::before($html, 'data-chart-rows'))->toContain('15. 3. 2026 12:30')
+        // The tail answers when the row reached the server: 11:58 UTC, 12:58 there.
+        ->and(Str::after($html, 'aria-label="Last transmissions"'))
+        ->toContain('15. 3. 2026 12:58')
+        ->not->toContain('15. 3. 2026 12:30');
 });
 
 it('draws temperature and humidity on one strip and pressure on another', function (): void {
@@ -384,8 +412,8 @@ it('draws temperature and humidity on one strip and pressure on another', functi
         ->toContain('Humidity · %')
         ->toContain('Pressure, MSL · hPa')
         // The payload tail reads as a footnote to the charts, so it follows them.
-        ->and(Str::after($html, 'data-canvas'))->toContain('as received')
-        ->and(Str::before($html, 'data-canvas'))->not->toContain('as received');
+        ->and(Str::after($html, 'data-canvas'))->toContain('when they arrived')
+        ->and(Str::before($html, 'data-canvas'))->not->toContain('when they arrived');
 });
 
 it('puts the navigator above the strips it scrolls', function (): void {

@@ -66,3 +66,11 @@ The chart payload carries two decimals, the sensor's own resolution - it reports
 The station stamps an upload when it wakes, not on the slot, so its timestamps sit a couple of minutes off every multiple of STEP_SECONDS. `whereRaw('timestamp % ? < ?')` only lands on a row while that drift stays under the step, and a record shorter than one bucket holds no such row at all - which is what emptied the navigator on a production database a few hours old.
 
 Both thinning paths therefore go through `Dashboard::firstPerBucket()`, which groups on `MIN(timestamp)` per `timestamp / bucket` and takes the bucket's own first row whatever time it carries. `readings()` bounds the subquery to the window it is already scanning; `overview()` skips thinning entirely below OVERVIEW_UNTHINNED_ROWS, because a record shorter than one bucket would otherwise thin down to a single point.
+
+## Measurement time is the station's stamp; arrival time is created_at
+
+Two different clocks, and the dashboard shows each where it answers something.
+
+`lastMeasurement()` (the status line, and `isSilent`) reads `MAX(timestamp)` - the station's own stamp. A lost link buffers readings in RTC memory and delivers them late, so the newest row's `created_at` says nothing about how long ago the sensor was last read.
+
+The payload tail dates its rows by `created_at` instead. The reading's own stamp is already printed in the JSON beside it, so formatting it again as a date would say the same thing twice; arrival is the other half of the story and the only place the delivery gap shows. Both go through `localise()` - stored stamps are UTC, the page reads Europe/Prague.
