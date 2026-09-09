@@ -493,10 +493,18 @@ class Dashboard extends Component
         });
     }
 
-    /** Station pressure reduced to sea level, in hPa, as everything here shows it. */
+    /**
+     * Station pressure reduced to sea level, in hPa, as everything here shows it.
+     *
+     * Two decimals is the sensor's own resolution - it reports whole pascals -
+     * and the chart needs all of it. A day of weather moves the line by a
+     * couple of hPa, the strip's axis scales to whatever it finds, so rounding
+     * to tenths drew the curve as a staircase a fifteenth of the strip high.
+     * The readouts and the payload tail print a tenth of what this returns.
+     */
     private function seaLevelHpa(MeasurementData $data): float
     {
-        return SeaLevelPressure::reduce($data, self::ALTITUDE_METRES)->hectopascals();
+        return SeaLevelPressure::reduce($data, self::ALTITUDE_METRES)->hectopascals(2);
     }
 
     /**

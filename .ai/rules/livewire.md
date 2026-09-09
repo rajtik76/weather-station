@@ -59,6 +59,8 @@ The reduction is hypsometric and uses the reading's own temperature, not the sta
 
 Consequence for the payload tail: the raw JSON prints station pressure in Pa while the converted column beside it is sea-level hPa. They are meant to differ by ~40 hPa - that is not a bug.
 
+The chart payload carries two decimals, the sensor's own resolution - it reports whole pascals. The pressure strip's axis scales to whatever the window holds, and a day of weather is a couple of hPa, so tenths drew the line as a staircase. The hero readouts and the payload tail still print a tenth.
+
 ## Thinning by the phase of the epoch misses a drifting station
 
 The station stamps an upload when it wakes, not on the slot, so its timestamps sit a couple of minutes off every multiple of STEP_SECONDS. `whereRaw('timestamp % ? < ?')` only lands on a row while that drift stays under the step, and a record shorter than one bucket holds no such row at all - which is what emptied the navigator on a production database a few hours old.

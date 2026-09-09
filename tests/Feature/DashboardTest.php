@@ -199,6 +199,25 @@ it('thins a window whose stamps never land near a bucket boundary', function ():
         ->not->toContain('1772328300000');
 });
 
+it('plots pressure at the sensor\'s own resolution', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2134, humidity: 5000, pressure: 97400),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The strip's axis scales to whatever the window holds, and a day of
+    // weather is a couple of hPa, so tenths drew the line as a staircase. The
+    // station reports whole pascals, which is a hundredth of a hectopascal.
+    expect(chartRows($html))->toContain('1013.62');
+
+    // The readouts and the payload tail still print a tenth of it.
+    expect($html)->toContain('1 013,6');
+});
+
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
