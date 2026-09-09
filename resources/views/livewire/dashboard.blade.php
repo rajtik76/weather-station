@@ -46,24 +46,30 @@
     </div>
 
     {{-- ── Hero: title + giant readouts ───────────────────────────── --}}
-    <header class="border-b border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
-        <div class="flex flex-wrap items-start justify-between gap-x-16 gap-y-10">
+    <header class="border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
+        {{-- One threshold rules the layout and the alignment together. With
+             `flex-wrap` the two disagreed: the row broke where the content
+             stopped fitting, around 1115px, while `lg:` turned the readouts
+             right-aligned at 1024px - so between the two they sat under the
+             hero and still hung off the right of their own block. Wrapping is
+             gone, so the readouts either stand beside the text or start under
+             it flush left, with nothing in between. --}}
+        <div class="flex flex-col gap-x-16 gap-y-10 min-[1120px]:flex-row min-[1120px]:items-start min-[1120px]:justify-between">
             <div>
                 <flux:heading level="1" class="font-display text-[clamp(3.5rem,12.5vw,11.5rem)]! leading-[0.78] font-extrabold! tracking-[-0.03em] uppercase">
                     Station<br>Log
                 </flux:heading>
-                <flux:text class="mt-6 max-w-sm text-sm">
-                    A BME280 on an ESP32 reads temperature, humidity and station
-                    pressure, uploads them over WiFi and sleeps until the next
-                    slot - ten minutes later, around the clock. Every point on
-                    the chart is a raw record, nothing smoothed and nothing
-                    averaged. The longer ranges thin the series out rather than
-                    average it, so what you see stays a real reading.
+                {{-- Instrument Serif runs small and open beside the sans, so the
+                     standfirst is set a step larger to hold the same weight on
+                     the page. --}}
+                <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
+                    A BME280 on an ESP32 reads temperature, humidity and pressure every ten minutes, around the clock. Every point is a raw
+                    record, never averaged. Pressure is measured at 345 m and shown reduced to mean sea level.
                 </flux:text>
             </div>
 
             @if ($this->hasReadings)
-            <div class="flex flex-col items-start gap-8 lg:items-end lg:text-right" aria-label="Current conditions">
+            <div class="flex flex-col items-start gap-8 min-[1120px]:items-end min-[1120px]:text-right" aria-label="Current conditions">
                 @foreach ([
                     ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'text-amber-600'],
                     ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600'],
@@ -71,7 +77,7 @@
                 ] as $readout)
                     @php($m = $this->metrics[$readout['key']])
                     <div>
-                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase lg:justify-end dark:text-zinc-400">
+                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase min-[1120px]:justify-end dark:text-zinc-400">
                             {{ $readout['label'] }}
                             {{-- The trend carries the channel's own colour, so the
                                  figure reads as belonging to the unit beside it. --}}

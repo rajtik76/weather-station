@@ -13,6 +13,9 @@
         "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+    /* Instrument Serif is the companion to Instrument Sans above, so the
+       standfirst reads as the same voice in a different register. */
+    --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
 
     /* The link indicator draws a breath rather than a blink: the station is
        alive between uploads, not signalling one. */
