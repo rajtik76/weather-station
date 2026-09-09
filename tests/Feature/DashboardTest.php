@@ -6,6 +6,7 @@ use App\Livewire\Dashboard;
 use App\Models\Measurement;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 /**
@@ -308,6 +309,58 @@ it('lists the last three transmissions as the station sent them', function (): v
         ->assertSee('15. 3. 2026 12:50')
         // A fourth packet, and the oldest of them, has scrolled off the tail.
         ->assertDontSee('1901');
+});
+
+it('draws temperature and humidity on one strip and pressure on another', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // Two canvases, three headers: the shared strip reports each channel
+    // against its own unit above the one grid they are drawn on.
+    expect(substr_count($html, 'data-canvas'))->toBe(2)
+        ->and(substr_count($html, 'data-strip="th"'))->toBe(1)
+        ->and(substr_count($html, 'data-strip="p"'))->toBe(1)
+        ->and($html)->toContain('Temperature · °C')
+        ->toContain('Humidity · %')
+        ->toContain('Pressure, MSL · hPa')
+        // The payload tail reads as a footnote to the charts, so it follows them.
+        ->and(Str::after($html, 'data-canvas'))->toContain('as received')
+        ->and(Str::before($html, 'data-canvas'))->not->toContain('as received');
+});
+
+it('puts the navigator above the strips it scrolls', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // It sets the window rather than reporting one, so it belongs with the
+    // range switcher: below the strips a drag would move a grid that had
+    // scrolled off the screen. Matched on the section label, because
+    // `data-navigator-rows` in the payload would otherwise be the first hit.
+    expect(Str::before($html, 'aria-label="Whole record"'))->toContain('Range')
+        ->not->toContain('data-strip=')
+        ->and(Str::after($html, 'aria-label="Whole record"'))->toContain('data-strip="th"');
+});
+
+it('heads the shared strip with a window summary per channel', function (): void {
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The hero above also prints the current reading, so the assertion is
+    // pinned to the band between the chart payload and the strip's canvas.
+    $headers = Str::before(Str::after($html, 'data-chart-rows'), 'data-strip="th"');
+
+    expect($headers)->toContain('Temperature · °C')
+        ->toContain('Humidity · %')
+        ->toContain('21,50')
+        ->toContain('48,00')
+        // Pressure is headed above its own strip, not this one.
+        ->not->toContain('Pressure, MSL');
 });
 
 it('keeps listing the newest transmissions while zoomed into the past', function (): void {
