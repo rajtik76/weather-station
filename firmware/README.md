@@ -13,30 +13,59 @@ BME280 --I2C--> ESP32 --HTTPS--> Laravel API
 
 ## Hardware
 
-ESP32 DevKit (WROOM) and a BME280 breakout.
+DFRobot FireBeetle 2 ESP32-C6 (DFR1075) and a BME280 breakout.
 
-| BME280 | ESP32  |
-| ------ | ------ |
-| VIN    | 3V3    |
-| GND    | GND    |
-| SDA    | GPIO21 |
-| SCL    | GPIO22 |
+The whole sensor goes to the four-pad group boxed on the silkscreen next to
+the battery connector - `VIN` sits outside that box and is a supply input, not
+part of it.
+
+| BME280 | FireBeetle 2 C6 | GPIO   |
+| ------ | --------------- | ------ |
+| VIN    | 3V3             | -      |
+| GND    | GND             | -      |
+| SCL    | SCL             | GPIO20 |
+| SDA    | SDA             | GPIO19 |
+
+Those are the hardware I2C pads, not numbered D pins. The sketch takes the
+numbers from the board variant through the `SDA` / `SCL` symbols, so
+`BME280_SDA_PIN` / `BME280_SCL_PIN` only need editing to move the sensor
+elsewhere.
 
 `SDO` and `CSB` can stay unconnected on a breakout - it straps them, and the
-firmware probes both 0x76 and 0x77. Pins are `BME280_SDA_PIN` /
-`BME280_SCL_PIN`.
+firmware probes both 0x76 and 0x77.
 
 BMP280 modules are pin compatible, frequently sold as BME280, and have no
 humidity sensor. `bme280_check` reads the chip id and says which one is on the
 bus.
 
-Deep sleep on this board draws ~15 mA. That is the on-board regulator and the
-USB-serial chip, not the ESP32, and it rules the DevKit out for battery use.
+The C6 is a RISC-V part, so this needs ESP32 core 3.x. This board carries a
+LiPo connector and a charger and is built to sleep on battery, unlike the
+DevKit this firmware started on, whose regulator and USB-serial chip drew
+~15 mA asleep.
+
+### The serial port comes and goes
+
+There is no USB-serial chip here. The port is the C6's own USB peripheral, and
+deep sleep powers it down, so `/dev/cu.usbmodem*` disappears entirely for the
+ten minutes between wakeups and comes back for the few seconds the board is
+awake. An empty serial monitor and a port that is not in the list are the
+normal state of a working station, not a failed flash - the factory demo
+sketch keeps the port up only because it never sleeps.
+
+Two consequences worth knowing before debugging one of them for an hour:
+
+- The log is printed before a monitor can reopen the port after a reset, so it
+  would be lost. A cold boot waits up to `USB_ATTACH_TIMEOUT_MS` for a monitor
+  to attach before it prints. A timer wakeup does not wait - nobody is
+  listening on the balcony.
+- Flashing needs the port to exist when `esptool` starts. Once the board is
+  asleep, hold `BOOT`, tap `RST`, then release `BOOT`: the chip stays in the
+  bootloader, the port stays up, and the upload has something to talk to.
 
 ### LED signal
 
-The on-board LED on GPIO2 (`LED_PIN`) blinks three times, briefly, on two
-occasions only:
+The on-board LED on GPIO15 (`LED_PIN`, pad `D13`) blinks three times, briefly,
+on two occasions only:
 
 - when the board is powered up or reset, before anything else runs
 - when the server first accepts an upload after that
@@ -49,8 +78,15 @@ are for. The serial log says what failed.
 
 ## Build
 
-Arduino IDE, board _ESP32 Dev Module_. Needs `Adafruit BME280 Library` and
-`ArduinoJson` v7.
+Arduino IDE, board _DFRobot FireBeetle 2 ESP32-C6_ from ESP32 core 3.x. Needs
+`Adafruit BME280 Library` and `ArduinoJson` v7.
+
+Set _USB CDC On Boot_ to _Enabled_. It ships disabled, which points `Serial`
+at UART0 on GPIO16/17 - the sketch then builds and runs, but the log goes to
+pins nothing is connected to and the serial monitor stays empty.
+
+The image fills 89% of the default 1.2 MB app partition. If a change pushes it
+over, _Minimal (1.3MB APP)_ buys the room back.
 
 ```
 cp secrets.example.h secrets.h

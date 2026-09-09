@@ -18,12 +18,13 @@
 
 #define DEVICE_ID "sensor-001"
 
-// ESP32 defaults - change to match the wiring.
-#define BME280_SDA_PIN 21
-#define BME280_SCL_PIN 22
+// Hardware I2C of the FireBeetle 2 ESP32-C6, silkscreened SDA/SCL
+// (GPIO19 / GPIO20). Change to match the wiring.
+#define BME280_SDA_PIN SDA
+#define BME280_SCL_PIN SCL
 
-// On-board LED of the ESP32 DevKit. Change to match the wiring.
-#define LED_PIN 2
+// On-board LED of the FireBeetle 2 ESP32-C6, GPIO15, shared with pad D13.
+#define LED_PIN LED_BUILTIN
 
 // Time for the die to shed the heat begin() puts into it. See bme280Begin().
 #define BME280_SETTLE_MS 500
@@ -41,6 +42,9 @@ static const uint64_t MIN_SLEEP_US = 10ULL * 1000000ULL;                 // safe
 static const uint8_t LED_OK_BLINKS = 3;
 static const uint16_t LED_OK_MS = 120;
 static const uint16_t LED_GAP_MS = 200;
+
+// How long a cold boot waits for a serial monitor to open the port. See setup().
+static const uint32_t USB_ATTACH_TIMEOUT_MS = 3000;
 
 static const uint32_t WIFI_FAST_TIMEOUT_MS = 5000;   // known AP, no scan
 static const uint32_t WIFI_SCAN_TIMEOUT_MS = 15000;  // full scan fallback
@@ -341,14 +345,34 @@ static void sleepUntilNextMeasurement() {
 // ---------------------------------------------------------------- cycle
 
 void setup() {
-  Serial.begin(115200);
-
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
-
   // Waking on the timer is the ordinary case; anything else means the board
   // was just powered up or reset.
   const bool coldBoot = esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER;
+
+  Serial.begin(115200);
+
+#if ARDUINO_USB_CDC_ON_BOOT
+  // A CDC write blocks until the host drains it, and on the balcony there is
+  // no host - every line would then stall the wakeup for the whole tx
+  // timeout. Zero means write and move on.
+  Serial.setTxTimeoutMs(0);
+
+  // There is no USB-serial chip on this board: the port is the CPU's own USB
+  // peripheral, so it is gone while the board sleeps and reappears on the
+  // next wakeup, and the monitor needs a moment to reopen it after a reset.
+  // Without this the whole log is written before anyone is listening and the
+  // monitor shows an empty screen. Cold boot only - a timer wakeup would sit
+  // here waiting for a host that is not there.
+  if (coldBoot) {
+    uint32_t start = millis();
+    while (!Serial && millis() - start < USB_ATTACH_TIMEOUT_MS) {
+      delay(10);
+    }
+  }
+#endif
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   if (coldBoot) {
     // RTC memory holds garbage after a power loss, so the flag is set rather
