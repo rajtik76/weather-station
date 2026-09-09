@@ -67,7 +67,7 @@
                 @foreach ([
                     ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'text-amber-600'],
                     ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600'],
-                    ['key' => 'p', 'label' => 'Pressure', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-500'],
+                    ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-500'],
                 ] as $readout)
                     @php($m = $this->metrics[$readout['key']])
                     <div>
@@ -135,7 +135,7 @@
                         <span>{{ $packet['at'] }}</span>
                         <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
                         <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
-                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa</span>
+                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa MSL</span>
                         <span class="hidden md:inline">{{ $packet['ago'] }}</span>
                     </p>
                 </div>
@@ -203,7 +203,7 @@
     @php($channels = [
         ['channel' => 'CH1', 'key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'height' => 'h-72 sm:h-80'],
         ['channel' => 'CH2', 'key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'height' => 'h-48 sm:h-56'],
-        ['channel' => 'CH3', 'key' => 'p', 'label' => 'Pressure', 'unit' => 'hPa', 'dec' => 1, 'height' => 'h-48 sm:h-56'],
+        ['channel' => 'CH3', 'key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'height' => 'h-48 sm:h-56'],
     ])
 
     {{-- The chart payload. station-charts.js watches these attributes, which is

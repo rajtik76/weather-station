@@ -6,6 +6,8 @@ namespace App\Livewire;
 
 use App\Enums\ChartRange;
 use App\Models\Measurement;
+use App\ValueObject\MeasurementData;
+use App\ValueObject\SeaLevelPressure;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -55,6 +57,16 @@ class Dashboard extends Component
     private const float LATITUDE = 49.733242;
 
     private const float LONGITUDE = 13.399911;
+
+    /**
+     * Height of the sensor above sea level, in metres.
+     *
+     * The BME280 reads the pressure where it hangs, some 40 hPa below what a
+     * forecast quotes. Every figure on this page is reduced to sea level with
+     * this height so it can be compared against one; the stored reading stays
+     * as the station sent it. See SeaLevelPressure.
+     */
+    private const float ALTITUDE_METRES = 345.0;
 
     /** The map draws this radius as a circle, with nothing marking its centre. */
     private const int LOCATION_RADIUS_METRES = 800;
@@ -232,7 +244,7 @@ class Dashboard extends Component
                 ->map(fn (Measurement $measurement): array => [
                     't' => round($measurement->data->temperature / 100, 2),
                     'h' => round($measurement->data->humidity / 100, 2),
-                    'p' => round($measurement->data->pressure / 100, 1),
+                    'p' => $this->seaLevelHpa($measurement->data),
                 ])
                 ->all()
         );
@@ -271,7 +283,8 @@ class Dashboard extends Component
      * Read across the whole table rather than the window, so that zooming into
      * last spring does not empty the tail. Each row keeps the protocol's fixed
      * point integers - that is what the endpoint received and what the blob
-     * holds - with the converted figures alongside for the second column.
+     * holds - with the converted figures alongside for the second column, where
+     * pressure is the reduced one the rest of the page shows.
      *
      * @return list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}>
      */
@@ -295,7 +308,7 @@ class Dashboard extends Component
                         'ago' => $this->ago($sentAt),
                         't' => round($measurement->data->temperature / 100, 2),
                         'h' => round($measurement->data->humidity / 100, 2),
-                        'p' => round($measurement->data->pressure / 100, 1),
+                        'p' => $this->seaLevelHpa($measurement->data),
                     ];
                 })
                 ->all()
@@ -440,12 +453,18 @@ class Dashboard extends Component
         return ($timestamp + $this->localise($timestamp)->utcOffset() * 60) * 1000;
     }
 
+    /** Station pressure reduced to sea level, in hPa, as everything here shows it. */
+    private function seaLevelHpa(MeasurementData $data): float
+    {
+        return SeaLevelPressure::reduce($data, self::ALTITUDE_METRES)->hectopascals();
+    }
+
     /**
      * Chart rows for a set of measurements, oldest first.
      *
      * Columns hold the raw protocol units (see ProtocolVersion::V1):
      * temperature and humidity in hundredths, pressure in pascals. The chart
-     * wants °C, % and hPa.
+     * wants °C, % and hPa reduced to sea level.
      *
      * @param  Collection<int, Measurement>  $measurements
      * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
@@ -458,7 +477,7 @@ class Dashboard extends Component
                     $this->wallClockMs($measurement->timestamp),
                     round($measurement->data->temperature / 100, 2),
                     round($measurement->data->humidity / 100, 2),
-                    round($measurement->data->pressure / 100, 1),
+                    $this->seaLevelHpa($measurement->data),
                     $measurement->timestamp,
                 ])
                 ->all()

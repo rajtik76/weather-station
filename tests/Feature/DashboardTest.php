@@ -28,16 +28,17 @@ it('renders the readings stored in the database', function (): void {
     Measurement::factory()->create([
         'sensor_name' => 'bme280',
         'timestamp' => $at->getTimestamp(),
-        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 101300),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
     ]);
 
     $this->get('/')
         ->assertOk()
         // Raw units are converted for display, keeping the sensor's two decimals:
-        // 2150 -> 21,50 °C, 4800 -> 48,00 %, 101300 Pa -> 1013,0 hPa.
+        // 2150 -> 21,50 °C, 4800 -> 48,00 %. Pressure is also reduced to sea
+        // level, so 97 389 Pa read at 345 m and 21,50 °C shows as 1013,5 hPa.
         ->assertSee('21,50')
         ->assertSee('48,00')
-        ->assertSee('1 013,0')
+        ->assertSee('1 013,5')
         ->assertDontSee('Waiting for the first reading');
 });
 
@@ -301,9 +302,9 @@ it('lists the last three transmissions as the station sent them', function (): v
         ->assertSee('97389')
         ->assertSee('2112')
         ->assertSee('2087')
-        // Converted alongside: 97 389 Pa is 973,9 hPa, stamped in Prague time -
-        // 11:50 UTC is 12:50 there in March.
-        ->assertSee('973,9')
+        // Converted alongside: 97 389 Pa read at 345 m reduces to 1013,5 hPa at
+        // sea level, stamped in Prague time - 11:50 UTC is 12:50 there in March.
+        ->assertSee('1 013,5')
         ->assertSee('15. 3. 2026 12:50')
         // A fourth packet, and the oldest of them, has scrolled off the tail.
         ->assertDontSee('1901');
