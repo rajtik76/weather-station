@@ -52,12 +52,12 @@ class Dashboard extends Component
     private const string DISPLAY_TIMEZONE = 'Europe/Prague';
 
     /** Sensor location: Galerie Slovany, náměstí Generála Píky, Plzeň-Slovany. */
-    private const float LATITUDE = 49.732343;
+    private const float LATITUDE = 49.733242;
 
-    private const float LONGITUDE = 13.400984;
+    private const float LONGITUDE = 13.399911;
 
     /** The map draws this radius as a circle, with nothing marking its centre. */
-    private const int LOCATION_RADIUS_METRES = 500;
+    private const int LOCATION_RADIUS_METRES = 800;
 
     /** Two missed slots, and the station is down rather than merely late. */
     private const int SILENT_AFTER_SECONDS = 3 * self::STEP_SECONDS;

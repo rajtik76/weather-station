@@ -339,3 +339,10 @@ it('serves the station mark as the favicon', function (): void {
         ->and(public_path('favicon.ico'))->toBeReadableFile()
         ->and(public_path('apple-touch-icon.png'))->toBeReadableFile();
 });
+
+it('hands the map the station area to draw', function (): void {
+    Livewire::test(Dashboard::class)
+        ->assertSee('data-lat="49.733242"', escape: false)
+        ->assertSee('data-lng="13.399911"', escape: false)
+        ->assertSee('data-radius="800"', escape: false);
+});
