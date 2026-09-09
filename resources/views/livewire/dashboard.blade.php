@@ -96,6 +96,148 @@
         </div>
     </header>
 
+    {{-- ── Range switcher ─────────────────────────────────────────── --}}
+    {{-- The chart controls open a new block of the page, so they stand off the
+         hero above instead of stacking flush against it. --}}
+    <section
+        aria-label="Chart range"
+        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
+    >
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Range
+            </p>
+            <p class="font-mono text-xs whitespace-nowrap text-zinc-500 tabular-nums dark:text-zinc-400">
+                {{ $this->window['from'] }} → {{ $this->window['to'] }}
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+            {{-- Always rendered, only disabled: appearing on the first zoom
+                 would widen this right-aligned group and shift what sits
+                 beside it out from under the pointer mid-click. --}}
+            <flux:button
+                wire:click="resetZoom"
+                :disabled="! $this->isZoomed"
+                variant="subtle"
+                size="sm"
+            >Reset zoom</flux:button>
+
+        </div>
+    </section>
+
+    {{-- ── Navigator ──────────────────────────────────────────────── --}}
+    {{-- Above the strips, with the range switcher: it sets the window rather
+         than reporting one, and the two do the same job. Below the strips it
+         sat some 700 px under the first grid, so a drag moved a chart that was
+         off the screen. --}}
+    <section
+        aria-label="Whole record"
+        class="border-b border-zinc-900/10 px-4 pb-3 sm:px-8 dark:border-white/10"
+    >
+        <div
+            wire:ignore
+            data-navigator
+            class="h-20 w-full"
+            role="img"
+            aria-label="The whole record, with the shown window marked. Drag its edges to move through time."
+        ></div>
+    </section>
+
+    {{-- ── Channel strips ─────────────────────────────────────────── --}}
+    @unless ($this->hasReadings)
+        <section aria-label="No data" class="border-b border-zinc-900/10 px-4 py-12 text-center sm:px-8 dark:border-white/10">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Nothing in this range
+            </p>
+            <flux:text class="mx-auto mt-4 max-w-sm text-sm">
+                No reading was recorded between {{ $this->window['from'] }} and
+                {{ $this->window['to'] }}. Pick a wider range, or reset the zoom.
+            </flux:text>
+        </section>
+    @endunless
+
+    {{-- Temperature and humidity share a strip: they move against each other,
+         and two value axes stay readable where three did not. Pressure keeps
+         its own - a 40 hPa spread would draw as a flat line beside them. --}}
+    @php($strips = [
+        [
+            'key' => 'th',
+            'label' => 'Temperature & humidity',
+            'height' => 'h-72 sm:h-80',
+            'channels' => [
+                ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'bg-amber-600 dark:bg-amber-500'],
+                ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'bg-cyan-600 dark:bg-cyan-400'],
+            ],
+        ],
+        [
+            'key' => 'p',
+            'label' => 'Pressure, MSL',
+            'height' => 'h-48 sm:h-56',
+            'channels' => [
+                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'bg-violet-600 dark:bg-violet-500'],
+            ],
+        ],
+    ])
+
+    {{-- The chart payload. station-charts.js watches these attributes, which is
+         how a new window reaches canvases that Livewire must not touch. --}}
+    <div
+        data-chart-rows="{{ json_encode($this->readings) }}"
+        data-navigator-rows="{{ json_encode($this->overview) }}"
+        data-window-from="{{ $this->windowMs['from'] }}"
+        data-window-to="{{ $this->windowMs['to'] }}"
+        data-chart-component="{{ $this->getId() }}"
+        hidden
+    ></div>
+
+    @foreach ($strips as $strip)
+        <section
+            aria-label="{{ $strip['label'] }} history"
+            class="border-b border-zinc-900/10 dark:border-white/10"
+        >
+            {{-- One header row per channel, so a shared strip still reports each
+                 series against its own unit. The dot carries the line's colour,
+                 which is what tells the two value axes apart. --}}
+            <div class="px-4 pt-5 pb-2 sm:px-8">
+                @foreach ($strip['channels'] as $channel)
+                    @php($m = $this->metrics[$channel['key']] ?? null)
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 not-first:mt-1">
+                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                            <span class="{{ $channel['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
+                            {{ $channel['label'] }} · {{ $channel['unit'] }}
+                        </p>
+                        <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                            @if ($m)
+                                window · min {{ number_format($m['min'], $channel['dec'], ',', ' ') }}
+                                · max {{ number_format($m['max'], $channel['dec'], ',', ' ') }}
+                                · avg {{ number_format($m['avg'], $channel['dec'], ',', ' ') }}
+                            @else
+                                no readings in this window
+                            @endif
+                        </p>
+                    </div>
+                @endforeach
+            </div>
+
+            {{-- `wire:ignore` because ECharts owns everything below this point;
+                 a morph would tear the canvas out from under it. --}}
+            <div
+                wire:ignore
+                data-strip="{{ $strip['key'] }}"
+                class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
+            >
+                <div data-canvas class="absolute inset-0"></div>
+                <div
+                    data-zoom-band
+                    hidden
+                    aria-hidden="true"
+                    class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
+                ></div>
+            </div>
+        </section>
+    @endforeach
+
     {{-- ── Payload tail ───────────────────────────────────────────── --}}
     @if ($this->recentTransmissions !== [])
         <section aria-label="Last transmissions" class="border-b border-zinc-900/10 dark:border-white/10">
@@ -112,7 +254,7 @@
                 <div
                     @class([
                         'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
-                        // The newest packet is the one the readouts above are showing.
+                        // The newest packet is the one the hero readouts are showing.
                         'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
                     ])
                 >
@@ -142,119 +284,6 @@
             @endforeach
         </section>
     @endif
-
-    {{-- ── Range switcher ─────────────────────────────────────────── --}}
-    {{-- The chart controls open a new block of the page, so they stand off the
-         transmission tail above instead of stacking flush against it. --}}
-    <section
-        aria-label="Chart range"
-        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
-    >
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Range
-            </p>
-            <p class="font-mono text-xs whitespace-nowrap text-zinc-500 tabular-nums dark:text-zinc-400">
-                {{ $this->window['from'] }} → {{ $this->window['to'] }}
-            </p>
-        </div>
-
-        <div class="flex items-center gap-2">
-            {{-- Always rendered, only disabled: appearing on the first zoom
-                 would widen this right-aligned group and shift what sits
-                 beside it out from under the pointer mid-click. --}}
-            <flux:button
-                wire:click="resetZoom"
-                :disabled="! $this->isZoomed"
-                variant="subtle"
-                size="sm"
-            >Reset zoom</flux:button>
-
-        </div>
-    </section>
-
-    {{-- ── Navigator ──────────────────────────────────────────────── --}}
-    <section
-        aria-label="Whole record"
-        class="border-b border-zinc-900/10 px-4 pb-3 sm:px-8 dark:border-white/10"
-    >
-        <div
-            wire:ignore
-            data-navigator
-            class="h-20 w-full"
-            role="img"
-            aria-label="The whole record, with the shown window marked. Drag its edges to move through time."
-        ></div>
-    </section>
-
-    {{-- ── Channel strips ─────────────────────────────────────────── --}}
-    @unless ($this->hasReadings)
-        <section aria-label="No data" class="border-b border-zinc-900/10 px-4 py-12 text-center sm:px-8 dark:border-white/10">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Nothing in this range
-            </p>
-            <flux:text class="mx-auto mt-4 max-w-sm text-sm">
-                No reading was recorded between {{ $this->window['from'] }} and
-                {{ $this->window['to'] }}. Pick a wider range, or reset the zoom.
-            </flux:text>
-        </section>
-    @endunless
-
-    @php($channels = [
-        ['channel' => 'CH1', 'key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'height' => 'h-72 sm:h-80'],
-        ['channel' => 'CH2', 'key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'height' => 'h-48 sm:h-56'],
-        ['channel' => 'CH3', 'key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'height' => 'h-48 sm:h-56'],
-    ])
-
-    {{-- The chart payload. station-charts.js watches these attributes, which is
-         how a new window reaches canvases that Livewire must not touch. --}}
-    <div
-        data-chart-rows="{{ json_encode($this->readings) }}"
-        data-navigator-rows="{{ json_encode($this->overview) }}"
-        data-window-from="{{ $this->windowMs['from'] }}"
-        data-window-to="{{ $this->windowMs['to'] }}"
-        data-chart-component="{{ $this->getId() }}"
-        hidden
-    ></div>
-
-    @foreach ($channels as $strip)
-        @php($m = $this->metrics[$strip['key']] ?? null)
-        <section
-            aria-label="{{ $strip['label'] }} history"
-            class="border-b border-zinc-900/10 dark:border-white/10"
-        >
-            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
-                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    {{ $strip['channel'] }} · {{ $strip['label'] }} · {{ $strip['unit'] }}
-                </p>
-                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    @if ($m)
-                        window · min {{ number_format($m['min'], $strip['dec'], ',', ' ') }}
-                        · max {{ number_format($m['max'], $strip['dec'], ',', ' ') }}
-                        · avg {{ number_format($m['avg'], $strip['dec'], ',', ' ') }}
-                    @else
-                        no readings in this window
-                    @endif
-                </p>
-            </div>
-
-            {{-- `wire:ignore` because ECharts owns everything below this point;
-                 a morph would tear the canvas out from under it. --}}
-            <div
-                wire:ignore
-                data-channel="{{ $strip['key'] }}"
-                class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
-            >
-                <div data-canvas class="absolute inset-0"></div>
-                <div
-                    data-zoom-band
-                    hidden
-                    aria-hidden="true"
-                    class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
-                ></div>
-            </div>
-        </section>
-    @endforeach
 
     {{-- ── Site location ──────────────────────────────────────────── --}}
     <section aria-label="Station location" class="border-b border-zinc-900/10 dark:border-white/10">

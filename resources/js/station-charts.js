@@ -20,12 +20,12 @@ echarts.use([
 ]);
 
 /**
- * The three channel charts.
+ * The channel charts.
  *
- * One ECharts instance per channel, joined into a group so that the crosshair
- * and the zoom track together. Each chart draws a single series but its
- * tooltip reads every channel, so hovering anywhere reports the whole station
- * at that instant.
+ * One ECharts instance per strip, joined into a group so that the crosshair
+ * and the zoom track together. A strip may carry more than one channel, but
+ * every tooltip reads all of them, so hovering anywhere reports the whole
+ * station at that instant.
  *
  * Dragging across a chart selects a window; releasing hands the two real
  * timestamps back to Livewire, which re-queries at a resolution that suits the
@@ -43,6 +43,21 @@ const CHANNELS = [
     { key: "t", label: "Temperature", unit: "°C", decimals: 2 },
     { key: "h", label: "Humidity", unit: "%", decimals: 2 },
     { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 1 },
+];
+
+const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
+
+/**
+ * How the channels are distributed over the canvases.
+ *
+ * Temperature and humidity sit together because they run against each other -
+ * the pair is the reading, not two of them. Pressure spans some 40 hPa around
+ * 1013, so on a shared axis it is a flat line and on its own axis it would be
+ * a third one; it keeps its own strip instead.
+ */
+const STRIPS = [
+    { key: "th", channels: ["t", "h"] },
+    { key: "p", channels: ["p"] },
 ];
 
 /**
@@ -68,6 +83,16 @@ const TIME_LABELS = {
 
 /** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, real epoch seconds. */
 const COLUMN = { time: 0, t: 1, h: 2, p: 3, epoch: 4 };
+
+/**
+ * Plot-area margins, shared by every canvas.
+ *
+ * The strips are connected and stack under one navigator, so their time axes
+ * have to start and end on the same pixel. The right-hand margin is the width
+ * a second value axis needs, and the pressure strip - which has no such axis -
+ * keeps it empty rather than letting its axis run wider than the one above.
+ */
+const GRID_SIDES = { left: 64, right: 64 };
 
 const charts = new Map();
 
@@ -216,15 +241,16 @@ function tooltipHtml(params) {
     return heading + lines;
 }
 
-function optionFor(channel) {
+function optionFor(strip) {
     const colours = palette();
+    const channels = strip.channels.map(channelFor);
 
     return {
         animation: false,
         // Stamps carry the station's local offset already; reading them as UTC
         // is what keeps the axis on Czech time for every viewer.
         useUTC: true,
-        grid: { left: 64, right: 16, top: 12, bottom: 28 },
+        grid: { ...GRID_SIDES, top: 12, bottom: 28 },
         tooltip: {
             trigger: "axis",
             appendToBody: true,
@@ -245,22 +271,29 @@ function optionFor(channel) {
             },
             splitLine: { show: true, lineStyle: { color: colours.grid } },
         },
-        yAxis: {
+        // The axis labels carry their series' colour: with two units on one
+        // grid, that is what says which line is read against which side.
+        yAxis: channels.map((entry, index) => ({
             type: "value",
             scale: true,
-            axisLabel: { color: colours.label, fontSize: 10 },
-            splitLine: { lineStyle: { color: colours.grid } },
-        },
-        series: [
-            {
-                type: "line",
-                name: channel.label,
-                showSymbol: false,
-                lineStyle: { width: 1.5, color: colourFor(channel.key) },
-                itemStyle: { color: colourFor(channel.key) },
-                data: rows.map((row) => [row[COLUMN.time], row[COLUMN[channel.key]]]),
+            position: index === 0 ? "left" : "right",
+            axisLabel: { color: colourFor(entry.key), fontSize: 10 },
+            // Only the first axis rules the grid - a second set of lines at
+            // another scale would cross it at arbitrary heights.
+            splitLine: {
+                show: index === 0,
+                lineStyle: { color: colours.grid },
             },
-        ],
+        })),
+        series: channels.map((entry, index) => ({
+            type: "line",
+            name: entry.label,
+            yAxisIndex: index,
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: colourFor(entry.key) },
+            itemStyle: { color: colourFor(entry.key) },
+            data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
+        })),
     };
 }
 
@@ -282,7 +315,7 @@ function navigatorOption(from, to) {
         useUTC: true,
         // The slider draws its own shadow of the data, so the plot area adds
         // nothing but the room the axis labels need beneath it.
-        grid: { left: 64, right: 16, top: 4, height: 44 },
+        grid: { ...GRID_SIDES, top: 4, height: 44 },
         xAxis: {
             type: "time",
             axisLine: { lineStyle: { color: colours.axis } },
@@ -299,8 +332,7 @@ function navigatorOption(from, to) {
         dataZoom: [
             {
                 type: "slider",
-                left: 64,
-                right: 16,
+                ...GRID_SIDES,
                 top: 4,
                 height: 44,
                 startValue: from,
@@ -310,7 +342,10 @@ function navigatorOption(from, to) {
                 borderColor: "transparent",
                 backgroundColor: "transparent",
                 fillerColor: isDark() ? "#ffffff1a" : "#0000000f",
-                handleStyle: { color: colours.surface, borderColor: colours.axis },
+                handleStyle: {
+                    color: colours.surface,
+                    borderColor: colours.axis,
+                },
                 moveHandleStyle: { color: colours.axis },
                 dataBackground: {
                     lineStyle: { color: colours.axis, width: 1 },
@@ -548,14 +583,14 @@ function render(payload, force) {
 
     painted = payload.dataset.chartRows;
 
-    document.querySelectorAll("[data-channel]").forEach((element) => {
-        const channel = CHANNELS.find((candidate) => candidate.key === element.dataset.channel);
+    document.querySelectorAll("[data-strip]").forEach((element) => {
+        const strip = STRIPS.find((candidate) => candidate.key === element.dataset.strip);
 
-        if (!channel) {
+        if (!strip) {
             return;
         }
 
-        let chart = charts.get(channel.key);
+        let chart = charts.get(strip.key);
 
         if (chart && chart.getDom() !== element.querySelector("[data-canvas]")) {
             chart.dispose();
@@ -568,7 +603,7 @@ function render(payload, force) {
             });
             echarts.connect(GROUP);
             chart.group = GROUP;
-            charts.set(channel.key, chart);
+            charts.set(strip.key, chart);
             blockWheel(element);
 
             if (component) {
@@ -576,7 +611,7 @@ function render(payload, force) {
             }
         }
 
-        chart.setOption(optionFor(channel), { notMerge: true });
+        chart.setOption(optionFor(strip), { notMerge: true });
     });
 
     echarts.connect(GROUP);
