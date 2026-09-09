@@ -42,7 +42,7 @@ const DRAG_SLOP_PX = 6;
 const CHANNELS = [
     { key: "t", label: "Temperature", unit: "°C", decimals: 2 },
     { key: "h", label: "Humidity", unit: "%", decimals: 2 },
-    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 1 },
+    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 2 },
 ];
 
 const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);

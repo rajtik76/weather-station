@@ -181,7 +181,7 @@
             'label' => 'Pressure, MSL',
             'height' => 'h-48 sm:h-56',
             'channels' => [
-                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'bg-violet-600 dark:bg-violet-500'],
+                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 2, 'accent' => 'bg-violet-600 dark:bg-violet-500'],
             ],
         ],
     ])
