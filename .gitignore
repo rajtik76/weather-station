@@ -40,3 +40,6 @@ firmware/secrets.h
 # Playwright MCP scratch output
 /.playwright-mcp
 /.vite-hooks/_
+
+*.swp
+*.swo
