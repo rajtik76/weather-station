@@ -27,12 +27,12 @@
             ></span>
             {{-- Colour alone carries the link state, so name it for screen readers. --}}
             <span class="sr-only">{{ $this->isSilent ? 'Station silent' : 'Station live' }}</span>
-            @if ($this->lastTransmission)
-                <span class="tracking-[0.25em] uppercase">Last transmission</span>
+            @if ($this->lastMeasurement)
+                <span class="tracking-[0.25em] uppercase">Last measurement</span>
                 <span class="text-zinc-800 tabular-nums dark:text-zinc-200">{{ $this->measuredAt }}</span>
                 <span class="hidden sm:inline">({{ $this->measuredAgo }})</span>
             @else
-                <span class="tracking-[0.25em] uppercase">No transmission yet</span>
+                <span class="tracking-[0.25em] uppercase">No measurement yet</span>
             @endif
         </span>
         <flux:button
