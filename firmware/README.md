@@ -118,9 +118,12 @@ taken.
 | `humidity`    | 0.01 %           | 0 .. 10000      |
 | `pressure`    | Pa               | 30000 .. 110000 |
 
-Pressure is station pressure. Reducing it to sea level for comparison against a
-weather service needs the station altitude, which is what the GPS field in
-`bn357_types.h` is there for.
+Pressure is station pressure - what the sensor reads where it hangs, not
+reduced. The server reduces it to sea level for display
+(`App\ValueObject\SeaLevelPressure`, height in `Dashboard::ALTITUDE_METRES`),
+so the record keeps the measurement and a corrected height does not mean
+rewriting it. The GPS field in `bn357_types.h` is there to supply that height
+once v2 carries it.
 
 ## Notes
 

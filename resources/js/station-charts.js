@@ -42,7 +42,7 @@ const DRAG_SLOP_PX = 6;
 const CHANNELS = [
     { key: "t", label: "Temperature", unit: "°C", decimals: 2 },
     { key: "h", label: "Humidity", unit: "%", decimals: 2 },
-    { key: "p", label: "Pressure", unit: "hPa", decimals: 1 },
+    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 1 },
 ];
 
 /**
@@ -66,7 +66,7 @@ const TIME_LABELS = {
     none: "{d}. {M}. {yyyy}",
 };
 
-/** Row layout from the server: wall-clock ms, °C, %, hPa, real epoch seconds. */
+/** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, real epoch seconds. */
 const COLUMN = { time: 0, t: 1, h: 2, p: 3, epoch: 4 };
 
 const charts = new Map();

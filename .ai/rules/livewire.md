@@ -50,3 +50,11 @@ Controls that appear conditionally in the right-aligned toolbar shift everything
 Nothing suppresses the poll while a reader is zoomed - the freeze falls out of the design. A zoomed window is a pair of fixed epochs, so the re-query returns the same readings and `data-chart-rows` morphs back identical; an unchanged attribute produces no MutationObserver record, so the canvases are never repainted under the reader.
 
 `station-charts.js` watches `data-navigator-rows` too, because the navigator always spans the whole record and does grow while zoomed. Since one mount serves both, `render()` repaints the channels only when the chart payload actually changed (`painted`), or when `mount(true)` forces it - a theme switch or a Livewire navigation. Do not call `mount` straight from an observer or event listener: the first argument would land in `force`.
+
+## Pressure is stored raw and reduced to sea level only for display
+
+The BME280 sends station pressure, and the record keeps it verbatim - protocol V1 does not change. Everything shown on the dashboard goes through `SeaLevelPressure::reduce()` with `Dashboard::ALTITUDE_METRES` (345 m, Plzeň-Slovany), so a corrected height never means rewriting stored rows.
+
+The reduction is hypsometric and uses the reading's own temperature, not the standard atmosphere's fixed 15 °C: at 345 m the difference between a frost and a heatwave is about 6 hPa, and the sensor already measures it.
+
+Consequence for the payload tail: the raw JSON prints station pressure in Pa while the converted column beside it is sea-level hPa. They are meant to differ by ~40 hPa - that is not a bug.
