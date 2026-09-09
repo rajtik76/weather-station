@@ -24,7 +24,11 @@ function chartRows(string $html): string
     return html_entity_decode($matches[1] ?? '');
 }
 
-/** The navigator's own payload, which always spans the whole record. */
+/**
+ * The navigator's own payload, which always spans the whole record.
+ *
+ * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
+ */
 function navigatorRows(string $html): array
 {
     preg_match('/data-navigator-rows="([^"]*)"/', $html, $matches);
