@@ -278,7 +278,7 @@ it('reports when the station last transmitted', function (): void {
 
     $this->get('/')
         ->assertOk()
-        ->assertSee('Last transmission')
+        ->assertSee('Last measurement')
         // 11:48 UTC is 12:48 in Prague, which is still on CET in mid-March.
         ->assertSee('15. 3. 2026 12:48')
         ->assertSee('12 minutes ago');
@@ -297,14 +297,14 @@ it('does not report a reading as arriving in the future', function (): void {
         ->assertDontSee('from now');
 });
 
-it('still reports the last transmission when the window holds nothing', function (): void {
+it('still reports the last measurement when the window holds nothing', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     Measurement::factory()->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
 
     Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subHour()->getTimestamp(), now()->getTimestamp())
-        ->assertSee('Last transmission')
+        ->assertSee('Last measurement')
         ->assertSee('Nothing in this range');
 });
 

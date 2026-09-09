@@ -33,7 +33,7 @@ use UnexpectedValueException;
  * @property-read list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read int $currentYear
- * @property-read CarbonInterface|null $lastTransmission
+ * @property-read CarbonInterface|null $lastMeasurement
  * @property-read string|null $measuredAt
  * @property-read string|null $measuredAgo
  * @property-read bool $isSilent
@@ -350,14 +350,14 @@ class Dashboard extends Component
     }
 
     /**
-     * When the station last reported anything, across the whole table rather
+     * When the station last measured anything, across the whole table rather
      * than the window - zooming in must not make the station look silent.
      *
      * This is a real instant, unlike the stamps in the chart payload, so it is
      * the only date here that may be measured against now().
      */
     #[Computed]
-    public function lastTransmission(): ?CarbonInterface
+    public function lastMeasurement(): ?CarbonInterface
     {
         $timestamp = Measurement::query()->max('timestamp');
 
@@ -369,23 +369,23 @@ class Dashboard extends Component
     #[Computed]
     public function measuredAt(): ?string
     {
-        return $this->lastTransmission?->format('j. n. Y H:i');
+        return $this->lastMeasurement?->format('j. n. Y H:i');
     }
 
     #[Computed]
     public function measuredAgo(): ?string
     {
-        return $this->lastTransmission === null
+        return $this->lastMeasurement === null
             ? null
-            : $this->ago($this->lastTransmission);
+            : $this->ago($this->lastMeasurement);
     }
 
     /** Nothing for three slots running: treat the station as off the air. */
     #[Computed]
     public function isSilent(): bool
     {
-        return $this->lastTransmission === null
-            || $this->lastTransmission->getTimestamp() < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
+        return $this->lastMeasurement === null
+            || $this->lastMeasurement->getTimestamp() < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
     }
 
     /** Oldest instant on screen, as a real UTC epoch. */
