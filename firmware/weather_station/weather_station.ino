@@ -197,11 +197,20 @@ static void reportVisibleAps() {
 static bool connectWifi() {
   WiFi.mode(WIFI_STA);
 
+  // Both of these matter only where the link is marginal, which a closed
+  // balcony is. Full transmit power costs nothing the radio does not already
+  // spend, and modem sleep saves nothing here - the window is a few seconds
+  // and the CPU goes into deep sleep straight after it, so all power save
+  // buys is a missed beacon at the edge of range.
+  WiFi.setTxPower(WIFI_POWER_20_5dBm);
+  WiFi.setSleep(WIFI_PS_NONE);
+
   if (rtcApValid) {
     // Straight to the known AP - no scan across all channels.
     WiFi.begin(WIFI_SSID, WIFI_PASS, rtcApChannel, rtcApBssid);
     if (waitForWifi(WIFI_FAST_TIMEOUT_MS)) {
-      Serial.printf("WiFi connected (cached AP), RSSI %d dBm\n", WiFi.RSSI());
+      Serial.printf("WiFi connected (cached AP), RSSI %d dBm, TX %.1f dBm\n",
+                    WiFi.RSSI(), WiFi.getTxPower() / 4.0f);
       return true;
     }
     // The AP moved channel or is gone - fall through to a full scan.
@@ -220,7 +229,8 @@ static bool connectWifi() {
   rtcApChannel = WiFi.channel();
   rtcApValid = true;
 
-  Serial.printf("WiFi connected (scan), RSSI %d dBm\n", WiFi.RSSI());
+  Serial.printf("WiFi connected (scan), RSSI %d dBm, TX %.1f dBm\n",
+                WiFi.RSSI(), WiFi.getTxPower() / 4.0f);
   return true;
 }
 
