@@ -168,6 +168,33 @@ it('thins long ranges rather than averaging them', function (): void {
         ->and($week)->toContain('1772327400000');
 });
 
+it('thins a window whose stamps never land near a bucket boundary', function (): void {
+    $start = Date::parse('2026-03-01 00:00:00', 'UTC');
+    $this->travelTo($start->copy()->addDay());
+
+    // The same day, but stamped fifteen minutes off every slot - the drift a
+    // station accumulates by uploading when it wakes. Thinning by the phase of
+    // the epoch found no row at all here and emptied the chart.
+    foreach (range(0, 143) as $slot) {
+        Measurement::factory()->create(['timestamp' => $start->getTimestamp() + $slot * 600 + 900]);
+    }
+
+    $year = chartRows(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 300 * 86400, now()->getTimestamp())
+        ->html());
+
+    // One point per six hours, each the bucket's own first reading. The
+    // buckets divide the epoch rather than the local day, so the first one
+    // opens with the day's first upload and the rest fall six hours apart.
+    expect($year)
+        ->toContain('1772327700000')
+        ->toContain('1772348700000')
+        ->toContain('1772370300000')
+        ->toContain('1772391900000')
+        // The next reading shares the first bucket and is dropped.
+        ->not->toContain('1772328300000');
+});
+
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 

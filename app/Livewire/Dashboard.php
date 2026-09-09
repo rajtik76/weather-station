@@ -152,13 +152,12 @@ class Dashboard extends Component
     {
         $thinTo = ChartRange::forSpan($this->spanSeconds())->thinToSeconds();
 
+        $window = [$this->windowFrom(), $this->windowTo()];
+
         return $this->plot(
             Measurement::query()
-                ->whereBetween('timestamp', [$this->windowFrom(), $this->windowTo()])
-                // Keep the first reading of each bucket. The modulo runs on the
-                // indexed column, so the range scan still does the narrowing.
-                ->when($thinTo > 0, fn (Builder $query): Builder => $query
-                    ->whereRaw('timestamp % ? < ?', [$thinTo, self::STEP_SECONDS]))
+                ->whereBetween('timestamp', $window)
+                ->when($thinTo > 0, fn (Builder $query): Builder => $this->firstPerBucket($query, $thinTo, $window))
                 ->orderBy('timestamp')
                 ->get()
         );
@@ -172,11 +171,9 @@ class Dashboard extends Component
      * six hours is far below what its few pixels can resolve, which keeps this
      * cheap even once the table runs to years.
      *
-     * The bucket's first row is picked by grouping rather than by the phase of
-     * the epoch: the station stamps an upload when it wakes, not on the slot,
-     * so a modulo window only lands on a row when that drift happens to be
-     * small - and a record shorter than one bucket holds no such row at all.
-     * That is what emptied the navigator on a database a few hours old.
+     * A record shorter than one bucket would thin to a single point, so below
+     * OVERVIEW_UNTHINNED_ROWS the whole thing is drawn as it stands. See
+     * firstPerBucket() for why the thinning groups rather than counts.
      *
      * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
      */
@@ -189,13 +186,7 @@ class Dashboard extends Component
             Measurement::query()
                 ->when(
                     $total >= self::OVERVIEW_UNTHINNED_ROWS,
-                    fn (Builder $query): Builder => $query->whereIn(
-                        'timestamp',
-                        fn (QueryBuilder $bucket) => $bucket
-                            ->selectRaw('MIN(timestamp)')
-                            ->from('measurements')
-                            ->groupByRaw('timestamp / ?', [self::OVERVIEW_BUCKET_SECONDS])
-                    )
+                    fn (Builder $query): Builder => $this->firstPerBucket($query, self::OVERVIEW_BUCKET_SECONDS)
                 )
                 ->orderBy('timestamp')
                 ->get()
@@ -472,6 +463,34 @@ class Dashboard extends Component
     private function wallClockMs(int $timestamp): int
     {
         return ($timestamp + $this->localise($timestamp)->utcOffset() * 60) * 1000;
+    }
+
+    /**
+     * Keep the first reading of every bucket and drop the rest.
+     *
+     * Grouping, not `timestamp % bucket < STEP_SECONDS`: the station stamps an
+     * upload when it wakes rather than on the slot, so its stamps sit minutes
+     * off every multiple of the step and a phase window only lands on a row
+     * while that drift stays small. Grouping asks for the bucket's own first
+     * row instead, whatever time it carries.
+     *
+     * Nothing is averaged - every plotted point remains a stored record.
+     *
+     * @param  Builder<Measurement>  $query
+     * @param  array{0: int, 1: int}|null  $window  Bound the subquery to the same range as the outer one.
+     * @return Builder<Measurement>
+     */
+    private function firstPerBucket(Builder $query, int $bucketSeconds, ?array $window = null): Builder
+    {
+        return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds, $window): void {
+            $bucket->selectRaw('MIN(timestamp)')
+                ->from('measurements')
+                ->groupByRaw('timestamp / ?', [$bucketSeconds]);
+
+            if ($window !== null) {
+                $bucket->whereBetween('timestamp', $window);
+            }
+        });
     }
 
     /** Station pressure reduced to sea level, in hPa, as everything here shows it. */
