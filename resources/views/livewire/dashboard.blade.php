@@ -191,6 +191,7 @@
     <div
         data-chart-rows="{{ json_encode($this->readings) }}"
         data-navigator-rows="{{ json_encode($this->overview) }}"
+        data-chart-events="{{ json_encode($this->stationEvents) }}"
         data-window-from="{{ $this->windowMs['from'] }}"
         data-window-to="{{ $this->windowMs['to'] }}"
         data-chart-component="{{ $this->getId() }}"

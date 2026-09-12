@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\ProtocolVersion;
 use App\Livewire\Dashboard;
 use App\Models\Measurement;
+use App\Models\StationEvent;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
@@ -32,6 +33,18 @@ function chartRows(string $html): string
 function navigatorRows(string $html): array
 {
     preg_match('/data-navigator-rows="([^"]*)"/', $html, $matches);
+
+    return json_decode(html_entity_decode($matches[1] ?? '[]'), true);
+}
+
+/**
+ * The events the charts are told to mark.
+ *
+ * @return list<array{0: int, 1: string, 2: ?string}>
+ */
+function chartEvents(string $html): array
+{
+    preg_match('/data-chart-events="([^"]*)"/', $html, $matches);
 
     return json_decode(html_entity_decode($matches[1] ?? '[]'), true);
 }
@@ -522,4 +535,53 @@ it('hands the map the station area to draw', function (): void {
         ->assertSee('data-lat="49.733242"', escape: false)
         ->assertSee('data-lng="13.399911"', escape: false)
         ->assertSee('data-radius="800"', escape: false);
+});
+
+it('marks station events on the charts in Czech local time', function (): void {
+    // 10:00 UTC in July is 12:00 in Prague (CEST, UTC+2).
+    StationEvent::factory()->create([
+        'occurred_at' => Date::parse('2026-07-15 10:00:00', 'UTC'),
+        'title' => 'Radiation shield fitted',
+        'color' => '#71717a',
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The stamp is shifted the same way as the readings, so the mark lands
+    // on the axis where the readings of that instant do.
+    expect(chartEvents($html))->toBe([
+        [1784116800000, 'Radiation shield fitted', '#71717a'],
+    ]);
+});
+
+it('leaves the colour to the chart when the event was entered without one', function (): void {
+    StationEvent::factory()->create([
+        'occurred_at' => Date::parse('2026-07-15 10:00:00', 'UTC'),
+        'title' => 'Radiation shield fitted',
+        'color' => null,
+    ]);
+
+    expect(chartEvents(Livewire::test(Dashboard::class)->html()))->toBe([
+        [1784116800000, 'Radiation shield fitted', null],
+    ]);
+});
+
+it('marks events in the order they happened whatever order they were entered', function (): void {
+    StationEvent::factory()->create([
+        'occurred_at' => Date::parse('2026-08-01 08:00:00', 'UTC'),
+        'title' => 'Moved to the south wall',
+    ]);
+    StationEvent::factory()->create([
+        'occurred_at' => Date::parse('2026-06-01 08:00:00', 'UTC'),
+        'title' => 'Radiation shield fitted',
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    expect(array_column(chartEvents($html), 1))
+        ->toBe(['Radiation shield fitted', 'Moved to the south wall']);
+});
+
+it('hands the charts no events when none have been recorded', function (): void {
+    expect(chartEvents(Livewire::test(Dashboard::class)->html()))->toBe([]);
 });

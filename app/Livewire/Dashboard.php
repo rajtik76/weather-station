@@ -6,6 +6,7 @@ namespace App\Livewire;
 
 use App\Enums\ChartRange;
 use App\Models\Measurement;
+use App\Models\StationEvent;
 use App\ValueObject\MeasurementData;
 use App\ValueObject\SeaLevelPressure;
 use Carbon\CarbonInterface;
@@ -418,6 +419,34 @@ class Dashboard extends Component
     private function spanSeconds(): int
     {
         return $this->windowTo() - $this->windowFrom();
+    }
+
+    /**
+     * Every event ever done to the station, for the charts to mark.
+     *
+     * Not bounded to the window: there are a handful of these over the life of
+     * the station, and a mark outside the axis simply is not drawn. Each entry
+     * is `[wall-clock ms, title, colour]`, the stamp shifted the same way as
+     * the readings so the mark lands on the axis where the readings do. The
+     * colour is passed through as entered, null included - the chart owns the
+     * fallback, since it owns the palette.
+     *
+     * @return list<array{0: int, 1: string, 2: ?string}>
+     */
+    #[Computed]
+    public function stationEvents(): array
+    {
+        return array_values(
+            StationEvent::query()
+                ->oldest('occurred_at')
+                ->get()
+                ->map(fn (StationEvent $event): array => [
+                    $this->wallClockMs($event->occurred_at),
+                    $event->title,
+                    $event->color,
+                ])
+                ->all()
+        );
     }
 
     /**

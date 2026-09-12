@@ -74,3 +74,9 @@ Two different clocks, and the dashboard shows each where it answers something.
 `lastMeasurement()` (the status line, and `isSilent`) reads `MAX(timestamp)` - the station's own stamp. A lost link buffers readings in RTC memory and delivers them late, so the newest row's `created_at` says nothing about how long ago the sensor was last read.
 
 The payload tail dates its rows by `created_at` instead. The reading's own stamp is already printed in the JSON beside it, so formatting it again as a date would say the same thing twice; arrival is the other half of the story and the only place the delivery gap shows. Both go through `localise()` - stored stamps are UTC, the page reads Europe/Prague.
+
+## The navigator draws on two x-axes
+
+A slider dataZoom narrows the axis it drives to the selected window. The navigator's grid shares the canvas with that slider, so anything drawn against the driven axis - tick labels, event markLines - reads the window while the slider's shadow above spans the whole record. They looked aligned only by coincidence until the event lines landed.
+
+`navigatorOption()` therefore has xAxis[0] hidden and driven by the slider (`xAxisIndex: 0`), and xAxis[1] pinned to `dataMin`/`dataMax` carrying the labels and the markLines, fed the same overview rows by a second invisible series. Both span the record, so the slider's shadow and the labelled axis line up. Do not collapse them back into one axis.

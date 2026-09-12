@@ -6,6 +6,7 @@ import {
     AxisPointerComponent,
     DataZoomSliderComponent,
     GridComponent,
+    MarkLineComponent,
     TooltipComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
@@ -15,6 +16,7 @@ echarts.use([
     AxisPointerComponent,
     DataZoomSliderComponent,
     GridComponent,
+    MarkLineComponent,
     TooltipComponent,
     CanvasRenderer,
 ]);
@@ -84,6 +86,16 @@ const TIME_LABELS = {
 /** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, real epoch seconds. */
 const COLUMN = { time: 0, t: 1, h: 2, p: 3, epoch: 4 };
 
+/** Event layout from the server: wall-clock ms, title, CSS colour or null. */
+const EVENT = { time: 0, title: 1, colour: 2 };
+
+/**
+ * An event entered without a colour. Neutral on purpose: it must read as a
+ * mark on the record, not as a fourth channel, and the same mid-grey holds up
+ * on both the light and the dark ground.
+ */
+const EVENT_COLOUR = "#a1a1aa";
+
 /**
  * Plot-area margins, shared by every canvas.
  *
@@ -97,6 +109,9 @@ const GRID_SIDES = { left: 64, right: 64 };
 const charts = new Map();
 
 let rows = [];
+
+/** Things done to the station, each drawn as a vertical line across every strip. */
+let events = [];
 
 function isDark() {
     return document.documentElement.classList.contains("dark");
@@ -212,6 +227,10 @@ function epochFromWallMs(list, milliseconds) {
 }
 
 function tooltipHtml(params) {
+    if (hovered) {
+        return eventTooltipHtml(hovered);
+    }
+
     const point = Array.isArray(params) ? params[0] : params;
     const row = rowAt(point?.axisValue);
 
@@ -219,6 +238,11 @@ function tooltipHtml(params) {
         return "";
     }
 
+    return readingsHtml(row);
+}
+
+/** One row of the record: its stamp, then every channel's value. */
+function readingsHtml(row) {
     const colours = palette();
     const heading =
         `<div style="font-weight:500;margin-bottom:4px;color:${colours.text}">` +
@@ -241,6 +265,180 @@ function tooltipHtml(params) {
     return heading + lines;
 }
 
+/** Whether a strip prints the event titles; only the top one does. */
+function labelsEvents(strip) {
+    return strip === STRIPS[0] && events.length > 0;
+}
+
+/** Room above the plot for the event titles, when there are any to print. */
+const EVENT_LABEL_ROOM = 30;
+
+/** Event stamps carry the year: a shield fitted two summers ago is still marked. */
+const eventStampFormat = new Intl.DateTimeFormat("cs-CZ", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+});
+
+/** Titles are typed in by hand and land in innerHTML; keep them text. */
+function escapeHtml(text) {
+    const node = document.createElement("span");
+    node.textContent = text;
+
+    return node.innerHTML;
+}
+
+/**
+ * The spacing between the rows on screen, to tell a gap from a step.
+ *
+ * Thinning sets it per window - ten minutes on a day, hours on a year - so it
+ * is read off the rows rather than assumed. The median, so that one outage in
+ * an otherwise regular record does not widen it.
+ */
+let step = 0;
+
+function typicalStep(list) {
+    if (list.length < 2) {
+        return 0;
+    }
+
+    const gaps = [];
+
+    for (let index = 1; index < list.length; index++) {
+        gaps.push(list[index][COLUMN.time] - list[index - 1][COLUMN.time]);
+    }
+
+    gaps.sort((left, right) => left - right);
+
+    return gaps[gaps.length >> 1];
+}
+
+/** Whether the record has a reading at that instant, or only a hole there. */
+function hasReadingAt(time) {
+    const row = rowAt(time);
+
+    return row !== null && Math.abs(row[COLUMN.time] - time) <= step * 1.5 ? row : null;
+}
+
+/**
+ * The event line under the pointer, if any: `{ name, time, colour }`.
+ *
+ * Module-wide on purpose. The line has no tooltip of its own - an item tooltip
+ * on a connected chart broadcasts its data index, and the other strip reads
+ * that as one of its readings and jumps there. Instead the axis tooltip, which
+ * the strips already share, reads this and adds the title, so hovering a line
+ * on either strip keeps both tooltips in step.
+ */
+let hovered = null;
+
+function trackEventHover(chart) {
+    // `mousemove` rather than `mouseover`: zrender delivers an element's own
+    // mousemove before the global one the axis pointer listens to, whereas
+    // mouseover comes after - the first tooltip on a line would miss the
+    // title and keep missing it until the pointer moved again.
+    chart.on("mousemove", (params) => {
+        if (params.componentType === "markLine") {
+            hovered = {
+                name: params.name,
+                time: params.data.xAxis,
+                colour: params.data.lineStyle?.color ?? EVENT_COLOUR,
+            };
+        }
+    });
+
+    chart.on("mouseout", (params) => {
+        if (params.componentType === "markLine") {
+            hovered = null;
+        }
+    });
+}
+
+/**
+ * Where the line crosses readings, the tooltip is the readings' own with the
+ * title set above it - the pointer is on the record as much as on the line,
+ * and the values must not vanish because a line runs through them. Only over
+ * a hole in the record does the event stand alone, with its date, since there
+ * is no reading's stamp to give one.
+ */
+function eventTooltipHtml(event) {
+    const colours = palette();
+    const row = hasReadingAt(event.time);
+
+    const title =
+        `<div style="font-weight:600;font-size:14px;color:${colours.text}">` +
+        `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
+        `background:${event.colour};margin-right:6px"></span>${escapeHtml(event.name)}</div>`;
+
+    if (row) {
+        return (
+            title +
+            `<div style="margin-top:6px;padding-top:6px;border-top:1px solid ${colours.border}">` +
+            `${readingsHtml(row)}</div>`
+        );
+    }
+
+    return (
+        title + `<div style="margin-top:2px">${eventStampFormat.format(new Date(event.time))}</div>`
+    );
+}
+
+/**
+ * The station's events as vertical lines.
+ *
+ * The line runs down every strip so the eye can carry it from one channel to
+ * the next, but the title is printed once, on the top strip - the same words
+ * twice under each other say nothing more. It sits at the line's `end`, above
+ * the plot: every `inside*` position lays the text along the line, which on
+ * a vertical one means reading sideways. No tooltip of its own - see
+ * `hovered` for why the axis tooltip carries the title instead.
+ */
+function eventMarks(strip) {
+    return {
+        animation: false,
+        symbol: "none",
+        emphasis: { disabled: true },
+        tooltip: { show: false },
+        label: {
+            show: labelsEvents(strip),
+            position: "end",
+            distance: 4,
+            fontSize: 12,
+            formatter: (mark) => mark.name,
+        },
+        data: eventLines(),
+    };
+}
+
+/**
+ * The colour as stored, if the browser agrees it is one.
+ *
+ * The column takes any string, and the value ends up both in a canvas style
+ * and inside the tooltip's markup; anything that is not a colour falls back
+ * to the neutral one rather than reaching either.
+ */
+function eventColour(value) {
+    return typeof value === "string" && CSS.supports("color", value) ? value : EVENT_COLOUR;
+}
+
+/** One dashed vertical line per event, in its own colour. */
+function eventLines() {
+    return events.map((event) => {
+        const colour = eventColour(event[EVENT.colour]);
+
+        return {
+            name: event[EVENT.title],
+            xAxis: event[EVENT.time],
+            // A dash pattern rather than "dashed": ECharts scales that one with
+            // the width, and at 2 px the gaps grew wider than the dashes.
+            lineStyle: { color: colour, type: [4, 3], width: 2, opacity: 0.9 },
+            label: { color: colour },
+        };
+    });
+}
+
 function optionFor(strip) {
     const colours = palette();
     const channels = strip.channels.map(channelFor);
@@ -250,7 +448,11 @@ function optionFor(strip) {
         // Stamps carry the station's local offset already; reading them as UTC
         // is what keeps the axis on Czech time for every viewer.
         useUTC: true,
-        grid: { ...GRID_SIDES, top: 12, bottom: 28 },
+        grid: {
+            ...GRID_SIDES,
+            top: labelsEvents(strip) ? EVENT_LABEL_ROOM : 12,
+            bottom: 28,
+        },
         tooltip: {
             trigger: "axis",
             appendToBody: true,
@@ -293,6 +495,8 @@ function optionFor(strip) {
             lineStyle: { width: 1.5, color: colourFor(entry.key) },
             itemStyle: { color: colourFor(entry.key) },
             data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
+            // One set of lines per canvas is enough; they belong to no series.
+            markLine: index === 0 ? eventMarks(strip) : undefined,
         })),
     };
 }
@@ -317,10 +521,11 @@ function navigatorOption(from, to) {
         // nothing but the room the axis labels need beneath it.
         grid: { ...GRID_SIDES, top: 4, height: 44 },
         // Two axes over the same record. A slider narrows the axis it drives
-        // to the window, so labels drawn against that axis would read the
-        // window while the shadow above them spans everything. The driven
-        // axis is therefore hidden, and a second one - pinned to the record's
-        // ends, which is what the shadow spans - carries the labels.
+        // to the window, so labels and marks drawn against that axis would
+        // read the window while the shadow above them spans everything. The
+        // driven axis is therefore hidden, and a second one - pinned to the
+        // record's ends, which is what the shadow spans - carries the labels
+        // and the event lines.
         xAxis: [
             { type: "time", show: false },
             {
@@ -381,13 +586,23 @@ function navigatorOption(from, to) {
                 data: overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
             },
             // The same rows again, unzoomed, so the labelled axis spans exactly
-            // what the shadow does.
+            // what the shadow does, and the event lines land on the record
+            // where they fall. Bare lines: the slider sits on top and takes
+            // the pointer, and at this height a title would collide with the
+            // axis.
             {
                 type: "line",
                 xAxisIndex: 1,
                 showSymbol: false,
                 lineStyle: { width: 0 },
                 data: overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
+                markLine: {
+                    silent: true,
+                    animation: false,
+                    symbol: "none",
+                    label: { show: false },
+                    data: eventLines(),
+                },
             },
         ],
     };
@@ -561,6 +776,11 @@ let mounting = false;
 /** The channel payload currently on the canvases, to recognise an unchanged one. */
 let painted = null;
 
+/** The channels and the events together: either changing means a repaint. */
+function paintKey(payload) {
+    return payload.dataset.chartRows + "\n" + payload.dataset.chartEvents;
+}
+
 function mount(force = false) {
     if (mounting) {
         return;
@@ -588,10 +808,18 @@ function render(payload, force) {
         rows = [];
     }
 
+    step = typicalStep(rows);
+
     try {
         overview = JSON.parse(payload.dataset.navigatorRows);
     } catch {
         overview = [];
+    }
+
+    try {
+        events = JSON.parse(payload.dataset.chartEvents);
+    } catch {
+        events = [];
     }
 
     const component = window.Livewire?.find(payload.dataset.chartComponent);
@@ -602,11 +830,15 @@ function render(payload, force) {
     // station uploads every ten minutes and a zoomed window never moves - must
     // not repaint the channels underneath a reader's pointer. The navigator
     // above has already taken whatever arrived.
-    if (!force && payload.dataset.chartRows === painted) {
+    if (!force && paintKey(payload) === painted) {
         return;
     }
 
-    painted = payload.dataset.chartRows;
+    painted = paintKey(payload);
+
+    // The lines are about to be rebuilt; whatever was under the pointer is
+    // gone, and no mouseout will say so.
+    hovered = null;
 
     document.querySelectorAll("[data-strip]").forEach((element) => {
         const strip = STRIPS.find((candidate) => candidate.key === element.dataset.strip);
@@ -630,6 +862,7 @@ function render(payload, force) {
             chart.group = GROUP;
             charts.set(strip.key, chart);
             blockWheel(element);
+            trackEventHover(chart);
 
             if (component) {
                 bindZoom(chart, element, component);
@@ -664,7 +897,7 @@ function watchPayload() {
     new MutationObserver(() => mount()).observe(document.body, {
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-chart-rows", "data-navigator-rows"],
+        attributeFilter: ["data-chart-rows", "data-navigator-rows", "data-chart-events"],
     });
 }
 
