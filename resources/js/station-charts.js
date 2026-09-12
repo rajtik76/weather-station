@@ -316,22 +316,36 @@ function navigatorOption(from, to) {
         // The slider draws its own shadow of the data, so the plot area adds
         // nothing but the room the axis labels need beneath it.
         grid: { ...GRID_SIDES, top: 4, height: 44 },
-        xAxis: {
-            type: "time",
-            axisLine: { lineStyle: { color: colours.axis } },
-            axisTick: { show: false },
-            axisLabel: {
-                color: colours.label,
-                fontSize: 10,
-                hideOverlap: true,
-                formatter: TIME_LABELS,
+        // Two axes over the same record. A slider narrows the axis it drives
+        // to the window, so labels drawn against that axis would read the
+        // window while the shadow above them spans everything. The driven
+        // axis is therefore hidden, and a second one - pinned to the record's
+        // ends, which is what the shadow spans - carries the labels.
+        xAxis: [
+            { type: "time", show: false },
+            {
+                type: "time",
+                // Explicit: a second x axis is placed opposite the first by
+                // default, which would put this one along the top.
+                position: "bottom",
+                min: "dataMin",
+                max: "dataMax",
+                axisLine: { lineStyle: { color: colours.axis } },
+                axisTick: { show: false },
+                axisLabel: {
+                    color: colours.label,
+                    fontSize: 10,
+                    hideOverlap: true,
+                    formatter: TIME_LABELS,
+                },
+                splitLine: { show: false },
             },
-            splitLine: { show: false },
-        },
+        ],
         yAxis: { type: "value", show: false, scale: true },
         dataZoom: [
             {
                 type: "slider",
+                xAxisIndex: 0,
                 ...GRID_SIDES,
                 top: 4,
                 height: 44,
@@ -358,8 +372,19 @@ function navigatorOption(from, to) {
             },
         ],
         series: [
+            // What the slider shadows.
             {
                 type: "line",
+                xAxisIndex: 0,
+                showSymbol: false,
+                lineStyle: { width: 0 },
+                data: overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
+            },
+            // The same rows again, unzoomed, so the labelled axis spans exactly
+            // what the shadow does.
+            {
+                type: "line",
+                xAxisIndex: 1,
                 showSymbol: false,
                 lineStyle: { width: 0 },
                 data: overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
