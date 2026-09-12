@@ -17,9 +17,9 @@ Three ECharts instances joined with `echarts.connect()`, one per channel, so the
 
 ## The chart payload is wall-clock, not instants
 
-Rows are `[wall-clock ms, °C, %, hPa, real epoch seconds]`. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
+Rows are `[wall-clock ms, °C, %, hPa, dew point °C, real epoch seconds]`. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
 
-That first element is therefore not an instant. Never measure it against `now()` and never convert it a second time - anything formatting it must do so as UTC. The fifth element is the real epoch, and that is what a zoom hands back to `zoomTo()`.
+That first element is therefore not an instant. Never measure it against `now()` and never convert it a second time - anything formatting it must do so as UTC. The last element is the real epoch, and that is what a zoom hands back to `zoomTo()`. `station-charts.js` reads columns through its `COLUMN` map, never by literal index.
 
 Storage stays UTC: the firmware sends `time(nullptr)` and `config/app.php` keeps `'timezone' => 'UTC'`. Only presentation shifts.
 
@@ -40,6 +40,8 @@ The layout resolves through Livewire's default `component_layout => 'layouts::ap
 ## Canvas regions carry wire:ignore; data arrives by attribute
 
 ECharts owns its DOM, so each channel's container is `wire:ignore` and a morph must never reach it. New data reaches the canvas through a separate `data-chart-rows` element that Livewire does re-render; `station-charts.js` watches that attribute with a MutationObserver and calls `setOption`.
+
+Each line on the shared strip can be switched off by its label, all but the last one on - `Dashboard::toggleChannel()` refuses that and the template disables the button. The dew point is derived (`DewPoint`, Magnus formula) and starts off. The switches are a Livewire property (`$channels`), not Alpine or JS state: the hidden keys reach the canvas as `data-hidden-channels` on the payload element, the observer watches it and `paintKey()` includes it, so the choice survives a poll. Not `#[Url]`, so a reload starts from the defaults - that is the point of a default. The dew point shares the temperature's value axis - channels in `station-charts.js` name the axis they are read against.
 
 Controls that appear conditionally in the right-aligned toolbar shift everything beside them. Render them always and disable them instead - a button that pops in on first use slides the neighbouring controls out from under the pointer mid-click.
 

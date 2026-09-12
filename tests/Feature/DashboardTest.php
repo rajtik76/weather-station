@@ -28,7 +28,7 @@ function chartRows(string $html): string
 /**
  * The navigator's own payload, which always spans the whole record.
  *
- * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
+ * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
  */
 function navigatorRows(string $html): array
 {
@@ -231,6 +231,71 @@ it('plots pressure at the sensor\'s own resolution', function (): void {
     expect($html)->toContain('1 013,6');
 });
 
+it('carries the dew point in the chart payload', function (): void {
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // 21,50 °C at 48 % condenses at about 10 °C. Derived on the server so the
+    // chart draws it like any other column, between the pressure and the epoch.
+    $row = json_decode(chartRows($html), true)[0];
+
+    expect($row)->toHaveCount(6)
+        ->and($row[4])->toBe(10.02)
+        ->and(navigatorRows($html)[0][4])->toBe(10.02);
+});
+
+it('keeps the dew point off until the reader asks for it', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $component = Livewire::test(Dashboard::class);
+
+    // Derived rather than measured, so it is a third line the reader opts
+    // into. Its label on the shared strip is the switch; the payload tells
+    // the chart which lines to leave out.
+    expect($component->html())
+        ->toContain('data-hidden-channels="[&quot;d&quot;]"')
+        ->toContain('aria-pressed="false"');
+
+    expect($component->call('toggleChannel', 'd')->html())
+        ->toContain('data-hidden-channels="[]"')
+        ->not->toContain('aria-pressed="false"');
+
+    expect($component->call('toggleChannel', 'd')->html())
+        ->toContain('data-hidden-channels="[&quot;d&quot;]"');
+});
+
+it('never lets the shared strip go blank', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $component = Livewire::test(Dashboard::class)
+        ->call('toggleChannel', 't');
+
+    // Temperature off leaves humidity on its own, so its switch is disabled
+    // and pressing it anyway changes nothing.
+    expect($component->html())
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"')
+        ->toMatch('/toggleChannel\(\'h\'\)"[^>]*disabled/')
+        ->not->toMatch('/toggleChannel\(\'t\'\)"[^>]*disabled/');
+
+    expect($component->call('toggleChannel', 'h')->html())
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"');
+
+    // Bringing another line back frees it again.
+    expect($component->call('toggleChannel', 'd')->call('toggleChannel', 'h')->html())
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;h&quot;]"');
+});
+
+it('ignores a switch for a channel the strip does not have', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    expect(Livewire::test(Dashboard::class)->call('toggleChannel', 'p')->html())
+        ->toContain('data-hidden-channels="[&quot;d&quot;]"');
+});
+
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
@@ -421,9 +486,9 @@ it('draws temperature and humidity on one strip and pressure on another', functi
     expect(substr_count($html, 'data-canvas'))->toBe(2)
         ->and(substr_count($html, 'data-strip="th"'))->toBe(1)
         ->and(substr_count($html, 'data-strip="p"'))->toBe(1)
-        ->and($html)->toContain('Temperature · °C')
-        ->toContain('Humidity · %')
-        ->toContain('Pressure, MSL · hPa')
+        ->and($html)->toContain('Temperature (°C)')
+        ->toContain('Humidity (%)')
+        ->toContain('Pressure, MSL (hPa)')
         // The payload tail reads as a footnote to the charts, so it follows them.
         ->and(Str::after($html, 'data-canvas'))->toContain('when they arrived')
         ->and(Str::before($html, 'data-canvas'))->not->toContain('when they arrived');
@@ -443,7 +508,7 @@ it('puts the navigator above the strips it scrolls', function (): void {
         ->and(Str::after($html, 'aria-label="Whole record"'))->toContain('data-strip="th"');
 });
 
-it('heads the shared strip with a window summary per channel', function (): void {
+it('labels the shared strip with each channel and its unit', function (): void {
     Measurement::factory()->create([
         'timestamp' => now()->subMinutes(10)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
@@ -455,10 +520,12 @@ it('heads the shared strip with a window summary per channel', function (): void
     // pinned to the band between the chart payload and the strip's canvas.
     $headers = Str::before(Str::after($html, 'data-chart-rows'), 'data-strip="th"');
 
-    expect($headers)->toContain('Temperature · °C')
-        ->toContain('Humidity · %')
-        ->toContain('21,50')
-        ->toContain('48,00')
+    expect($headers)->toContain('Temperature (°C)')
+        ->toContain('Dew point (°C)')
+        ->toContain('Humidity (%)')
+        // Labels only: the figures live on the canvas and in the hero.
+        ->not->toContain('21,50')
+        ->not->toContain('48,00')
         // Pressure is headed above its own strip, not this one.
         ->not->toContain('Pressure, MSL');
 });
