@@ -41,13 +41,28 @@ const GROUP = "station";
 /** Long enough to be a drag rather than a slipped click. */
 const DRAG_SLOP_PX = 6;
 
+/**
+ * `axis` names the channel whose value axis this one is read against; a
+ * channel that names itself gets an axis of its own. The dew point is a
+ * temperature, so it shares the temperature's.
+ */
 const CHANNELS = [
-    { key: "t", label: "Temperature", unit: "°C", decimals: 2 },
-    { key: "h", label: "Humidity", unit: "%", decimals: 2 },
-    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 2 },
+    { key: "t", label: "Temperature", unit: "°C", decimals: 2, axis: "t" },
+    { key: "h", label: "Humidity", unit: "%", decimals: 2, axis: "h" },
+    { key: "d", label: "Dew point", unit: "°C", decimals: 2, axis: "t", dashed: true },
+    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 2, axis: "p" },
 ];
 
 const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
+
+/**
+ * Channels the reader has switched off. The server says which through the
+ * payload, so the state survives a poll; until the first payload is read,
+ * nothing is hidden.
+ */
+let hidden = new Set();
+
+const isShown = (channel) => !hidden.has(channel.key);
 
 /**
  * How the channels are distributed over the canvases.
@@ -58,7 +73,7 @@ const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
  * a third one; it keeps its own strip instead.
  */
 const STRIPS = [
-    { key: "th", channels: ["t", "h"] },
+    { key: "th", channels: ["t", "h", "d"] },
     { key: "p", channels: ["p"] },
 ];
 
@@ -83,8 +98,8 @@ const TIME_LABELS = {
     none: "{d}. {M}. {yyyy}",
 };
 
-/** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, real epoch seconds. */
-const COLUMN = { time: 0, t: 1, h: 2, p: 3, epoch: 4 };
+/** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, dew point °C, real epoch seconds. */
+const COLUMN = { time: 0, t: 1, h: 2, p: 3, d: 4, epoch: 5 };
 
 /** Event layout from the server: wall-clock ms, title, CSS colour or null. */
 const EVENT = { time: 0, title: 1, colour: 2 };
@@ -141,11 +156,63 @@ function palette() {
 const LINE_COLOUR = {
     t: { light: "#d97706", dark: "#f59e0b" },
     h: { light: "#0891b2", dark: "#22d3ee" },
+    // Pink, not green: against the amber the green read as a second shade
+    // of it on the light ground.
+    d: { light: "#db2777", dark: "#f472b6" },
     p: { light: "#7c3aed", dark: "#a78bfa" },
 };
 
 function colourFor(key) {
     return LINE_COLOUR[key][isDark() ? "dark" : "light"];
+}
+
+/** A point between two hex colours, 0 being the first and 1 the second. */
+function mixColours(from, to, ratio) {
+    const channel = (hex, offset) => parseInt(hex.slice(offset, offset + 2), 16);
+    const blend = (offset) =>
+        Math.round(channel(from, offset) + (channel(to, offset) - channel(from, offset)) * ratio)
+            .toString(16)
+            .padStart(2, "0");
+
+    return `#${blend(1)}${blend(3)}${blend(5)}`;
+}
+
+/**
+ * How a value axis's labels are coloured.
+ *
+ * An axis read by one line takes that line's colour. Read by two, the labels
+ * run from the first line's colour at the top to the second's at the bottom,
+ * so the axis says both lines are read against it - the dew point never
+ * exceeds the temperature, so its colour belongs at the bottom. The gradient
+ * is spread over the readings' own range, since ECharts hands a label its
+ * value but not its place on the axis.
+ */
+function axisLabelStyle(axis, channels) {
+    const readers = channels.filter((entry) => entry.axis === axis.key);
+
+    if (readers.length < 2) {
+        return { color: colourFor(readers[0]?.key ?? axis.key) };
+    }
+
+    const values = readers.flatMap((entry) =>
+        rows.map((row) => row[COLUMN[entry.key]]).filter((value) => value !== null),
+    );
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    const top = colourFor(readers[0].key);
+    const bottom = colourFor(readers[readers.length - 1].key);
+
+    if (values.length === 0 || high === low) {
+        return { color: top };
+    }
+
+    return {
+        color: (value) => {
+            const ratio = Math.min(1, Math.max(0, (value - low) / (high - low)));
+
+            return mixColours(bottom, top, ratio);
+        },
+    };
 }
 
 const numberFormats = new Map();
@@ -162,6 +229,11 @@ function formatNumber(value, decimals) {
     }
 
     return numberFormats.get(decimals).format(value);
+}
+
+/** A channel's value with its unit; a hole in the record reads as one. */
+function formatValue(value, channel) {
+    return value === null ? "n/a" : `${formatNumber(value, channel.decimals)} ${channel.unit}`;
 }
 
 /**
@@ -248,19 +320,21 @@ function readingsHtml(row) {
         `<div style="font-weight:500;margin-bottom:4px;color:${colours.text}">` +
         `${stampFormat.format(new Date(row[COLUMN.time]))}</div>`;
 
-    const lines = CHANNELS.map((channel) => {
-        const dot =
-            `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
-            `background:${colourFor(channel.key)};margin-right:6px"></span>`;
+    const lines = CHANNELS.filter(isShown)
+        .map((channel) => {
+            const dot =
+                `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
+                `background:${colourFor(channel.key)};margin-right:6px"></span>`;
 
-        return (
-            `<div style="display:flex;align-items:center;gap:12px">` +
-            `<span>${dot}${channel.label}</span>` +
-            `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text}">` +
-            `${formatNumber(row[COLUMN[channel.key]], channel.decimals)} ${channel.unit}</span>` +
-            `</div>`
-        );
-    }).join("");
+            return (
+                `<div style="display:flex;align-items:center;gap:12px">` +
+                `<span>${dot}${channel.label}</span>` +
+                `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text}">` +
+                `${formatValue(row[COLUMN[channel.key]], channel)}</span>` +
+                `</div>`
+            );
+        })
+        .join("");
 
     return heading + lines;
 }
@@ -441,7 +515,16 @@ function eventLines() {
 
 function optionFor(strip) {
     const colours = palette();
-    const channels = strip.channels.map(channelFor);
+    const channels = strip.channels.map(channelFor).filter(isShown);
+    // One axis per distinct `axis` among the lines actually drawn - so the
+    // temperature's axis stands even when only the dew point reads it - in
+    // the strip's declared order, not the order of what happens to be on:
+    // the temperature axis keeps the left whichever of its lines is drawn,
+    // and humidity moves there only when it is the only line left.
+    const wanted = new Set(channels.map((entry) => entry.axis));
+    const axes = [...new Set(strip.channels.map((key) => channelFor(key).axis))]
+        .filter((key) => wanted.has(key))
+        .map(channelFor);
 
     return {
         animation: false,
@@ -475,11 +558,11 @@ function optionFor(strip) {
         },
         // The axis labels carry their series' colour: with two units on one
         // grid, that is what says which line is read against which side.
-        yAxis: channels.map((entry, index) => ({
+        yAxis: axes.map((entry, index) => ({
             type: "value",
             scale: true,
             position: index === 0 ? "left" : "right",
-            axisLabel: { color: colourFor(entry.key), fontSize: 10 },
+            axisLabel: { fontSize: 10, ...axisLabelStyle(entry, channels) },
             // Only the first axis rules the grid - a second set of lines at
             // another scale would cross it at arbitrary heights.
             splitLine: {
@@ -490,9 +573,14 @@ function optionFor(strip) {
         series: channels.map((entry, index) => ({
             type: "line",
             name: entry.label,
-            yAxisIndex: index,
+            yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
             showSymbol: false,
-            lineStyle: { width: 1.5, color: colourFor(entry.key) },
+            // A derived line is dashed, so it is not mistaken for a reading.
+            lineStyle: {
+                width: 1.5,
+                color: colourFor(entry.key),
+                type: entry.dashed ? [6, 4] : "solid",
+            },
             itemStyle: { color: colourFor(entry.key) },
             data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
             // One set of lines per canvas is enough; they belong to no series.
@@ -776,9 +864,15 @@ let mounting = false;
 /** The channel payload currently on the canvases, to recognise an unchanged one. */
 let painted = null;
 
-/** The channels and the events together: either changing means a repaint. */
+/** The channels, the events and the switches together: any changing means a repaint. */
 function paintKey(payload) {
-    return payload.dataset.chartRows + "\n" + payload.dataset.chartEvents;
+    return (
+        payload.dataset.chartRows +
+        "\n" +
+        payload.dataset.chartEvents +
+        "\n" +
+        payload.dataset.hiddenChannels
+    );
 }
 
 function mount(force = false) {
@@ -820,6 +914,12 @@ function render(payload, force) {
         events = JSON.parse(payload.dataset.chartEvents);
     } catch {
         events = [];
+    }
+
+    try {
+        hidden = new Set(JSON.parse(payload.dataset.hiddenChannels));
+    } catch {
+        hidden = new Set();
     }
 
     const component = window.Livewire?.find(payload.dataset.chartComponent);
@@ -897,7 +997,12 @@ function watchPayload() {
     new MutationObserver(() => mount()).observe(document.body, {
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-chart-rows", "data-navigator-rows", "data-chart-events"],
+        attributeFilter: [
+            "data-chart-rows",
+            "data-navigator-rows",
+            "data-chart-events",
+            "data-hidden-channels",
+        ],
     });
 }
 

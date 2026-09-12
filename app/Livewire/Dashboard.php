@@ -7,6 +7,7 @@ namespace App\Livewire;
 use App\Enums\ChartRange;
 use App\Models\Measurement;
 use App\Models\StationEvent;
+use App\ValueObject\DewPoint;
 use App\ValueObject\MeasurementData;
 use App\ValueObject\SeaLevelPressure;
 use Carbon\CarbonInterface;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Date;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -25,12 +27,12 @@ use UnexpectedValueException;
  * Livewire resolves `#[Computed]` methods as properties at runtime. Larastan
  * does not model that, so they are declared here to stay analysable.
  *
- * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: int}> $readings
- * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: int}> $overview
+ * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}> $readings
+ * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}> $overview
  * @property-read array{from: int, to: int} $windowMs
  * @property-read bool $hasReadings
  * @property-read list<array{t: float, h: float, p: float}> $lastDay
- * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, min: float, max: float, avg: float}> $metrics
+ * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read int $currentYear
@@ -40,6 +42,8 @@ use UnexpectedValueException;
  * @property-read bool $isSilent
  * @property-read array{from: string, to: string} $window
  * @property-read bool $isZoomed
+ * @property-read list<string> $hiddenChannels
+ * @property-read list<array{0: int, 1: string, 2: ?string}> $stationEvents
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -103,6 +107,22 @@ class Dashboard extends Component
     #[Url]
     public ?int $to = null;
 
+    /**
+     * Which lines the shared strip draws, by channel key.
+     *
+     * The dew point starts off: it is derived rather than measured, and a
+     * third line is clutter for a reader who only came for the weather. See
+     * toggleChannel() for why the last one cannot be switched off - locked,
+     * so that guard cannot be walked around with `$wire.set()`.
+     *
+     * @var array<string, bool>
+     */
+    #[Locked]
+    public array $channels = self::DEFAULT_CHANNELS;
+
+    /** @var array<string, bool> */
+    private const array DEFAULT_CHANNELS = ['t' => true, 'h' => true, 'd' => false];
+
     public function mount(): void
     {
         $this->normaliseWindow();
@@ -128,6 +148,52 @@ class Dashboard extends Component
         $this->to = null;
     }
 
+    /**
+     * Switch one of the shared strip's lines on or off.
+     *
+     * The last line on stays on: an empty strip is a blank band with two
+     * axes, which reads as a failure rather than a choice. The template
+     * disables that switch as well; this is what holds when it does not.
+     */
+    public function toggleChannel(string $channel): void
+    {
+        if (! array_key_exists($channel, self::DEFAULT_CHANNELS)) {
+            return;
+        }
+
+        $on = $this->channels[$channel] ?? false;
+
+        if ($on && $this->isLastChannel($channel)) {
+            return;
+        }
+
+        $this->channels[$channel] = ! $on;
+    }
+
+    /** Whether the channel is the only one still drawn - and so cannot be switched off. */
+    public function isLastChannel(string $channel): bool
+    {
+        return ($this->channels[$channel] ?? false)
+            && count(array_filter($this->channels)) === 1;
+    }
+
+    /**
+     * Channel keys the chart must not draw, for the payload.
+     *
+     * Read against the defaults rather than the property as it arrived, so a
+     * key missing or added on the client side changes nothing.
+     *
+     * @return list<string>
+     */
+    #[Computed]
+    public function hiddenChannels(): array
+    {
+        return array_values(array_filter(
+            array_keys(self::DEFAULT_CHANNELS),
+            fn (string $channel): bool => ! ($this->channels[$channel] ?? false),
+        ));
+    }
+
     #[Computed]
     public function isZoomed(): bool
     {
@@ -139,14 +205,14 @@ class Dashboard extends Component
      *
      * Arrays rather than keyed objects because this is the chart payload and
      * a week runs to a thousand rows. Each row is
-     * `[wall-clock ms, °C, %, hPa, real epoch seconds]`.
+     * `[wall-clock ms, °C, %, hPa, dew point °C, real epoch seconds]`.
      *
      * The first element is shifted to Czech local time and the chart is told
      * to read it as UTC, which is what makes the axis and tooltip read local
      * without depending on the viewer's own clock. It is therefore not a real
      * instant - the last element is, and that is what a zoom sends back.
      *
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
+     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
      */
     #[Computed]
     public function readings(): array
@@ -176,7 +242,7 @@ class Dashboard extends Component
      * OVERVIEW_UNTHINNED_ROWS the whole thing is drawn as it stands. See
      * firstPerBucket() for why the thinning groups rather than counts.
      *
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
+     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
      */
     #[Computed]
     public function overview(): array
@@ -274,7 +340,7 @@ class Dashboard extends Component
     }
 
     /**
-     * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float, min: float, max: float, avg: float}>
+     * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float}>
      */
     #[Computed]
     public function metrics(): array
@@ -284,9 +350,9 @@ class Dashboard extends Component
         }
 
         return [
-            't' => $this->figures('t', 1),
-            'h' => $this->figures('h', 2),
-            'p' => $this->figures('p', 3),
+            't' => $this->figures('t'),
+            'h' => $this->figures('h'),
+            'p' => $this->figures('p'),
         ];
     }
 
@@ -552,14 +618,26 @@ class Dashboard extends Component
     }
 
     /**
+     * Dew point in °C, at the resolution the temperature beside it is shown.
+     *
+     * Null where there is none (see DewPoint::of), which the chart draws as a
+     * gap in the line.
+     */
+    private function dewPointCelsius(MeasurementData $data): ?float
+    {
+        return DewPoint::of($data)?->celsius(2);
+    }
+
+    /**
      * Chart rows for a set of measurements, oldest first.
      *
      * Columns hold the raw protocol units (see ProtocolVersion::V1):
      * temperature and humidity in hundredths, pressure in pascals. The chart
-     * wants °C, % and hPa reduced to sea level.
+     * wants °C, % and hPa reduced to sea level, plus the dew point in °C,
+     * which the station does not send and is derived here.
      *
      * @param  Collection<int, Measurement>  $measurements
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: int}>
+     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
      */
     private function plot(Collection $measurements): array
     {
@@ -570,6 +648,7 @@ class Dashboard extends Component
                     round($measurement->data->temperature / 100, 2),
                     round($measurement->data->humidity / 100, 2),
                     $this->seaLevelHpa($measurement->data),
+                    $this->dewPointCelsius($measurement->data),
                     $measurement->timestamp,
                 ])
                 ->all()
@@ -577,16 +656,15 @@ class Dashboard extends Component
     }
 
     /**
-     * Card + panel figures for one metric.
+     * Hero readout figures for one metric.
      *
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float, min: float, max: float, avg: float}
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float}
      */
-    private function figures(string $field, int $column): array
+    private function figures(string $field): array
     {
-        $all = array_column($this->readings, $column);
         $day = array_column($this->lastDay, $field);
 
-        if ($all === [] || $day === []) {
+        if ($day === []) {
             throw new UnexpectedValueException("No readings to summarise for [{$field}].");
         }
 
@@ -598,9 +676,6 @@ class Dashboard extends Component
             'delta' => $now - (float) $day[max(0, count($day) - 7)],
             'dayMin' => min($day),
             'dayMax' => max($day),
-            'min' => (float) min($all),
-            'max' => (float) max($all),
-            'avg' => array_sum($all) / count($all),
         ];
     }
 }

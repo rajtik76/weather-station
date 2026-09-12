@@ -165,15 +165,21 @@
 
     {{-- Temperature and humidity share a strip: they move against each other,
          and two value axes stay readable where three did not. Pressure keeps
-         its own - a 40 hPa spread would draw as a flat line beside them. --}}
+         its own - a 40 hPa spread would draw as a flat line beside them.
+
+         Each of the shared strip's lines can be switched off by its label,
+         all but the last one on. The dew point rides on the temperature axis,
+         since it is one, and is derived from the other two rather than
+         measured - so it starts off. --}}
     @php($strips = [
         [
             'key' => 'th',
             'label' => 'Temperature & humidity',
             'height' => 'h-72 sm:h-80',
             'channels' => [
-                ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'bg-amber-600 dark:bg-amber-500'],
-                ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'bg-cyan-600 dark:bg-cyan-400'],
+                ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'accent' => 'bg-amber-600 dark:bg-amber-500', 'toggle' => true],
+                ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'accent' => 'bg-cyan-600 dark:bg-cyan-400', 'toggle' => true],
+                ['key' => 'd', 'label' => 'Dew point', 'unit' => '°C', 'accent' => 'bg-pink-600 dark:bg-pink-400', 'toggle' => true],
             ],
         ],
         [
@@ -181,7 +187,7 @@
             'label' => 'Pressure, MSL',
             'height' => 'h-48 sm:h-56',
             'channels' => [
-                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 2, 'accent' => 'bg-violet-600 dark:bg-violet-500'],
+                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'accent' => 'bg-violet-600 dark:bg-violet-500'],
             ],
         ],
     ])
@@ -192,6 +198,7 @@
         data-chart-rows="{{ json_encode($this->readings) }}"
         data-navigator-rows="{{ json_encode($this->overview) }}"
         data-chart-events="{{ json_encode($this->stationEvents) }}"
+        data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
         data-window-from="{{ $this->windowMs['from'] }}"
         data-window-to="{{ $this->windowMs['to'] }}"
         data-chart-component="{{ $this->getId() }}"
@@ -203,27 +210,48 @@
             aria-label="{{ $strip['label'] }} history"
             class="border-b border-zinc-900/10 dark:border-white/10"
         >
-            {{-- One header row per channel, so a shared strip still reports each
-                 series against its own unit. The dot carries the line's colour,
-                 which is what tells the two value axes apart. --}}
-            <div class="px-4 pt-5 pb-2 sm:px-8">
+            {{-- One label per channel, in a row: the dot carries the line's
+                 colour, which is what tells the two value axes apart. --}}
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
                 @foreach ($strip['channels'] as $channel)
-                    @php($m = $this->metrics[$channel['key']] ?? null)
-                    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 not-first:mt-1">
+                    @if (isset($channel['toggle']))
+                        {{-- The label doubles as the switch. Off, the whole
+                             label is greyed the way a disabled control is,
+                             dot included; on, it reads like its neighbours.
+                             The last one on is disabled instead, so the
+                             strip is never left blank. --}}
+                        @php($shown = $this->channels[$channel['key']] ?? false)
+                        @php($last = $this->isLastChannel($channel['key']))
+                        <button
+                            type="button"
+                            wire:click="toggleChannel('{{ $channel['key'] }}')"
+                            aria-pressed="{{ $shown ? 'true' : 'false' }}"
+                            @disabled($last)
+                            @class([
+                                'flex items-center gap-2 rounded-sm font-mono text-[11px] font-medium tracking-[0.2em] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:focus-visible:outline-zinc-100',
+                                'cursor-pointer' => ! $last,
+                                'cursor-default' => $last,
+                                'text-zinc-500 dark:text-zinc-400' => $shown,
+                                'hover:text-zinc-800 dark:hover:text-zinc-200' => $shown && ! $last,
+                                'text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400' => ! $shown,
+                            ])
+                        >
+                            <span
+                                @class([
+                                    'size-1.5 rounded-full',
+                                    $channel['accent'] => $shown,
+                                    'bg-zinc-300 dark:bg-zinc-600' => ! $shown,
+                                ])
+                                aria-hidden="true"
+                            ></span>
+                            {{ $channel['label'] }} ({{ $channel['unit'] }})
+                        </button>
+                    @else
                         <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
                             <span class="{{ $channel['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
-                            {{ $channel['label'] }} · {{ $channel['unit'] }}
+                            {{ $channel['label'] }} ({{ $channel['unit'] }})
                         </p>
-                        <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                            @if ($m)
-                                window · min {{ number_format($m['min'], $channel['dec'], ',', ' ') }}
-                                · max {{ number_format($m['max'], $channel['dec'], ',', ' ') }}
-                                · avg {{ number_format($m['avg'], $channel['dec'], ',', ' ') }}
-                            @else
-                                no readings in this window
-                            @endif
-                        </p>
-                    </div>
+                    @endif
                 @endforeach
             </div>
 
