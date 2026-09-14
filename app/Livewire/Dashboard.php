@@ -6,6 +6,7 @@ namespace App\Livewire;
 
 use App\Enums\ChartRange;
 use App\Models\Measurement;
+use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\ValueObject\DewPoint;
 use App\ValueObject\MeasurementData;
@@ -44,6 +45,9 @@ use UnexpectedValueException;
  * @property-read bool $isZoomed
  * @property-read list<string> $hiddenChannels
  * @property-read list<array{0: int, 1: string, 2: ?string}> $stationEvents
+ * @property-read Collection<int, Sensor> $sensors
+ * @property-read Sensor|null $selectedSensor
+ * @property-read bool $hasSensorChoice
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -108,6 +112,18 @@ class Dashboard extends Component
     public ?int $to = null;
 
     /**
+     * Which sensor the page reads, by slug, or null for the first registered.
+     *
+     * The slug rather than the id: it is the firmware's own name made safe
+     * for a URL, so the link reads `?sensor=sensor-001` and survives a
+     * reseed. Everything below the top bar - readouts, charts, events, the
+     * payload tail - is that one sensor's. A slug that matches nothing falls
+     * back the same way, so a stale link still opens on a station.
+     */
+    #[Url]
+    public ?string $sensor = null;
+
+    /**
      * Which lines the shared strip draws, by channel key.
      *
      * The dew point starts off: it is derived rather than measured, and a
@@ -126,6 +142,7 @@ class Dashboard extends Component
     public function mount(): void
     {
         $this->normaliseWindow();
+        $this->normaliseSensor();
     }
 
     public function render(): View
@@ -146,6 +163,40 @@ class Dashboard extends Component
     {
         $this->from = null;
         $this->to = null;
+    }
+
+    /** The picker sends whatever slug the option carried; it may be gone by now. */
+    public function updatedSensor(): void
+    {
+        $this->normaliseSensor();
+    }
+
+    /**
+     * Every sensor that ever uploaded, oldest registration first.
+     *
+     * That order is what makes the first one the default: the original
+     * station keeps the front page when a second one is added.
+     *
+     * @return Collection<int, Sensor>
+     */
+    #[Computed]
+    public function sensors(): Collection
+    {
+        return Sensor::query()->orderBy('id')->get();
+    }
+
+    /** The sensor whose record the page shows; null only while none has uploaded. */
+    #[Computed]
+    public function selectedSensor(): ?Sensor
+    {
+        return $this->sensors->firstWhere('slug', $this->sensor) ?? $this->sensors->first();
+    }
+
+    /** One sensor is nothing to choose between, so the picker waits for a second. */
+    #[Computed]
+    public function hasSensorChoice(): bool
+    {
+        return $this->sensors->count() >= 2;
     }
 
     /**
@@ -222,7 +273,7 @@ class Dashboard extends Component
         $window = [$this->windowFrom(), $this->windowTo()];
 
         return $this->plot(
-            Measurement::query()
+            $this->measurements()
                 ->whereBetween('timestamp', $window)
                 ->when($thinTo > 0, fn (Builder $query): Builder => $this->firstPerBucket($query, $thinTo, $window))
                 ->orderBy('timestamp')
@@ -247,10 +298,10 @@ class Dashboard extends Component
     #[Computed]
     public function overview(): array
     {
-        $total = Measurement::query()->count();
+        $total = $this->measurements()->count();
 
         return $this->plot(
-            Measurement::query()
+            $this->measurements()
                 ->when(
                     $total >= self::OVERVIEW_UNTHINNED_ROWS,
                     fn (Builder $query): Builder => $this->firstPerBucket($query, self::OVERVIEW_BUCKET_SECONDS)
@@ -316,7 +367,7 @@ class Dashboard extends Component
     public function lastDay(): array
     {
         $day = array_values(
-            Measurement::query()
+            $this->measurements()
                 ->where('timestamp', '>=', now()->subDay()->getTimestamp())
                 ->orderBy('timestamp')
                 ->get()
@@ -377,7 +428,7 @@ class Dashboard extends Component
     public function recentTransmissions(): array
     {
         return array_values(
-            Measurement::query()
+            $this->measurements()
                 ->orderByDesc('timestamp')
                 ->limit(self::RECENT_TRANSMISSIONS)
                 ->get()
@@ -441,7 +492,7 @@ class Dashboard extends Component
     #[Computed]
     public function lastMeasurement(): ?CarbonInterface
     {
-        $timestamp = Measurement::query()->max('timestamp');
+        $timestamp = $this->measurements()->max('timestamp');
 
         return $timestamp === null
             ? null
@@ -470,6 +521,19 @@ class Dashboard extends Component
             || $this->lastMeasurement->getTimestamp() < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
     }
 
+    /**
+     * The selected sensor's readings, and nothing else's.
+     *
+     * With no sensor at all the id is null and the comparison matches no row,
+     * which is the empty page the template already draws.
+     *
+     * @return Builder<Measurement>
+     */
+    private function measurements(): Builder
+    {
+        return Measurement::query()->where('sensor_id', $this->selectedSensor?->id);
+    }
+
     /** Oldest instant on screen, as a real UTC epoch. */
     private function windowFrom(): int
     {
@@ -488,7 +552,7 @@ class Dashboard extends Component
     }
 
     /**
-     * Every event ever done to the station, for the charts to mark.
+     * Every event ever done to the selected sensor, for the charts to mark.
      *
      * Not bounded to the window: there are a handful of these over the life of
      * the station, and a mark outside the axis simply is not drawn. Each entry
@@ -504,6 +568,7 @@ class Dashboard extends Component
     {
         return array_values(
             StationEvent::query()
+                ->where('sensor_id', $this->selectedSensor?->id)
                 ->oldest('occurred_at')
                 ->get()
                 ->map(fn (StationEvent $event): array => [
@@ -513,6 +578,21 @@ class Dashboard extends Component
                 ])
                 ->all()
         );
+    }
+
+    /**
+     * Pin the property to the sensor actually shown.
+     *
+     * The picker is bound to the property, so it must hold a real slug even
+     * when the page opened without one - a native select given nothing it
+     * knows shows a blank. Livewire keeps the initial value out of the query
+     * string, so the default stays a clean URL.
+     */
+    private function normaliseSensor(): void
+    {
+        unset($this->selectedSensor);
+
+        $this->sensor = $this->selectedSensor?->slug;
     }
 
     /**
@@ -593,8 +673,11 @@ class Dashboard extends Component
     private function firstPerBucket(Builder $query, int $bucketSeconds, ?array $window = null): Builder
     {
         return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds, $window): void {
+            // Scoped to the sensor as well: another station's first row of a
+            // bucket is an earlier stamp this one never sent.
             $bucket->selectRaw('MIN(timestamp)')
                 ->from('measurements')
+                ->where('sensor_id', $this->selectedSensor?->id)
                 ->groupByRaw('timestamp / ?', [$bucketSeconds]);
 
             if ($window !== null) {

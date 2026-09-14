@@ -6,6 +6,7 @@ namespace Database\Factories;
 
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
+use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -25,7 +26,7 @@ class MeasurementFactory extends Factory
         $date = CarbonImmutable::parse(fake()->dateTimeBetween('-1 year'));
 
         return [
-            'sensor_name' => fake()->name(),
+            'sensor_id' => Sensor::factory(),
             'timestamp' => $date->timestamp,
             'protocol_version' => ProtocolVersion::V1,
             // The model has no data setter, the column takes the encoded blob.

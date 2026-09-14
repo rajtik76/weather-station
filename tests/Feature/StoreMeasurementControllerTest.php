@@ -3,6 +3,7 @@
 declare(strict_types=1);
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
+use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -31,7 +32,7 @@ it('can store measurement', function (): void {
     assertDatabaseCount(Measurement::class, 1);
     assertDatabaseHas(Measurement::class, [
         'protocol_version' => ProtocolVersion::V1,
-        'sensor_name' => 'test-sensor',
+        'sensor_id' => Sensor::query()->where('name', 'test-sensor')->sole()->id,
         'timestamp' => now()->timestamp,
     ]);
 
@@ -56,17 +57,17 @@ it('can store multiple measurements', function (): void {
 
     assertDatabaseHas(Measurement::class, [
         'protocol_version' => ProtocolVersion::V1,
-        'sensor_name' => 'test-sensor',
+        'sensor_id' => Sensor::query()->where('name', 'test-sensor')->sole()->id,
         'timestamp' => now()->subMinutes(20)->timestamp,
     ]);
     assertDatabaseHas(Measurement::class, [
         'protocol_version' => ProtocolVersion::V1,
-        'sensor_name' => 'test-sensor',
+        'sensor_id' => Sensor::query()->where('name', 'test-sensor')->sole()->id,
         'timestamp' => now()->subMinutes(10)->timestamp,
     ]);
     assertDatabaseHas(Measurement::class, [
         'protocol_version' => ProtocolVersion::V1,
-        'sensor_name' => 'test-sensor',
+        'sensor_id' => Sensor::query()->where('name', 'test-sensor')->sole()->id,
         'timestamp' => now()->timestamp,
     ]);
 
@@ -81,9 +82,8 @@ it('can store multiple measurements', function (): void {
 it('idempotency replace existing data', function (): void {
     freezeTime();
 
-    Measurement::factory()->create([
+    Measurement::factory()->for(Sensor::factory()->create(['name' => 'test-sensor']))->create([
         'protocol_version' => ProtocolVersion::V1->value,
-        'sensor_name' => 'test-sensor',
         'timestamp' => now()->timestamp,
         'data' => (string) new MeasurementDataV1(
             temperature: 200,
@@ -103,7 +103,7 @@ it('idempotency replace existing data', function (): void {
     assertDatabaseCount(Measurement::class, 1);
     assertDatabaseHas(Measurement::class, [
         'protocol_version' => ProtocolVersion::V1,
-        'sensor_name' => 'test-sensor',
+        'sensor_id' => Sensor::query()->where('name', 'test-sensor')->sole()->id,
         'timestamp' => now()->timestamp,
     ]);
 
@@ -156,4 +156,20 @@ it('stores a batch without pinging when no monitor is configured', function (): 
     ])->assertCreated();
 
     Http::assertNothingSent();
+});
+
+it('registers a sensor on its first upload and reuses it afterwards', function (): void {
+    foreach ([1757000000, 1757000600] as $timestamp) {
+        postJson('/api/v1/measurement', [
+            'sensor_name' => 'bme280-north',
+            'protocol_version' => 1,
+            'measurements' => [
+                ['timestamp' => $timestamp, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+            ],
+        ])->assertCreated();
+    }
+
+    assertDatabaseCount(Sensor::class, 1);
+    assertDatabaseHas(Sensor::class, ['name' => 'bme280-north', 'description' => null]);
+    expect(Sensor::query()->sole()->measurements()->count())->toBe(2);
 });
