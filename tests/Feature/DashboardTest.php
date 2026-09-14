@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\ProtocolVersion;
 use App\Livewire\Dashboard;
 use App\Models\Measurement;
+use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Support\Facades\Date;
@@ -53,7 +54,6 @@ it('renders the readings stored in the database', function (): void {
     $at = now()->subHour();
 
     Measurement::factory()->create([
-        'sensor_name' => 'bme280',
         'timestamp' => $at->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
     ]);
@@ -137,8 +137,10 @@ it('takes the window from the query string', function (): void {
 it('plots only the readings inside the window', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    Measurement::factory()->create(['timestamp' => now()->subHour()->getTimestamp()]);
-    Measurement::factory()->create(['timestamp' => now()->subDays(10)->getTimestamp()]);
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subHour()->getTimestamp()]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(10)->getTimestamp()]);
 
     // Prague runs an hour ahead of UTC in March, and the payload carries that
     // shift already (see wallClockMs() on the component).
@@ -161,9 +163,11 @@ it('thins long ranges rather than averaging them', function (): void {
     $start = Date::parse('2026-03-01 00:00:00', 'UTC');
     $this->travelTo($start->copy()->addDay());
 
+    $sensor = Sensor::factory()->create();
+
     // A full day at the station's ten-minute cadence.
     foreach (range(0, 143) as $slot) {
-        Measurement::factory()->create(['timestamp' => $start->getTimestamp() + $slot * 600]);
+        Measurement::factory()->for($sensor)->create(['timestamp' => $start->getTimestamp() + $slot * 600]);
     }
 
     // A window wide enough to be thinned, against one that is not.
@@ -192,8 +196,10 @@ it('thins a window whose stamps never land near a bucket boundary', function ():
     // The same day, but stamped fifteen minutes off every slot - the drift a
     // station accumulates by uploading when it wakes. Thinning by the phase of
     // the epoch found no row at all here and emptied the chart.
+    $sensor = Sensor::factory()->create();
+
     foreach (range(0, 143) as $slot) {
-        Measurement::factory()->create(['timestamp' => $start->getTimestamp() + $slot * 600 + 900]);
+        Measurement::factory()->for($sensor)->create(['timestamp' => $start->getTimestamp() + $slot * 600 + 900]);
     }
 
     $year = chartRows(Livewire::test(Dashboard::class)
@@ -299,8 +305,10 @@ it('ignores a switch for a channel the strip does not have', function (): void {
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    Measurement::factory()->create(['timestamp' => now()->subHour()->getTimestamp()]);
-    Measurement::factory()->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subHour()->getTimestamp()]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
 
     $recent = '1773576000000';
     $older = '1773320400000';
@@ -421,8 +429,10 @@ it('lists the last three transmissions as the station sent them', function (): v
         ['ago' => 10, 'temperature' => 2134, 'humidity' => 5812, 'pressure' => 97389],
     ];
 
+    $sensor = Sensor::factory()->create();
+
     foreach ($packets as $packet) {
-        Measurement::factory()->create([
+        Measurement::factory()->for($sensor)->create([
             'timestamp' => now()->subMinutes($packet['ago'])->getTimestamp(),
             // The batch was buffered on the device and landed five minutes ago,
             // whatever each reading's own stamp says.
@@ -537,8 +547,10 @@ it('draws the navigator for a record shorter than one thinning bucket', function
     // slot - the drift is what a real ESP32 sends. A whole record this short
     // holds no row at all near a six-hour boundary, and thinning by the phase
     // of the epoch left the navigator with nothing to draw.
+    $sensor = Sensor::factory()->create();
+
     foreach (range(1, 18) as $slot) {
-        Measurement::factory()->create([
+        Measurement::factory()->for($sensor)->create([
             'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
         ]);
     }
@@ -550,11 +562,12 @@ it('thins the navigator to one point per bucket once the record is long', functi
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     $data = (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389);
+    $sensor = Sensor::factory()->create();
 
     // Eleven days of ten-minute uploads, drifting off the slot as above. That
     // is 44 six-hour buckets, and the navigator keeps the first row of each.
     $rows = collect(range(1, 1584))->map(fn (int $slot): array => [
-        'sensor_name' => 'bme280',
+        'sensor_id' => $sensor->id,
         'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
         'protocol_version' => ProtocolVersion::V1->value,
         'data' => $data,
@@ -634,11 +647,13 @@ it('leaves the colour to the chart when the event was entered without one', func
 });
 
 it('marks events in the order they happened whatever order they were entered', function (): void {
-    StationEvent::factory()->create([
+    $sensor = Sensor::factory()->create();
+
+    StationEvent::factory()->for($sensor)->create([
         'occurred_at' => Date::parse('2026-08-01 08:00:00', 'UTC'),
         'title' => 'Moved to the south wall',
     ]);
-    StationEvent::factory()->create([
+    StationEvent::factory()->for($sensor)->create([
         'occurred_at' => Date::parse('2026-06-01 08:00:00', 'UTC'),
         'title' => 'Radiation shield fitted',
     ]);
@@ -651,4 +666,129 @@ it('marks events in the order they happened whatever order they were entered', f
 
 it('hands the charts no events when none have been recorded', function (): void {
     expect(chartEvents(Livewire::test(Dashboard::class)->html()))->toBe([]);
+});
+
+it('names the sensor it is showing', function (): void {
+    Sensor::factory()->create([
+        'name' => 'bme280-north',
+        'description' => 'Under the eaves on the north wall, in a radiation shield.',
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertSeeInOrder(['Sensor', 'bme280-north', 'Under the eaves on the north wall, in a radiation shield.'])
+        ->assertDontSee('none registered yet');
+});
+
+it('reports when no sensor has registered yet', function (): void {
+    Livewire::test(Dashboard::class)
+        ->assertSee('none registered yet')
+        ->assertSet('sensor', null);
+});
+
+it('offers a picker only once there are two sensors', function (): void {
+    Sensor::factory()->create();
+
+    Livewire::test(Dashboard::class)->assertDontSee('Choose a sensor');
+
+    Sensor::factory()->create();
+
+    Livewire::test(Dashboard::class)->assertSee('Choose a sensor');
+});
+
+it('opens on the first registered sensor and switches on request', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $first = Sensor::factory()->create(['name' => 'first']);
+    $second = Sensor::factory()->create(['name' => 'second']);
+
+    Measurement::factory()->for($first)->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
+    ]);
+    Measurement::factory()->for($second)->create([
+        'timestamp' => now()->subMinutes(30)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 1050, humidity: 8800, pressure: 96389),
+    ]);
+
+    $component = Livewire::test(Dashboard::class)
+        ->assertSet('sensor', 'first')
+        // Readouts, chart, status line and payload tail all read the first sensor.
+        ->assertSee('21,50')
+        ->assertDontSee('10,50')
+        ->assertSee('15. 3. 2026 12:50')
+        ->assertDontSee('15. 3. 2026 12:30')
+        ->assertSee('2150')
+        ->assertDontSee('1050');
+
+    expect(chartRows($component->html()))->toContain('21.5')->not->toContain('10.5');
+
+    $component->set('sensor', 'second')
+        ->assertSet('sensor', 'second')
+        ->assertSee('10,50')
+        ->assertDontSee('21,50')
+        ->assertSee('15. 3. 2026 12:30')
+        ->assertSee('1050')
+        ->assertDontSee('2150');
+
+    expect(chartRows($component->html()))->toContain('10.5')->not->toContain('21.5');
+});
+
+it('falls back to the first sensor when the link names one that is gone', function (): void {
+    $sensor = Sensor::factory()->create(['name' => 'the-only-one']);
+
+    Livewire::withQueryParams(['sensor' => 'the-other-one']);
+
+    Livewire::test(Dashboard::class)
+        ->assertSet('sensor', 'the-only-one')
+        ->assertSee('the-only-one');
+});
+
+it('keeps another sensor\'s readings out of the thinning', function (): void {
+    $start = Date::parse('2026-03-01 00:00:00', 'UTC');
+    $this->travelTo($start->copy()->addDay());
+
+    $shown = Sensor::factory()->create();
+    $other = Sensor::factory()->create();
+
+    // The other station opens every six-hour bucket a minute earlier. Thinned
+    // across the whole table, its rows would be the buckets' first and the
+    // shown sensor would plot nothing at all.
+    foreach (range(0, 3) as $bucket) {
+        Measurement::factory()->for($other)->create(['timestamp' => $start->getTimestamp() + $bucket * 21600]);
+        Measurement::factory()->for($shown)->create(['timestamp' => $start->getTimestamp() + $bucket * 21600 + 60]);
+    }
+
+    $year = json_decode(chartRows(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 300 * 86400, now()->getTimestamp())
+        ->html()), true);
+
+    expect(array_column($year, 5))->toBe([
+        $start->getTimestamp() + 60,
+        $start->getTimestamp() + 21660,
+        $start->getTimestamp() + 43260,
+        $start->getTimestamp() + 64860,
+    ]);
+});
+
+it('marks only the selected sensor\'s events', function (): void {
+    $shown = Sensor::factory()->create();
+    $other = Sensor::factory()->create();
+
+    StationEvent::factory()->for($shown)->create([
+        'occurred_at' => Date::parse('2026-07-15 10:00:00', 'UTC'),
+        'title' => 'Radiation shield fitted',
+    ]);
+    StationEvent::factory()->for($other)->create([
+        'occurred_at' => Date::parse('2026-07-16 10:00:00', 'UTC'),
+        'title' => 'Moved to the balcony',
+    ]);
+
+    $component = Livewire::test(Dashboard::class);
+
+    expect(array_column(chartEvents($component->html()), 1))->toBe(['Radiation shield fitted']);
+
+    // Switching sensors swaps the marks along with the readings.
+    $component->set('sensor', $other->slug);
+
+    expect(array_column(chartEvents($component->html()), 1))->toBe(['Moved to the balcony']);
 });

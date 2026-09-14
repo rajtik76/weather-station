@@ -82,3 +82,11 @@ The payload tail dates its rows by `created_at` instead. The reading's own stamp
 A slider dataZoom narrows the axis it drives to the selected window. The navigator's grid shares the canvas with that slider, so anything drawn against the driven axis - tick labels, event markLines - reads the window while the slider's shadow above spans the whole record. They looked aligned only by coincidence until the event lines landed.
 
 `navigatorOption()` therefore has xAxis[0] hidden and driven by the slider (`xAxisIndex: 0`), and xAxis[1] pinned to `dataMin`/`dataMax` carrying the labels and the markLines, fed the same overview rows by a second invisible series. Both span the record, so the slider's shadow and the labelled axis line up. Do not collapse them back into one axis.
+
+## The dashboard shows one sensor, and every query is scoped to it
+
+`sensors` is a table; the firmware's `sensor_name` is only the key `StoreMeasurementController` uses to `firstOrCreate` one. Measurements and station events carry `sensor_id` (both FKs, restrict on delete), so an event belongs to one sensor's charts.
+
+`Dashboard::$sensor` (`#[Url]`) is the selected sensor's slug - the firmware's own name made URL-safe by `Sensor::uniqueSlug()` on creation (`Str::slug`, counter on collision, `sensor` for a name of only symbols), so the link reads `?sensor=sensor-001` and survives a reseed. Every measurement query goes through `measurements()`, which scopes to `selectedSensor` - including the `firstPerBucket()` subquery, because another station's earlier row in the same bucket would otherwise be the bucket's MIN and this sensor's row would drop out. `stationEvents()` is scoped the same way.
+
+`normaliseSensor()` pins `$sensor` to the shown sensor's slug in `mount()` and `updatedSensor()`: the native `<select>` is bound to the property and shows a blank when given a value it has no option for. Livewire keeps the initial value out of the query string, so the default stays a clean URL. Unknown slugs fall back to the first registered sensor (lowest id), which is why the original station keeps the front page when a second one appears. The picker renders only with two or more sensors and stands alone on the right of its own row, so its arrival shifts nothing.

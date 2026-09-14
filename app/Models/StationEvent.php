@@ -8,21 +8,32 @@ use Database\Factories\StationEventFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Something done to the station that changed what it reads: a radiation
+ * Something done to one station that changed what it reads: a radiation
  * shield fitted, the sensor moved to the other side of the house. Drawn as a
- * vertical line on the charts so a step in the record has a reason next to it.
+ * vertical line on that sensor's charts so a step in the record has a reason
+ * next to it.
  *
+ * @property int $sensor_id
  * @property int $occurred_at UTC epoch seconds, the cast unwraps the column
  * @property string $title
  * @property ?string $color Any CSS colour; null leaves the chart to pick a neutral one
  */
-#[Fillable(['occurred_at', 'title', 'color'])]
+#[Fillable(['sensor_id', 'occurred_at', 'title', 'color'])]
 class StationEvent extends Model
 {
     /** @use HasFactory<StationEventFactory> */
     use HasFactory;
+
+    /**
+     * @return BelongsTo<Sensor, $this>
+     */
+    public function sensor(): BelongsTo
+    {
+        return $this->belongsTo(Sensor::class);
+    }
 
     /**
      * @return array<string, string>

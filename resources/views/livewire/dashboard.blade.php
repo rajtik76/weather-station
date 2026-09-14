@@ -102,12 +102,52 @@
         </div>
     </header>
 
+    {{-- ── Sensor ─────────────────────────────────────────────────── --}}
+    {{-- Everything from here down is one sensor's record, so it is named
+         first. The picker only appears once there is a second sensor to pick,
+         and it stands alone on the right, so its arrival shifts nothing. --}}
+    <section
+        aria-label="Sensor"
+        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
+    >
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Sensor
+            </p>
+            @if ($this->selectedSensor)
+                <p class="font-mono text-xs text-zinc-800 dark:text-zinc-200" data-sensor-name>
+                    {{ $this->selectedSensor->name }}
+                </p>
+                @if ($this->selectedSensor->description)
+                    <p class="font-serif text-base leading-snug text-zinc-600 italic dark:text-zinc-400" data-sensor-description>
+                        {{ $this->selectedSensor->description }}
+                    </p>
+                @endif
+            @else
+                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                    none registered yet
+                </p>
+            @endif
+        </div>
+
+        @if ($this->hasSensorChoice)
+            <flux:select
+                wire:model.live="sensor"
+                size="sm"
+                class="w-auto! min-w-48"
+                aria-label="Choose a sensor"
+            >
+                @foreach ($this->sensors as $option)
+                    <flux:select.option :value="$option->slug">{{ $option->name }}</flux:select.option>
+                @endforeach
+            </flux:select>
+        @endif
+    </section>
+
     {{-- ── Range switcher ─────────────────────────────────────────── --}}
-    {{-- The chart controls open a new block of the page, so they stand off the
-         hero above instead of stacking flush against it. --}}
     <section
         aria-label="Chart range"
-        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
+        class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
     >
         <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
