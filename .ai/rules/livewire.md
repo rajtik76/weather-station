@@ -17,9 +17,31 @@ Three ECharts instances joined with `echarts.connect()`, one per channel, so the
 
 ## The chart payload is wall-clock, not instants
 
-Rows are `[wall-clock ms, °C, %, hPa, dew point °C, real epoch seconds]`. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
+Rows are `[wall-clock ms, °C, %, hPa, dew point °C, epoch seconds]` - on the strips the epoch is the bucket's slot, on the navigator the reading's own stamp. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
 
-That first element is therefore not an instant. Never measure it against `now()` and never convert it a second time - anything formatting it must do so as UTC. The last element is the real epoch, and that is what a zoom hands back to `zoomTo()`. `station-charts.js` reads columns through its `COLUMN` map, never by literal index.
+That first element is therefore not an instant. Never measure it against `now()` and never convert it a second time - anything formatting it must do so as UTC. The sixth element is the real epoch, and that is what a zoom hands back to `zoomTo()`. `station-charts.js` reads columns through its `COLUMN` map, never by literal index.
+
+## The strips draw buckets, not readings
+
+`Dashboard::readings()` averages the window into fixed slots - ten minutes on an hour or a day, thirty on a week, an hour on a month (`ChartRange::bucketSeconds()`, never zero). Every slot in the window is a row whether or not a reading landed in it: an empty one carries nulls, which ECharts draws as a hole in the line, so an outage shows as a gap instead of a straight line joining its neighbours. A window with no reading at all is the empty list, which is what "Nothing in this range" keys on - `hasReadings` must not be taught to look inside the rows.
+
+The rows are dated by the slot, not by any reading in it, and the buckets divide the epoch (`timestamp / step`), so they never move with daylight saving and a station that uploads minutes off the slot still lands in the right one.
+
+The averaging is SQL, and PostgreSQL's SQL: `Dashboard::buckets()` lays the slots out with `generate_series` and left-joins the averages onto them, reading the jsonb blob with the V1 keys directly (`data->>'temperature'`). A later protocol that renames a field has to teach that query about it as well - aggregation cannot go through `ProtocolVersion::hydrate()` row by row. See `.ai/rules/database.md` for why there is no SQLite fallback.
+
+The mean is turned back into a `MeasurementDataV1` so the pressure reduction and the dew point run through the same code as a single reading.
+
+The footer's record count is `recordCount()`, a count in the table bounded to the window - `count($this->readings)` is the number of slots, holes included, and would call a month the station slept through seven hundred records.
+
+The payload therefore ends on the window's last slot, which is a hole whenever the station is a few minutes late. Anything reading "the last row" wants the last row that holds a reading - `newestPlottedReading()`, which is how the hero readouts fall back when the station has been quiet for over a day.
+
+## The window stops at a month, and the buckets at an hour
+
+`normaliseWindow()` clips anything wider than `MAX_SPAN_SECONDS` (30 days) from the front, keeping the newer end the reader pointed at. A strip is about a thousand pixels across: a month of hourly means gives each day thirty of them and its rise and fall stays legible; a year would give it three, and averaging into six-hour buckets flattens the very swing the chart is for - the morning frost and the afternoon high become a temperature that never happened. `ChartRange` has no case past `Month` for that reason, and `forSpan()` falls to it.
+
+A min-max band behind the mean was built and taken out again: at an hour's bucket the spread is a few tenths of a degree and invisible, and it only earned its place at the six-hour buckets the month cap removed. Do not bring it back without bringing wider buckets back too.
+
+The navigator is unaffected - it always spans the whole record, so a month is found by dragging its slider.
 
 Storage stays UTC: the firmware sends `time(nullptr)` and `config/app.php` keeps `'timezone' => 'UTC'`. Only presentation shifts.
 
@@ -27,9 +49,9 @@ Storage stays UTC: the firmware sends `time(nullptr)` and `config/app.php` keeps
 
 `range` is only a preset that seeds the window; `from`/`to` are real epochs and override it. Stepping by whole preset-sized units was the earlier design and made short windows unreachable without hammering an arrow.
 
-A drag-selection sends real epochs to `zoomTo()`, which re-queries. That round trip is the point: thinning follows the span actually on screen (`ChartRange::forSpan()`), so zooming into a thinned year returns the readings the year view skipped.
+A drag-selection sends real epochs to `zoomTo()`, which re-queries. That round trip is the point: the bucket width follows the span actually on screen (`ChartRange::forSpan()`), so zooming into a month of hourly means comes back as the ten-minute slots the month view averaged over.
 
-`normaliseWindow()` sorts, clamps to the present and enforces a minimum span - both ends arrive from the query string and from drags that may have been stray clicks.
+`normaliseWindow()` sorts, clamps to the present and enforces a minimum and a maximum span - both ends arrive from the query string and from drags that may have been stray clicks.
 
 ## Components are class-based, not single-file
 
@@ -63,11 +85,11 @@ Consequence for the payload tail: the raw JSON prints station pressure in Pa whi
 
 The chart payload carries two decimals, the sensor's own resolution - it reports whole pascals. The pressure strip's axis scales to whatever the window holds, and a day of weather is a couple of hPa, so tenths drew the line as a staircase. The hero readouts and the payload tail still print a tenth.
 
-## Thinning by the phase of the epoch misses a drifting station
+## The navigator thins, it does not average
 
-The station stamps an upload when it wakes, not on the slot, so its timestamps sit a couple of minutes off every multiple of STEP_SECONDS. `whereRaw('timestamp % ? < ?')` only lands on a row while that drift stays under the step, and a record shorter than one bucket holds no such row at all - which is what emptied the navigator on a production database a few hours old.
+The strips average (above); the navigator keeps one real reading per six-hour bucket through `Dashboard::firstPerBucket()`. It exists to show where the window sits, so a sample per bucket is enough for its few pixels and the averaging would be work for nothing. `overview()` skips thinning entirely below OVERVIEW_UNTHINNED_ROWS, because a record shorter than one bucket would otherwise thin down to a single point.
 
-Both thinning paths therefore go through `Dashboard::firstPerBucket()`, which groups on `MIN(timestamp)` per `timestamp / bucket` and takes the bucket's own first row whatever time it carries. `readings()` bounds the subquery to the window it is already scanning; `overview()` skips thinning entirely below OVERVIEW_UNTHINNED_ROWS, because a record shorter than one bucket would otherwise thin down to a single point.
+Thinning by the phase of the epoch misses a drifting station: it stamps an upload when it wakes, not on the slot, so its timestamps sit a couple of minutes off every multiple of STEP_SECONDS. `whereRaw('timestamp % ? < ?')` only lands on a row while that drift stays under the step, and a record shorter than one bucket holds no such row at all - which is what emptied the navigator on a production database a few hours old. `firstPerBucket()` therefore groups on `MIN(timestamp)` per `timestamp / bucket` and takes the bucket's own first row whatever time it carries.
 
 ## Measurement time is the station's stamp; arrival time is created_at
 
@@ -87,6 +109,6 @@ A slider dataZoom narrows the axis it drives to the selected window. The navigat
 
 `sensors` is a table; the firmware's `sensor_name` is only the key `StoreMeasurementController` uses to `firstOrCreate` one. Measurements and station events carry `sensor_id` (both FKs, restrict on delete), so an event belongs to one sensor's charts.
 
-`Dashboard::$sensor` (`#[Url]`) is the selected sensor's slug - the firmware's own name made URL-safe by `Sensor::uniqueSlug()` on creation (`Str::slug`, counter on collision, `sensor` for a name of only symbols), so the link reads `?sensor=sensor-001` and survives a reseed. Every measurement query goes through `measurements()`, which scopes to `selectedSensor` - including the `firstPerBucket()` subquery, because another station's earlier row in the same bucket would otherwise be the bucket's MIN and this sensor's row would drop out. `stationEvents()` is scoped the same way.
+`Dashboard::$sensor` (`#[Url]`) is the selected sensor's slug - the firmware's own name made URL-safe by `Sensor::uniqueSlug()` on creation (`Str::slug`, counter on collision, `sensor` for a name of only symbols), so the link reads `?sensor=sensor-001` and survives a reseed. Every measurement query goes through `measurements()`, which scopes to `selectedSensor` - including the `firstPerBucket()` subquery, because another station's earlier row in the same bucket would otherwise be the bucket's MIN and this sensor's row would drop out. `buckets()` is a query-builder query, not Eloquent, and scopes itself the same way; unscoped it would average the other station into this one's line. `stationEvents()` is scoped the same way.
 
 `normaliseSensor()` pins `$sensor` to the shown sensor's slug in `mount()` and `updatedSensor()`: the native `<select>` is bound to the property and shows a blank when given a value it has no option for. Livewire keeps the initial value out of the query string, so the default stays a clean URL. Unknown slugs fall back to the first registered sensor (lowest id), which is why the original station keeps the front page when a second one appears. The picker renders only with two or more sensors and stands alone on the right of its own row, so its arrival shifts nothing.

@@ -63,8 +63,9 @@
                      standfirst is set a step larger to hold the same weight on
                      the page. --}}
                 <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
-                    A BME280 on an ESP32 reads temperature, humidity and pressure every ten minutes, around the clock. Every point is a raw
-                    record, never averaged. Pressure is measured at 345 m and shown reduced to mean sea level.
+                    A BME280 on an ESP32 reads temperature, humidity and pressure every ten minutes, around the clock. The charts draw
+                    every slot, averaged to the hour on a month and left as a gap where the station missed one. Pressure is measured
+                    at 345 m and shown reduced to mean sea level.
                 </flux:text>
             </div>
 
@@ -385,7 +386,7 @@
 
     {{-- ── Footer ─────────────────────────────────────────────────── --}}
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-6 font-mono text-[11px] tracking-widest text-zinc-400 uppercase sm:px-8 dark:text-zinc-500">
-        <span>{{ number_format(count($this->readings), 0, ',', ' ') }} records</span>
+        <span>{{ number_format($this->recordCount, 0, ',', ' ') }} records</span>
         <span class="hidden sm:inline">ESP32 → HTTP POST · unix time + t/h/p</span>
         <span>
             &copy; {{ $this->currentYear }} Vladislav Rajtmajer ·

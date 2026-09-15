@@ -27,6 +27,34 @@ function chartRows(string $html): string
 }
 
 /**
+ * The window's payload decoded, one row per bucket - holes included.
+ *
+ * @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}>
+ */
+function bucketRows(string $html): array
+{
+    return json_decode(chartRows($html) ?: '[]', true);
+}
+
+/**
+ * Only the buckets a reading landed in, keyed by their epoch.
+ *
+ * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}>
+ */
+function filledBuckets(string $html): array
+{
+    $filled = [];
+
+    foreach (bucketRows($html) as $row) {
+        if ($row[1] !== null) {
+            $filled[$row[5]] = $row;
+        }
+    }
+
+    return $filled;
+}
+
+/**
  * The navigator's own payload, which always spans the whole record.
  *
  * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
@@ -159,63 +187,223 @@ it('plots only the readings inside the window', function (): void {
         ->and($wide)->toContain($recent)->toContain($older);
 });
 
-it('thins long ranges rather than averaging them', function (): void {
+it('averages a long range into buckets', function (): void {
     $start = Date::parse('2026-03-01 00:00:00', 'UTC');
     $this->travelTo($start->copy()->addDay());
 
     $sensor = Sensor::factory()->create();
 
-    // A full day at the station's ten-minute cadence.
+    // A full day at the station's ten-minute cadence, warming a tenth of a
+    // degree per slot so every bucket has a mean of its own.
     foreach (range(0, 143) as $slot) {
-        Measurement::factory()->for($sensor)->create(['timestamp' => $start->getTimestamp() + $slot * 600]);
+        Measurement::factory()->for($sensor)->create([
+            'timestamp' => $start->getTimestamp() + $slot * 600,
+            'data' => (string) new MeasurementDataV1(temperature: 1000 + $slot * 10, humidity: 5000, pressure: 97389),
+        ]);
     }
 
-    // A window wide enough to be thinned, against one that is not.
-    $year = chartRows(Livewire::test(Dashboard::class)
-        ->call('zoomTo', $start->getTimestamp() - 300 * 86400, now()->getTimestamp())
+    $month = filledBuckets(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
         ->html());
 
-    $week = chartRows(Livewire::test(Dashboard::class)->html());
+    // A month is drawn in hourly buckets, twenty-four to the day, each
+    // stamped on the slot it covers rather than on any reading inside it.
+    expect(array_keys($month))->toBe(array_map(
+        fn (int $hour): int => $start->getTimestamp() + $hour * 3600,
+        range(0, 23),
+    ));
 
-    // One reading kept per six hours, and each one is a stored record.
-    expect($year)
-        ->toContain('1772326800000')
-        ->toContain('1772348400000')
-        ->toContain('1772370000000')
-        ->toContain('1772391600000')
-        // The next reading shares that bucket, so it is dropped outright
-        // rather than averaged into the point that survives.
-        ->not->toContain('1772327400000')
-        ->and($week)->toContain('1772327400000');
+    // The first bucket holds slots 0-5: 10,00 °C up to 10,50 °C, so its mean
+    // is 10,25 °C. Whole numbers come back from the JSON as integers.
+    $first = $month[$start->getTimestamp()];
+
+    expect($first[1])->toBe(10.25)
+        ->and($first[2])->toEqual(50)
+        // 1772326800000 is midnight UTC on the 1st, in Prague's wall clock.
+        ->and($first[0])->toBe(1772326800000);
 });
 
-it('thins a window whose stamps never land near a bucket boundary', function (): void {
+it('stamps a bucket on its slot whatever time its readings carry', function (): void {
     $start = Date::parse('2026-03-01 00:00:00', 'UTC');
     $this->travelTo($start->copy()->addDay());
 
-    // The same day, but stamped fifteen minutes off every slot - the drift a
-    // station accumulates by uploading when it wakes. Thinning by the phase of
-    // the epoch found no row at all here and emptied the chart.
+    // The same day, stamped fifteen minutes off every slot - the drift a
+    // station accumulates by uploading when it wakes. The buckets divide the
+    // epoch, so a drifting reading still lands in the slot it belongs to and
+    // the row is dated by that slot, not by the reading.
     $sensor = Sensor::factory()->create();
 
     foreach (range(0, 143) as $slot) {
         Measurement::factory()->for($sensor)->create(['timestamp' => $start->getTimestamp() + $slot * 600 + 900]);
     }
 
-    $year = chartRows(Livewire::test(Dashboard::class)
-        ->call('zoomTo', $start->getTimestamp() - 300 * 86400, now()->getTimestamp())
+    $month = filledBuckets(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
         ->html());
 
-    // One point per six hours, each the bucket's own first reading. The
-    // buckets divide the epoch rather than the local day, so the first one
-    // opens with the day's first upload and the rest fall six hours apart.
-    expect($year)
-        ->toContain('1772327700000')
-        ->toContain('1772348700000')
-        ->toContain('1772370300000')
-        ->toContain('1772391900000')
-        // The next reading shares the first bucket and is dropped.
-        ->not->toContain('1772328300000');
+    // Hourly buckets: the last reading, at 23:55, spills into the one that
+    // opens at midnight - the window's own last slot - so there are 25.
+    expect(array_keys($month))->toBe(array_map(
+        fn (int $hour): int => $start->getTimestamp() + $hour * 3600,
+        range(0, 24),
+    ));
+});
+
+it('draws a missed slot as a hole rather than joining its neighbours', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    // 11:30 and 11:50 arrived; the 11:40 upload never did.
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(30)->getTimestamp()]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $rows = bucketRows(Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
+        ->html());
+
+    // Every ten-minute slot from 10:00 to 12:00 is a row, thirteen in all,
+    // and the ones the station missed carry nothing but their stamp.
+    $byEpoch = array_combine(array_column($rows, 5), $rows);
+
+    expect($rows)->toHaveCount(13)
+        ->and($byEpoch[now()->subMinutes(30)->getTimestamp()][1])->not->toBeNull()
+        ->and($byEpoch[now()->subMinutes(10)->getTimestamp()][1])->not->toBeNull()
+        ->and($byEpoch[now()->subMinutes(20)->getTimestamp()])
+        ->toBe([1773578400000, null, null, null, null, 1773574800])
+        ->and($byEpoch[now()->getTimestamp()][1])->toBeNull();
+});
+
+it('counts stored readings in the footer, not slots', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(30)->getTimestamp()]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
+
+    // The payload is thirteen slots for a two-hour window; the station sent
+    // two of them, and the third reading lies outside the window.
+    Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
+        ->assertSee('2 records')
+        ->assertDontSee('13 records');
+});
+
+it('widens the buckets with the window', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    // Two readings twenty minutes apart, inside one half hour.
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->subMinutes(20)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2000, humidity: 5000, pressure: 97389),
+    ]);
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2200, humidity: 5000, pressure: 97389),
+    ]);
+
+    // A week is drawn in half-hour buckets: the pair averages into one point
+    // on the half hour.
+    $week = filledBuckets(Livewire::test(Dashboard::class)->html());
+
+    expect($week)->toHaveCount(1)
+        ->and(array_key_first($week))->toBe(now()->subMinutes(30)->getTimestamp())
+        ->and(array_values($week)[0][1])->toEqual(21);
+
+    // Zoomed to an hour the buckets are the station's own slots, and each
+    // reading is a point again.
+    $hour = filledBuckets(Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subHour()->getTimestamp(), now()->getTimestamp())
+        ->html());
+
+    expect(array_column($hour, 1))->toEqual([20, 22]);
+});
+
+it('picks the bucket width from the span on screen', function (int $days, int $bucketSeconds, array $epochs): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    // One hour of uploads, 11:00 to 11:50, warming a degree per slot.
+    foreach (range(0, 5) as $slot) {
+        Measurement::factory()->for($sensor)->create([
+            'timestamp' => now()->subHour()->getTimestamp() + $slot * 600,
+            'data' => (string) new MeasurementDataV1(temperature: 1000 + $slot * 100, humidity: 5000, pressure: 97389),
+        ]);
+    }
+
+    $html = Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subDays($days)->getTimestamp(), now()->getTimestamp())
+        ->html();
+
+    $rows = bucketRows($html);
+    $filled = filledBuckets($html);
+
+    // Every slot of the window is a row, the hour falls into as many of
+    // them as the width allows, and each is stamped on its slot.
+    expect($rows)->toHaveCount(intdiv($days * 86400, $bucketSeconds) + 1)
+        ->and(array_column($rows, 5))->each->toBeIn(range($rows[0][5], now()->getTimestamp(), $bucketSeconds))
+        ->and(array_keys($filled))->toBe(array_map(fn (int $epoch): int => now()->getTimestamp() + $epoch, $epochs));
+})->with([
+    // 11:00 and 11:30 on a week, every half hour.
+    '7 days' => [7, 1800, [-3600, -1800]],
+    // A fortnight is drawn as a month: whole hours.
+    '14 days' => [14, 3600, [-3600]],
+    '1 month' => [30, 3600, [-3600]],
+]);
+
+it('draws no wider than a month', function (int $days): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    // A strip is a thousand pixels across; a year on it is three per day.
+    // The window is clipped from the front to the month ending where the
+    // reader pointed, and the buckets stay hourly.
+    $component = Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subDays($days)->getTimestamp(), now()->getTimestamp())
+        ->assertSet('to', now()->getTimestamp())
+        ->assertSet('from', now()->getTimestamp() - 30 * 86400)
+        ->assertSee('13. 2. 2026 → 15. 3. 2026');
+
+    expect(bucketRows($component->html()))->toHaveCount(30 * 24 + 1);
+})->with([
+    '2 months' => [61],
+    '1 year' => [365],
+]);
+
+it('clips a window wider than a month from the query string', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Livewire::withQueryParams([
+        'from' => Date::parse('2025-03-15 12:00:00', 'UTC')->getTimestamp(),
+        'to' => Date::parse('2026-03-10 12:00:00', 'UTC')->getTimestamp(),
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertSet('to', Date::parse('2026-03-10 12:00:00', 'UTC')->getTimestamp())
+        ->assertSet('from', Date::parse('2026-02-08 12:00:00', 'UTC')->getTimestamp());
+});
+
+it('reads the hero off the newest bucket that holds a reading', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // Quiet for three days: the window ends in a run of empty slots, and the
+    // readouts must find the reading behind them rather than a hole.
+    Measurement::factory()->create([
+        'timestamp' => now()->subDays(3)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
+    ]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('21,50')
+        ->assertSee('48,00')
+        ->assertSee('1 013,5');
 });
 
 it('plots pressure at the sensor\'s own resolution', function (): void {
@@ -247,7 +435,7 @@ it('carries the dew point in the chart payload', function (): void {
 
     // 21,50 °C at 48 % condenses at about 10 °C. Derived on the server so the
     // chart draws it like any other column, between the pressure and the epoch.
-    $row = json_decode(chartRows($html), true)[0];
+    $row = array_values(filledBuckets($html))[0];
 
     expect($row)->toHaveCount(6)
         ->and($row[4])->toBe(10.02)
@@ -743,31 +931,32 @@ it('falls back to the first sensor when the link names one that is gone', functi
         ->assertSee('the-only-one');
 });
 
-it('keeps another sensor\'s readings out of the thinning', function (): void {
+it('keeps another sensor\'s readings out of the averaging', function (): void {
     $start = Date::parse('2026-03-01 00:00:00', 'UTC');
     $this->travelTo($start->copy()->addDay());
 
     $shown = Sensor::factory()->create();
     $other = Sensor::factory()->create();
 
-    // The other station opens every six-hour bucket a minute earlier. Thinned
-    // across the whole table, its rows would be the buckets' first and the
-    // shown sensor would plot nothing at all.
+    // The other station reads ten degrees colder in every bucket. Averaged
+    // across the whole table, the shown sensor's line would sit five degrees
+    // under what it measured.
     foreach (range(0, 3) as $bucket) {
-        Measurement::factory()->for($other)->create(['timestamp' => $start->getTimestamp() + $bucket * 21600]);
-        Measurement::factory()->for($shown)->create(['timestamp' => $start->getTimestamp() + $bucket * 21600 + 60]);
+        Measurement::factory()->for($other)->create([
+            'timestamp' => $start->getTimestamp() + $bucket * 3600,
+            'data' => (string) new MeasurementDataV1(temperature: 1000, humidity: 5000, pressure: 97389),
+        ]);
+        Measurement::factory()->for($shown)->create([
+            'timestamp' => $start->getTimestamp() + $bucket * 3600 + 60,
+            'data' => (string) new MeasurementDataV1(temperature: 2000, humidity: 5000, pressure: 97389),
+        ]);
     }
 
-    $year = json_decode(chartRows(Livewire::test(Dashboard::class)
-        ->call('zoomTo', $start->getTimestamp() - 300 * 86400, now()->getTimestamp())
-        ->html()), true);
+    $month = filledBuckets(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
+        ->html());
 
-    expect(array_column($year, 5))->toBe([
-        $start->getTimestamp() + 60,
-        $start->getTimestamp() + 21660,
-        $start->getTimestamp() + 43260,
-        $start->getTimestamp() + 64860,
-    ]);
+    expect(array_column($month, 1))->toEqual([20, 20, 20, 20]);
 });
 
 it('marks only the selected sensor\'s events', function (): void {
