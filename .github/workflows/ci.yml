@@ -17,13 +17,30 @@ jobs:
     name: Lint, analyse, test
     runs-on: ubuntu-latest
 
+    # The dashboard aggregates in SQL that only PostgreSQL speaks
+    # (generate_series, jsonb operators), so the suite runs against the same
+    # major as production rather than an in-memory SQLite.
+    services:
+      pgsql:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: weather_station_test
+          POSTGRES_USER: weather_station
+          POSTGRES_PASSWORD: secret
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U weather_station -d weather_station_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: mbstring, dom, xml, tokenizer, fileinfo, pdo_sqlite
+          extensions: mbstring, dom, xml, tokenizer, fileinfo, pdo_pgsql
           coverage: none
 
       - uses: actions/setup-node@v7

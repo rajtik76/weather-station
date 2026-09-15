@@ -54,19 +54,22 @@ new class, and rows written by older firmware stay readable.
 
 ## Running it
 
-Needs PHP 8.4 and Node 22. Flux Pro is a paid package, so `auth.json` has to
-carry credentials for `composer.fluxui.dev`.
+Needs PHP 8.4, Node 22 and Docker. Flux Pro is a paid package, so `auth.json`
+has to carry credentials for `composer.fluxui.dev`.
 
 ```
-composer setup     # install, .env, app key, migrate, build assets
-composer dev       # server, queue worker, logs, vite
+docker compose up -d   # PostgreSQL 18 on 5432, with a second database for the tests
+composer setup         # install, .env, app key, migrate, build assets
+composer dev           # server, queue worker, logs, vite
 composer test
-composer review    # rector, phpstan, tests
+composer review        # rector, phpstan, tests
 ```
 
-SQLite locally, PostgreSQL in production. `MeasurementSeeder` fills the
-dashboard's window at the reporting interval, which is the fastest way to get
-something on the chart without a device on the desk.
+PostgreSQL everywhere, the same image as production: the dashboard averages
+its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
+back on. `MeasurementSeeder` fills the dashboard's window at the reporting
+interval, which is the fastest way to get something on the chart without a
+device on the desk.
 
 ## Deployment
 

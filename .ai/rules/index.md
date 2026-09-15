@@ -4,6 +4,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 
 | Applies to                                                    | Rule file             |
 | ------------------------------------------------------------- | --------------------- |
+| database/**                                                   | .ai/rules/database.md |
 | firmware/**                                                   | .ai/rules/firmware.md |
 | app/Livewire/**, resources/views/livewire/**, resources/js/** | .ai/rules/livewire.md |
 | tests/**                                                      | .ai/rules/tests.md    |
