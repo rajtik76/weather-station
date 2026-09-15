@@ -10,13 +10,16 @@ use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\ValueObject\DewPoint;
 use App\ValueObject\MeasurementData;
+use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\SeaLevelPressure;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -28,10 +31,11 @@ use UnexpectedValueException;
  * Livewire resolves `#[Computed]` methods as properties at runtime. Larastan
  * does not model that, so they are declared here to stay analysable.
  *
- * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}> $readings
- * @property-read list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}> $overview
+ * @property-read list<BucketRow> $readings
+ * @property-read list<ReadingRow> $overview
  * @property-read array{from: int, to: int} $windowMs
  * @property-read bool $hasReadings
+ * @property-read int $recordCount
  * @property-read list<array{t: float, h: float, p: float}> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
@@ -48,6 +52,13 @@ use UnexpectedValueException;
  * @property-read Collection<int, Sensor> $sensors
  * @property-read Sensor|null $selectedSensor
  * @property-read bool $hasSensorChoice
+ *
+ * Chart rows are positional: the payload is JSON and a month runs to 720 of
+ * them. A reading row is a stored record; a bucket row is a slot, and holds
+ * nulls where the station missed it.
+ *
+ * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
+ * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -95,6 +106,17 @@ class Dashboard extends Component
 
     /** Below this a zoom would frame fewer readings than make a line. */
     private const int MIN_SPAN_SECONDS = 4 * self::STEP_SECONDS;
+
+    /**
+     * The widest window the charts draw.
+     *
+     * A strip is about a thousand pixels across. A month of hourly means
+     * gives each day some thirty of them, enough to read its rise and fall;
+     * a year would give it three, which is noise, and averaging it into
+     * wider buckets flattens the very swing a weather chart is for. The
+     * navigator still spans the whole record for finding a month in it.
+     */
+    private const int MAX_SPAN_SECONDS = 2592000;
 
     /** How many transmissions the payload tail lists. */
     private const int RECENT_TRANSMISSIONS = 3;
@@ -252,33 +274,38 @@ class Dashboard extends Component
     }
 
     /**
-     * Readings for the window, oldest first, as compact rows.
+     * The window averaged into buckets, oldest first, as compact rows.
      *
      * Arrays rather than keyed objects because this is the chart payload and
-     * a week runs to a thousand rows. Each row is
-     * `[wall-clock ms, °C, %, hPa, dew point °C, real epoch seconds]`.
+     * a month runs to seven hundred rows. Each row is
+     * `[wall-clock ms, °C, %, hPa, dew point °C, bucket epoch seconds]`.
+     *
+     * The bucket width follows the span on screen (ChartRange::bucketSeconds)
+     * and every bucket in the window is a row, whether a reading landed in it
+     * or not: an empty one carries nulls, which the chart draws as a hole in
+     * the line. That is what keeps the axis honest about an outage rather than
+     * joining the readings either side of it. A window with no readings at
+     * all is the empty list, not a row of holes.
      *
      * The first element is shifted to Czech local time and the chart is told
      * to read it as UTC, which is what makes the axis and tooltip read local
      * without depending on the viewer's own clock. It is therefore not a real
-     * instant - the last element is, and that is what a zoom sends back.
+     * instant - the sixth element is, and that is what a zoom sends back.
      *
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
+     * @return list<BucketRow>
      */
     #[Computed]
     public function readings(): array
     {
-        $thinTo = ChartRange::forSpan($this->spanSeconds())->thinToSeconds();
+        $step = ChartRange::forSpan($this->spanSeconds())->bucketSeconds();
 
-        $window = [$this->windowFrom(), $this->windowTo()];
+        $buckets = $this->buckets($step, $this->windowFrom(), $this->windowTo());
 
-        return $this->plot(
-            $this->measurements()
-                ->whereBetween('timestamp', $window)
-                ->when($thinTo > 0, fn (Builder $query): Builder => $this->firstPerBucket($query, $thinTo, $window))
-                ->orderBy('timestamp')
-                ->get()
-        );
+        if (! $buckets->contains(fn (object $bucket): bool => $bucket->t_avg !== null)) {
+            return [];
+        }
+
+        return array_values($buckets->map(fn (object $bucket): array => $this->plotBucket($bucket))->all());
     }
 
     /**
@@ -293,7 +320,7 @@ class Dashboard extends Component
      * OVERVIEW_UNTHINNED_ROWS the whole thing is drawn as it stands. See
      * firstPerBucket() for why the thinning groups rather than counts.
      *
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
+     * @return list<ReadingRow>
      */
     #[Computed]
     public function overview(): array
@@ -336,6 +363,41 @@ class Dashboard extends Component
     }
 
     /**
+     * How many readings the station stored inside the window.
+     *
+     * Counted in the table rather than off the payload: that is one row per
+     * slot, holes included, and would report a month the station slept
+     * through as seven hundred records.
+     */
+    #[Computed]
+    public function recordCount(): int
+    {
+        return $this->measurements()
+            ->whereBetween('timestamp', [$this->windowFrom(), $this->windowTo()])
+            ->count();
+    }
+
+    /**
+     * The newest bucket on screen that holds a reading, as hero figures.
+     *
+     * The payload ends on the window's last slot, which is a hole whenever
+     * the station is a few minutes late, so the last row is not the last
+     * reading.
+     *
+     * @return array{t: float, h: float, p: float}|null
+     */
+    private function newestPlottedReading(): ?array
+    {
+        foreach (array_reverse($this->readings) as $row) {
+            if ($row[1] !== null && $row[2] !== null && $row[3] !== null) {
+                return ['t' => $row[1], 'h' => $row[2], 'p' => $row[3]];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * The window on screen, for the reader to see where they are.
      *
      * @return array{from: string, to: string}
@@ -358,8 +420,10 @@ class Dashboard extends Component
      * into an hour does not shrink what "now" and "24 h" mean - and so that a
      * thinned long window does not silently stretch them either.
      *
-     * Falls back to the newest reading on screen when the station has been
-     * quiet for over a day, so the cards still show its last state.
+     * Falls back to the newest plotted bucket when the station has been quiet
+     * for over a day, so the cards still show its last state - a mean over
+     * that bucket's slot on a window wider than a day, which is as close to
+     * the last reading as the payload gets.
      *
      * @return list<array{t: float, h: float, p: float}>
      */
@@ -383,11 +447,9 @@ class Dashboard extends Component
             return $day;
         }
 
-        return array_map(fn (array $row): array => [
-            't' => $row[1],
-            'h' => $row[2],
-            'p' => $row[3],
-        ], array_slice($this->readings, -1));
+        $newest = $this->newestPlottedReading();
+
+        return $newest === null ? [] : [$newest];
     }
 
     /**
@@ -598,7 +660,10 @@ class Dashboard extends Component
     /**
      * Both ends arrive from the query string, where anything can be typed, and
      * from a drag that may have been a stray click. Keep them ordered, wide
-     * enough to draw, and out of the future.
+     * enough to draw, no wider than a month, and out of the future.
+     *
+     * Too wide is clipped from the front: the newer end is the one a reader
+     * dragged to, or typed, on purpose.
      */
     private function normaliseWindow(): void
     {
@@ -614,7 +679,7 @@ class Dashboard extends Component
         }
 
         $this->to = min($this->to, now()->getTimestamp());
-        $this->from = max(0, min($this->from, $this->to - self::MIN_SPAN_SECONDS));
+        $this->from = max(0, $this->to - self::MAX_SPAN_SECONDS, min($this->from, $this->to - self::MIN_SPAN_SECONDS));
     }
 
     /**
@@ -658,32 +723,106 @@ class Dashboard extends Component
     /**
      * Keep the first reading of every bucket and drop the rest.
      *
+     * The navigator's thinning, and only the navigator's: it exists to show
+     * where the window sits, so a real reading per bucket is enough and the
+     * averaging the strips do (see buckets()) would be work for a few pixels.
+     *
      * Grouping, not `timestamp % bucket < STEP_SECONDS`: the station stamps an
      * upload when it wakes rather than on the slot, so its stamps sit minutes
      * off every multiple of the step and a phase window only lands on a row
      * while that drift stays small. Grouping asks for the bucket's own first
      * row instead, whatever time it carries.
      *
-     * Nothing is averaged - every plotted point remains a stored record.
-     *
      * @param  Builder<Measurement>  $query
-     * @param  array{0: int, 1: int}|null  $window  Bound the subquery to the same range as the outer one.
      * @return Builder<Measurement>
      */
-    private function firstPerBucket(Builder $query, int $bucketSeconds, ?array $window = null): Builder
+    private function firstPerBucket(Builder $query, int $bucketSeconds): Builder
     {
-        return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds, $window): void {
+        return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds): void {
             // Scoped to the sensor as well: another station's first row of a
             // bucket is an earlier stamp this one never sent.
             $bucket->selectRaw('MIN(timestamp)')
                 ->from('measurements')
                 ->where('sensor_id', $this->selectedSensor?->id)
                 ->groupByRaw('timestamp / ?', [$bucketSeconds]);
-
-            if ($window !== null) {
-                $bucket->whereBetween('timestamp', $window);
-            }
         });
+    }
+
+    /**
+     * Every bucket between two instants, each averaged over its readings.
+     *
+     * Done in SQL, and PostgreSQL's SQL: `generate_series` lays out one slot
+     * per bucket across the window and the readings are averaged onto it with
+     * a left join, so a slot the station missed comes back as a row of nulls
+     * rather than not at all. The buckets divide the epoch, not the local
+     * day, which is why they never move with daylight saving.
+     *
+     * The blob is read with the V1 keys directly. Aggregating cannot go
+     * through ProtocolVersion::hydrate() row by row, so a later protocol that
+     * renames a field has to teach this query about it as well.
+     *
+     * @return SupportCollection<int, object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}>
+     */
+    private function buckets(int $step, int $from, int $to): SupportCollection
+    {
+        $first = intdiv($from, $step) * $step;
+        $last = intdiv($to, $step) * $step;
+
+        $readings = DB::table('measurements')
+            ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
+            ->selectRaw("AVG((data->>'temperature')::int) AS t_avg")
+            ->selectRaw("AVG((data->>'humidity')::int) AS h_avg")
+            ->selectRaw("AVG((data->>'pressure')::int) AS p_avg")
+            ->where('sensor_id', $this->selectedSensor?->id)
+            // The whole of the first and last buckets, so an edge bucket is
+            // the same average whichever instant inside it the window opened on.
+            ->whereBetween('timestamp', [$first, $last + $step - 1])
+            ->groupByRaw('1');
+
+        /** @var SupportCollection<int, object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}> $buckets */
+        $buckets = DB::query()
+            ->fromRaw('generate_series(?::int, ?::int, ?::int) AS slot (bucket)', [$first, $last, $step])
+            ->leftJoinSub($readings, 'reading', 'reading.bucket', '=', 'slot.bucket')
+            ->select('slot.bucket')
+            ->addSelect(['t_avg', 'h_avg', 'p_avg'])
+            ->orderBy('slot.bucket')
+            ->get();
+
+        return $buckets;
+    }
+
+    /**
+     * A chart row for one bucket, or a row of holes for an empty one.
+     *
+     * The averages are turned back into a measurement in the protocol's own
+     * units, so the pressure reduction and the dew point run through the same
+     * code as a single reading.
+     *
+     * @param  object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}  $bucket
+     * @return BucketRow
+     */
+    private function plotBucket(object $bucket): array
+    {
+        $time = $this->wallClockMs($bucket->bucket);
+
+        if ($bucket->t_avg === null || $bucket->h_avg === null || $bucket->p_avg === null) {
+            return [$time, null, null, null, null, $bucket->bucket];
+        }
+
+        $mean = new MeasurementDataV1(
+            temperature: (int) round((float) $bucket->t_avg),
+            humidity: (int) round((float) $bucket->h_avg),
+            pressure: (int) round((float) $bucket->p_avg),
+        );
+
+        return [
+            $time,
+            round((float) $bucket->t_avg / 100, 2),
+            round((float) $bucket->h_avg / 100, 2),
+            $this->seaLevelHpa($mean),
+            $this->dewPointCelsius($mean),
+            $bucket->bucket,
+        ];
     }
 
     /**
@@ -720,7 +859,7 @@ class Dashboard extends Component
      * which the station does not send and is derived here.
      *
      * @param  Collection<int, Measurement>  $measurements
-     * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
+     * @return list<ReadingRow>
      */
     private function plot(Collection $measurements): array
     {

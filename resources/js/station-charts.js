@@ -32,8 +32,8 @@ echarts.use([
  * Dragging across a chart selects a window; releasing hands the two real
  * timestamps back to Livewire, which re-queries at a resolution that suits the
  * new span. Zooming is therefore a server round trip rather than a rescale of
- * what is already loaded - which is what makes zooming into a thinned year
- * come back with the readings that were skipped.
+ * what is already loaded - which is what makes zooming into a month of hourly
+ * means come back as the ten-minute slots they averaged over.
  */
 
 const GROUP = "station";
@@ -98,7 +98,11 @@ const TIME_LABELS = {
     none: "{d}. {M}. {yyyy}",
 };
 
-/** Row layout from the server: wall-clock ms, °C, %, hPa at sea level, dew point °C, real epoch seconds. */
+/**
+ * Row layout from the server: wall-clock ms, °C, %, hPa at sea level, dew
+ * point °C, epoch seconds - the bucket's slot on the strips, the reading's
+ * own stamp on the navigator. A slot the station missed holds nulls.
+ */
 const COLUMN = { time: 0, t: 1, h: 2, p: 3, d: 4, epoch: 5 };
 
 /** Event layout from the server: wall-clock ms, title, CSS colour or null. */
@@ -368,9 +372,9 @@ function escapeHtml(text) {
 /**
  * The spacing between the rows on screen, to tell a gap from a step.
  *
- * Thinning sets it per window - ten minutes on a day, hours on a year - so it
- * is read off the rows rather than assumed. The median, so that one outage in
- * an otherwise regular record does not widen it.
+ * The bucket width sets it per window - ten minutes on a day, an hour on a
+ * month - so it is read off the rows rather than assumed. The median, so that
+ * one outage in an otherwise regular record does not widen it.
  */
 let step = 0;
 
