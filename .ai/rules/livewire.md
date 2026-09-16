@@ -17,7 +17,7 @@ Three ECharts instances joined with `echarts.connect()`, one per channel, so the
 
 ## The chart payload is wall-clock, not instants
 
-Rows are `[wall-clock ms, °C, %, hPa, dew point °C, epoch seconds]` - on the strips the epoch is the bucket's slot, on the navigator the reading's own stamp. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
+Rows are `[wall-clock ms, °C, %, hPa, dew point °C, epoch seconds]` - on the strips the epoch is the bucket's slot, on the navigator the reading's own stamp. Strip rows go on with the extremes of the samples in the bucket, `°C min, °C max, % min, % max, hPa min, hPa max`; navigator rows stop at the epoch. The first element has the Czech UTC offset folded in and ECharts runs with `useUTC: true`, so the axis and tooltip read Czech local time whatever clock the viewer is on, and ticks land on local midnight instead of an hour off it.
 
 That first element is therefore not an instant. Never measure it against `now()` and never convert it a second time - anything formatting it must do so as UTC. The sixth element is the real epoch, and that is what a zoom hands back to `zoomTo()`. `station-charts.js` reads columns through its `COLUMN` map, never by literal index.
 
@@ -27,7 +27,7 @@ That first element is therefore not an instant. Never measure it against `now()`
 
 The rows are dated by the slot, not by any reading in it, and the buckets divide the epoch (`timestamp / step`), so they never move with daylight saving and a station that uploads minutes off the slot still lands in the right one.
 
-The averaging is SQL, and PostgreSQL's SQL: `Dashboard::buckets()` lays the slots out with `generate_series` and left-joins the averages onto them, reading the jsonb blob with the V1 keys directly (`data->>'temperature'`). A later protocol that renames a field has to teach that query about it as well - aggregation cannot go through `ProtocolVersion::hydrate()` row by row. See `.ai/rules/database.md` for why there is no SQLite fallback.
+The averaging is SQL, and PostgreSQL's SQL: `Dashboard::buckets()` lays the slots out with `generate_series` and left-joins the averages onto them, reading the jsonb blob with the protocol keys directly. The mean is `AVG(data->>'temperature')` - V2 keeps the V1 key for its window mean on purpose, so one expression averages both versions. The extremes are `MIN(COALESCE(data->>'temperature_min', data->>'temperature'))` and the `MAX` of the `_max` key: a V1 row has no extremes and stands in as its own, which is the same statement `MeasurementDataV1` makes (`temperatureMin === temperature`, `samples === 1`). A later protocol that renames a field has to teach that query about it as well - aggregation cannot go through `ProtocolVersion::hydrate()` row by row. See `.ai/rules/database.md` for why there is no SQLite fallback.
 
 The mean is turned back into a `MeasurementDataV1` so the pressure reduction and the dew point run through the same code as a single reading.
 
@@ -39,7 +39,7 @@ The payload therefore ends on the window's last slot, which is a hole whenever t
 
 `normaliseWindow()` clips anything wider than `MAX_SPAN_SECONDS` (30 days) from the front, keeping the newer end the reader pointed at. A strip is about a thousand pixels across: a month of hourly means gives each day thirty of them and its rise and fall stays legible; a year would give it three, and averaging into six-hour buckets flattens the very swing the chart is for - the morning frost and the afternoon high become a temperature that never happened. `ChartRange` has no case past `Month` for that reason, and `forSpan()` falls to it.
 
-A min-max band behind the mean was built and taken out again: at an hour's bucket the spread is a few tenths of a degree and invisible, and it only earned its place at the six-hour buckets the month cap removed. Do not bring it back without bringing wider buckets back too.
+A min-max band is drawn behind each line (`bandSeries()` in `station-charts.js`: two stacked line series, the lower invisible along the minimum, the upper filled up to the maximum, `stackStrategy: "all"` because a winter minimum is negative). It is the spread of the samples in the bucket, not of the bucket means: with V2 a ten-minute slot already carries the lowest and highest half-minute reading, so the band is visible at the station's own cadence and widens with the bucket. An earlier band built on V1 means alone was invisible at the hour and was taken out for it; that is not this band. Over V1 history the band has no width and draws nothing.
 
 The navigator is unaffected - it always spans the whole record, so a month is found by dragging its slider.
 
@@ -84,6 +84,14 @@ The reduction is hypsometric and uses the reading's own temperature, not the sta
 Consequence for the payload tail: the raw JSON prints station pressure in Pa while the converted column beside it is sea-level hPa. They are meant to differ by ~40 hPa - that is not a bug.
 
 The chart payload carries two decimals, the sensor's own resolution - it reports whole pascals. The pressure strip's axis scales to whatever the window holds, and a day of weather is a couple of hPa, so tenths drew the line as a staircase. The hero readouts and the payload tail still print a tenth.
+
+## The hero's day extremes are the samples', not the means'
+
+`lastDay` rows carry `tMin/tMax`, `hMin/hMax`, `pMin/pMax` off each entry's extremes and `figures()` takes the day's min and max from those, while `now` and the trend stay on the mean. Over V2 the coldest sample of the night sits below the coldest ten-minute mean, and that is the number a "24 h min" promises. The pressure extremes are reduced to sea level with the entry's own mean temperature (`withPressure()`): the sample that read the extreme kept no temperature of its own.
+
+## The payload tail prints whatever keys the entry's version carries
+
+`recentTransmissions` hands the view `packet`, the value object's `jsonSerialize()`, and the template loops over it, colouring each field by the first word of its key. Do not go back to naming the four V1 fields in the template: a V2 packet has eleven, and the tail's job is to show the entry as it arrived.
 
 ## The navigator thins, it does not average
 
