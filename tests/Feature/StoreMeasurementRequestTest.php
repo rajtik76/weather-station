@@ -192,6 +192,91 @@ describe('measurements', function (): void {
     });
 });
 
+describe('protocol V2', function (): void {
+    /**
+     * A window the firmware would send, one field overridden.
+     *
+     * @param  array<string, int|string|null>  $overrides
+     * @return array<string, mixed>
+     */
+    function v2Window(array $overrides = []): array
+    {
+        return [
+            'sensor_name' => 'test-sensor',
+            'protocol_version' => ProtocolVersion::V2->value,
+            'measurements' => [
+                array_merge([
+                    'timestamp' => 1788332955,
+                    'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                    'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                    'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                    'samples' => 20,
+                ], $overrides),
+            ],
+        ];
+    }
+
+    it('accepts a window', function (): void {
+        postJson('/api/v1/measurement', v2Window())->assertStatus(201);
+    });
+
+    it('accepts a window of one sample with no spread', function (): void {
+        postJson('/api/v1/measurement', v2Window([
+            'temperature_min' => 2134, 'temperature_max' => 2134,
+            'humidity_min' => 5812, 'humidity_max' => 5812,
+            'pressure_min' => 97389, 'pressure_max' => 97389,
+            'samples' => 1,
+        ]))->assertStatus(201);
+    });
+
+    it('requires every extreme and the sample count', function (string $field): void {
+        postJson('/api/v1/measurement', v2Window([$field => null]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(["measurements.0.{$field}" => "The measurements.0.{$field} field is required."]);
+    })->with(['temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples']);
+
+    // The message quotes the mean the extreme was measured against.
+    it('rejects a minimum above the mean', function (string $channel, int $mean): void {
+        postJson('/api/v1/measurement', v2Window(["{$channel}_min" => $mean + 1]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(["measurements.0.{$channel}_min" => "The measurements.0.{$channel}_min field must be less than or equal to {$mean}."]);
+    })->with([
+        'temperature' => ['temperature', 2134],
+        'humidity' => ['humidity', 5812],
+        'pressure' => ['pressure', 97389],
+    ]);
+
+    it('rejects a maximum below the mean', function (string $channel, int $mean): void {
+        postJson('/api/v1/measurement', v2Window(["{$channel}_max" => $mean - 1]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(["measurements.0.{$channel}_max" => "The measurements.0.{$channel}_max field must be greater than or equal to {$mean}."]);
+    })->with([
+        'temperature' => ['temperature', 2134],
+        'humidity' => ['humidity', 5812],
+        'pressure' => ['pressure', 97389],
+    ]);
+
+    it('keeps the extremes inside the channel range', function (): void {
+        postJson('/api/v1/measurement', v2Window(['temperature_min' => -4001, 'pressure_max' => 110001]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'measurements.0.temperature_min' => 'The measurements.0.temperature_min field must be at least -4000.',
+                'measurements.0.pressure_max' => 'The measurements.0.pressure_max field must not be greater than 110000.',
+            ]);
+    });
+
+    it('needs at least one sample', function (): void {
+        postJson('/api/v1/measurement', v2Window(['samples' => 0]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.samples' => 'The measurements.0.samples field must be at least 1.']);
+    });
+
+    it('does not ask a V1 packet for extremes', function (): void {
+        postJson('/api/v1/measurement', ['protocol_version' => ProtocolVersion::V1->value, 'measurements' => [['temperature' => 2134]]])
+            ->assertJsonMissingValidationErrors(['measurements.0.temperature_min', 'measurements.0.samples']);
+    });
+});
+
 it('has valid request data', function (): void {
     postJson('/api/v1/measurement', [
         'sensor_name' => 'test-sensor',

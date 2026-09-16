@@ -7,9 +7,29 @@ namespace App\ValueObject;
 use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
+/**
+ * Protocol V1: one reading per entry, taken every ten minutes.
+ *
+ * The reading is its own extreme on every channel, so the blob keeps only
+ * the three values it was sent with.
+ */
 final readonly class MeasurementDataV1 implements MeasurementData
 {
     public ProtocolVersion $protocolVersion;
+
+    public int $temperatureMin;
+
+    public int $temperatureMax;
+
+    public int $humidityMin;
+
+    public int $humidityMax;
+
+    public int $pressureMin;
+
+    public int $pressureMax;
+
+    public int $samples;
 
     public function __construct(
         public int $temperature,
@@ -17,6 +37,13 @@ final readonly class MeasurementDataV1 implements MeasurementData
         public int $pressure,
     ) {
         $this->protocolVersion = ProtocolVersion::V1;
+        $this->temperatureMin = $temperature;
+        $this->temperatureMax = $temperature;
+        $this->humidityMin = $humidity;
+        $this->humidityMax = $humidity;
+        $this->pressureMin = $pressure;
+        $this->pressureMax = $pressure;
+        $this->samples = 1;
     }
 
     public static function fromArray(array $data): self
