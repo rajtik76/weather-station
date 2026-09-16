@@ -5,12 +5,14 @@
 
 #include "bme280_types.h"
 
-// Payload format carried in the "version" field. Bump it whenever the
-// JSON shape changes - v2 is expected to add a GPS object per entry.
-#define TRANSMISSION_VERSION 1
+// Payload format carried in the "protocol_version" field. Bump it whenever
+// the JSON shape changes - the server keeps every version it ever accepted,
+// so the old rows stay readable.
+#define TRANSMISSION_VERSION 2
 
-// Max entries in one transmission. At a 10 minute interval this covers
-// roughly 2.5 hours of failed uploads before the oldest reading is lost.
+// Max entries in one POST. The server takes up to 500, but a batch this
+// size keeps the JSON under the payload buffer; a longer backlog goes out
+// as several POSTs in a row.
 #define TRANSMISSION_MAX_ENTRIES 16
 #define TRANSMISSION_DEVICE_LEN  24
 
@@ -19,7 +21,7 @@ typedef struct {
   char device[TRANSMISSION_DEVICE_LEN];  // e.g. "sensor-001"
 
   uint8_t data_count;  // valid entries in data[]
-  bme280_reading_t data[TRANSMISSION_MAX_ENTRIES];
+  bme280_window_t data[TRANSMISSION_MAX_ENTRIES];
 } transmission_t;
 
 #endif

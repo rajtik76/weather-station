@@ -5,32 +5,36 @@ paths:
 
 # Firmware
 
-## Re-sync the clock hourly; the RTC oscillator drifts
+## Re-sync the clock hourly; the oscillator drifts
 
-`syncNtp()` must re-sync at least once an hour (`NTP_RESYNC_AFTER_S`). Do not widen that interval to save radio time - the radio is already up for the upload, so a sync costs a fraction of a second awake.
+SNTP must correct the clock at least once an hour (`NTP_RESYNC_AFTER_S`, handed to `esp_sntp_set_sync_interval`). Do not widen that interval: the board is powered and online, so a sync costs nothing.
 
-Why: deep sleep is timed by the ESP32's internal RC oscillator, accurate to within a few percent. A firmware that synced only at cold boot let the clock free-run and it gained four minutes, so the dashboard reported the last transmission as arriving "4 minutes from now".
+Why: an earlier, sleeping firmware that synced only at cold boot let the clock free-run and it gained four minutes, so the dashboard reported the last transmission as arriving "4 minutes from now". A powered board drifts less, but the server stores what the device sends, verbatim, so any skew still lands straight in the record.
 
-Wait on `sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED`, never on the clock looking plausible: on a re-sync it already does, so that test returns before the server has answered and corrects nothing.
+Wait on the SNTP notification callback (`sntp_set_time_sync_notification_cb`), never on the clock looking plausible: on a re-sync it already does, so that test returns before the server has answered and corrects nothing. `sntp_get_sync_status()` is no better - it resets itself to RESET when read.
 
-A timed-out sync returns whether the clock is set rather than false. An old but sane clock still stamps the reading closely enough and still validates the TLS certificate, and dropping the reading over it loses data for nothing.
+Nothing is read until the first sync landed. A reading without a stamp cannot be filed into a window, and a wrong stamp would land it in the wrong one.
 
-The server stores what the device sends, verbatim, so any skew here lands straight in the record.
+## Windows are epoch slots, stamped by their last reading
 
-## FireBeetle 2 ESP32-C6: enable USB CDC On Boot, and RTC data is safe
+A window is `timestamp / WINDOW_SECONDS` (`windowSlotOf()`), not "ten minutes since boot", so the station's windows coincide with the dashboard's ten-minute buckets and a reboot only shortens the window it happened in. The entry's stamp is the last reading's: it lands in the same bucket and keeps the dashboard's "last measurement" readout honest. Stamping on the slot start would read ten minutes stale; stamping on the slot end would file the window into the next bucket.
 
-Board is DFRobot FireBeetle 2 ESP32-C6 (ESP32 core 3.x, RISC-V). I2C pads SDA=GPIO19 / SCL=GPIO20, on-board LED GPIO15 (pad D13). The sketch reads these from the variant via SDA / SCL / LED_BUILTIN, so do not hardcode numbers again.
+The mean is rounded to nearest with a sign-aware division (`meanOf()`), because the server rejects a mean outside its own extremes and C's truncating division would put a negative mean above its maximum.
 
-"USB CDC On Boot" ships Disabled, which points Serial at UART0 on GPIO16/17. The sketch still builds and runs, and the serial monitor stays empty - set it to Enabled before blaming the firmware. With CDC on, Serial.setTxTimeoutMs(0) keeps a write from blocking the wakeup when no host is attached.
+Out-of-range readings are dropped before they enter the window. One wild reading would set a window's extreme outside the protocol range, the server would refuse the batch, and every window behind it would wedge.
 
-RTC_DATA_ATTR survives deep sleep here. The C6 has no RTC slow memory, so those symbols land in RTC fast memory (verified: they link at 0x5000xxxx), and the C6 does not define SOC_PM_SUPPORT_RTC_FAST_MEM_PD, so the domain cannot be powered down.
+## ESP32-C3-DevKitM-1: the RGB LED sits on SDA, and Serial is a UART bridge
 
-Image fills ~89% of the default 1.2 MB app partition; a growing sketch needs the Minimal (1.3MB APP) scheme.
+Board is Espressif ESP32-C3-DevKitM-1 (ESP32 core 3.x, RISC-V). The variant defines SDA=GPIO8 / SCL=GPIO9 and the sketch reads them through `SDA` / `SCL`, so do not hardcode numbers.
 
-## A missing serial port on the C6 means deep sleep, not a failed flash
+The WS2812 RGB LED (`RGB_BUILTIN`, a virtual pin number above `SOC_GPIO_PIN_COUNT`) is wired to GPIO8 as well. It decodes I2C traffic as its own data and lights up at random, usually full white. `quietSharedLed()` blanks it after every transfer - `Wire.end()`, `rgbLedWrite(RGB_BUILTIN, 0, 0, 0)`, `Wire.begin()` - because the peripheral manager hands the pin to one driver at a time; a write while I2C holds the pin goes nowhere, and an RMT write without giving it back leaves Wire pointing at a pin it no longer owns. `RGB_LED_ON_SDA 0` switches this off once the LED is cut. `digitalWrite(LED_BUILTIN)` is the same LED and the same pin - there is no plain status LED on this board.
 
-The FireBeetle 2 ESP32-C6 has no USB-serial chip - the port is the CPU's own USB peripheral. Deep sleep powers it down, so /dev/cu.usbmodem* vanishes for the whole sleep interval and returns for the seconds the board is awake. An empty monitor and no port in the list is the normal state of a working station; the factory demo sketch only kept the port up because it never slept.
+Serial goes through the on-board CP2102N, so the port is `/dev/cu.usbserial-*`, always present, and _USB CDC On Boot_ stays _Disabled_. Enabled points `Serial` at the chip's native USB, which the board does not bring out, and the monitor is empty.
 
-setup() waits up to USB_ATTACH_TIMEOUT_MS on a cold boot for a monitor to open the port, otherwise the whole log is printed before anyone is listening. Timer wakeups skip the wait - no host on the balcony.
+GPIO8 and GPIO9 are strapping pins. The breakout's I2C pull-ups have not upset the bootloader so far; if flashing ever fails, move the bus before blaming the cable.
 
-To reflash a sleeping board: hold BOOT, tap RST, release BOOT. The chip stays in the bootloader, so the port stays up long enough for esptool.
+## The board never sleeps; the buffer is plain RAM
+
+Mains powered over USB. No deep sleep, no `RTC_DATA_ATTR`, no magic number to validate on wakeup - `window_buffer.cpp` is a static array that lives as long as the power does. A power cut loses the backlog of an outage and nothing else. Do not bring deep sleep back for a battery: the sampling rate that makes V2 worth having is the opposite of a sleeping design.
+
+The upload buffer holds a day of windows and goes out sixteen to a POST (`TRANSMISSION_MAX_ENTRIES`, bounded by the 8 kB payload buffer); a longer backlog is several POSTs in a row, oldest first, stopping at the first failure.

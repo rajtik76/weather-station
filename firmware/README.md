@@ -1,35 +1,52 @@
 # Firmware
 
-ESP32 firmware for the weather station. Wakes on a timer, reads a BME280,
-appends the reading to a buffer in RTC memory, and uploads whatever it holds
-to `POST /api/v1/measurement` over HTTPS. Anything that fails to upload stays
-buffered for the next wakeup.
+ESP32 firmware for the weather station. Reads a BME280 every thirty seconds,
+folds the readings into ten-minute windows - mean, minimum and maximum per
+channel - and uploads each closed window to `POST /api/v1/measurement` over
+HTTPS. Anything that fails to upload stays buffered until the link is back.
 
 ```
-BME280 --I2C--> ESP32 --HTTPS--> Laravel API
+BME280 --I2C--> ESP32-C3 --HTTPS--> Laravel API
                   |
-            RTC buffer, 16 entries
+          window buffer, 144 entries (a day)
 ```
+
+The board is mains powered over USB and never sleeps. The earlier design - a
+battery board waking every ten minutes for one reading - is what protocol V1
+recorded; see the git history before this file for it.
 
 ## Hardware
 
-DFRobot FireBeetle 2 ESP32-C6 (DFR1075) and a BME280 breakout.
+- ESP32-C3-DevKitM-1 v1.0, indoors, powered over USB
+- BME280 breakout, on the balcony
+- TFA 98.1114.0 radiation shield around it, with the breakout upright on the
+  centre post of the base plate, mid-height in the plate stack, touching
+  nothing
+- about 4 m of outdoor FTP cable between them (Solarix FTP 4x2x0.5 CAT5E PE,
+  UV resistant), carrying 3V3, GND, SDA and SCL
 
-The whole sensor goes to the four-pad group boxed on the silkscreen next to
-the battery connector - `VIN` sits outside that box and is a supply input, not
-part of it.
+The shield hangs on a bracket off the top rail of an east-facing balcony,
+more than half a metre from the wall and outboard of the railing, so air
+reaches it from every side. Direct sun still lifts the reading by 2-4 °C
+around late morning - that is the residual error of a passive shield, and
+the V2 window band is what shows it.
 
-| BME280 | FireBeetle 2 C6 | GPIO   |
-| ------ | --------------- | ------ |
-| VIN    | 3V3             | -      |
-| GND    | GND             | -      |
-| SCL    | SCL             | GPIO20 |
-| SDA    | SDA             | GPIO19 |
+The breakout goes on the board's hardware I2C pins as the Arduino variant
+defines them.
 
-Those are the hardware I2C pads, not numbered D pins. The sketch takes the
-numbers from the board variant through the `SDA` / `SCL` symbols, so
-`BME280_SDA_PIN` / `BME280_SCL_PIN` only need editing to move the sensor
-elsewhere.
+| BME280 | ESP32-C3-DevKitM-1 |
+| ------ | ------------------ |
+| VIN    | 3V3                |
+| GND    | GND                |
+| SCL    | GPIO9              |
+| SDA    | GPIO8              |
+
+The sketch takes the numbers from the board variant through the `SDA` /
+`SCL` symbols, so `BME280_SDA_PIN` / `BME280_SCL_PIN` only need editing to
+move the sensor elsewhere. Four metres of I2C is well past what the bus was
+meant for, and at the default 100 kHz with the breakout's own pull-ups it
+runs without a retry; if a longer run ever misbehaves, lower the clock before
+anything else.
 
 `SDO` and `CSB` can stay unconnected on a breakout - it straps them, and the
 firmware probes both 0x76 and 0x77.
@@ -38,129 +55,136 @@ BMP280 modules are pin compatible, frequently sold as BME280, and have no
 humidity sensor. `bme280_check` reads the chip id and says which one is on the
 bus.
 
-The C6 is a RISC-V part, so this needs ESP32 core 3.x. This board carries a
-LiPo connector and a charger and is built to sleep on battery, unlike the
-DevKit this firmware started on, whose regulator and USB-serial chip drew
-~15 mA asleep.
+### The RGB LED shares a pin with SDA
 
-### The serial port comes and goes
+The DevKitM-1 hangs its WS2812 RGB LED on GPIO8, which is also the variant's
+SDA. The LED reads every I2C transfer as its own data, and whenever the line
+sits low long enough to latch it lights up in whatever colour the bytes
+spelled - usually full white, at random, for as long as the next transfer
+takes to overwrite it.
 
-There is no USB-serial chip here. The port is the C6's own USB peripheral, and
-deep sleep powers it down, so `/dev/cu.usbmodem*` disappears entirely for the
-ten minutes between wakeups and comes back for the few seconds the board is
-awake. An empty serial monitor and a port that is not in the list are the
-normal state of a working station, not a failed flash - the factory demo
-sketch keeps the port up only because it never sleeps.
+`RGB_LED_ON_SDA` (on by default) blanks the LED after every transfer: Wire
+lets go of the pin, the LED is written black, Wire takes the pin back. A
+sample then shows as a flicker at most. Set it to 0 if the LED is cut off the
+board, or if the sensor moves to other pins. There is no status LED - the
+serial log says what the station is doing, and the dashboard and the
+heartbeat monitor say when it stops.
 
-Two consequences worth knowing before debugging one of them for an hour:
+### Serial
 
-- The log is printed before a monitor can reopen the port after a reset, so it
-  would be lost. A cold boot waits up to `USB_ATTACH_TIMEOUT_MS` for a monitor
-  to attach before it prints. A timer wakeup does not wait - nobody is
-  listening on the balcony.
-- Flashing needs the port to exist when `esptool` starts. Once the board is
-  asleep, hold `BOOT`, tap `RST`, then release `BOOT`: the chip stays in the
-  bootloader, the port stays up, and the upload has something to talk to.
-
-### LED signal
-
-The on-board LED on GPIO15 (`LED_PIN`, pad `D13`) blinks three times, briefly,
-on two occasions only:
-
-- when the board is powered up or reset, before anything else runs
-- when the server first accepts an upload after that
-
-Every wakeup after that is silent, and so is every fault. The LED is for the
-bench: it tells you the board came up and that the link works, which is what
-you stand there waiting for. Once it is on the balcony nobody is watching, and
-a station that has gone quiet is what the dashboard and the heartbeat monitor
-are for. The serial log says what failed.
+The DevKitM-1 routes `Serial` through a CP2102N USB-UART bridge, so the port
+(`/dev/cu.usbserial-*`) is always there and _USB CDC On Boot_ stays
+_Disabled_. Enabling it points `Serial` at the chip's own USB, which the
+board does not bring out, and the monitor goes quiet.
 
 ## Build
 
-Arduino IDE, board _DFRobot FireBeetle 2 ESP32-C6_ from ESP32 core 3.x. Needs
-`Adafruit BME280 Library` and `ArduinoJson` v7.
-
-Set _USB CDC On Boot_ to _Enabled_. It ships disabled, which points `Serial`
-at UART0 on GPIO16/17 - the sketch then builds and runs, but the log goes to
-pins nothing is connected to and the serial monitor stays empty.
-
-The image fills 89% of the default 1.2 MB app partition. If a change pushes it
-over, _Minimal (1.3MB APP)_ buys the room back.
+Arduino IDE, board _ESP32C3 Dev Module_ from ESP32 core 3.x. Needs
+`Adafruit BME280 Library` and `ArduinoJson` v7. Defaults are fine: 4 MB
+flash, the default partition scheme, _USB CDC On Boot_ disabled.
 
 ```
 cp secrets.example.h secrets.h
 ```
 
-Fill in WiFi and the token, then set `API_URL` in `weather_station.ino`.
-`BEARER_TOKEN` has to match `SENSOR_API_TOKEN` in the server's `.env`.
-`secrets.h` is gitignored.
+Fill in the device name, WiFi and the token, then set `API_URL` in
+`weather_station.ino`. `BEARER_TOKEN` has to match `SENSOR_API_TOKEN` in the
+server's `.env`. `secrets.h` is gitignored.
 
 ## Protocol
 
-Version 1. Fixed point integers throughout, converted when the reading is
-taken.
+Version 2. Fixed point integers throughout, converted when the reading is
+taken. One entry per ten-minute window.
 
 ```json
 {
     "sensor_name": "sensor-001",
-    "protocol_version": 1,
+    "protocol_version": 2,
     "measurements": [
-        { "timestamp": 1757000000, "temperature": 2602, "humidity": 4871, "pressure": 97389 }
+        {
+            "timestamp": 1757000000,
+            "temperature": 2602,
+            "temperature_min": 2588,
+            "temperature_max": 2631,
+            "humidity": 4871,
+            "humidity_min": 4820,
+            "humidity_max": 4910,
+            "pressure": 97389,
+            "pressure_min": 97381,
+            "pressure_max": 97396,
+            "samples": 20
+        }
     ]
 }
 ```
 
-| Field         | Unit             | Range           |
-| ------------- | ---------------- | --------------- |
-| `timestamp`   | UTC Unix seconds | 1 .. 4294967295 |
-| `temperature` | 0.01 °C          | -4000 .. 8500   |
-| `humidity`    | 0.01 %           | 0 .. 10000      |
-| `pressure`    | Pa               | 30000 .. 110000 |
+| Field                         | Unit             | Range           |
+| ----------------------------- | ---------------- | --------------- |
+| `timestamp`                   | UTC Unix seconds | 1 .. 4294967295 |
+| `temperature`, `_min`, `_max` | 0.01 °C          | -4000 .. 8500   |
+| `humidity`, `_min`, `_max`    | 0.01 %           | 0 .. 10000      |
+| `pressure`, `_min`, `_max`    | Pa               | 30000 .. 110000 |
+| `samples`                     | readings         | 1 .. 65535      |
+
+The bare field is the mean over the window, rounded to nearest; `_min` and
+`_max` are the lowest and highest reading in it. The server refuses a
+minimum above its mean or a maximum below it. The mean keeps the V1 field
+name on purpose - the dashboard averages both versions with one SQL
+expression, and a V1 row stands in as its own minimum and maximum.
+
+A window is an epoch slot: `timestamp / 600` names it, so the station's
+windows line up with the dashboard's ten-minute buckets whatever time the
+board booted. The stamp is the last reading's, which keeps the "last
+measurement" readout honest and lands the entry in its own bucket.
 
 Pressure is station pressure - what the sensor reads where it hangs, not
 reduced. The server reduces it to sea level for display
 (`App\ValueObject\SeaLevelPressure`, height in `Dashboard::ALTITUDE_METRES`),
 so the record keeps the measurement and a corrected height does not mean
 rewriting it. The GPS field in `bn357_types.h` is there to supply that height
-once v2 carries it.
+once a later version carries it.
 
 ## Notes
 
-Deep sleep is a full reboot, so buffered readings live in RTC memory. They
-carry a magic number that changes with the entry layout - RTC memory holds
-garbage after a power loss, and leftovers from an older firmware would
-otherwise be read as valid. The buffer drops its oldest entry when full and is
-cleared only after a 2xx. The server upserts on `(sensor_name, timestamp)`, so
-retrying a partially delivered batch cannot duplicate rows.
+Nothing is read until NTP has answered once: a reading without a stamp
+cannot be filed into a window. After that the clock keeps counting through a
+lost link, and SNTP corrects it every hour while the link is up. The sync is
+waited on through the notification callback, not by watching the clock look
+plausible - on a re-sync it already does.
 
-Readings outside the protocol ranges are dropped before they reach the buffer.
-The API validates each entry and rejects the whole batch on one bad value,
-which without this would wedge every reading queued behind it.
+Closed windows wait in RAM, oldest first, a day of them. The upload goes out
+in batches of sixteen straight after a window closes, and stops at the first
+failure; the rest goes with the next window. A batch is dropped from the
+buffer only after a 2xx, and the server upserts on `(sensor, timestamp)`, so
+a batch whose answer got lost is harmless to send twice. A power cut loses
+the backlog of an outage and nothing more.
+
+Readings outside the protocol ranges are dropped before they reach the
+window. The API validates each entry and rejects the whole batch on one bad
+value, and one wild reading would otherwise carry a window's extreme out of
+range and wedge every window queued behind it.
 
 `Adafruit_BME280::begin()` runs the sensor in normal mode at 16x oversampling
-for over 100 ms before this switches it to forced, which warms the die. First
-reading measured 0.10 °C high against a 0.02 °C spread once settled - a
-systematic offset on every wakeup, since every wakeup is a reset. Profiled at
-100 ms intervals it is within 0.02 °C after ~350 ms and within 0.01 °C after
-~700 ms; `BME280_SETTLE_MS` waits 500 ms. The throwaway conversion that follows
-also clears the power-on defaults sitting in the data registers, which are what
-the first forced read returns until a conversion has completed.
+for over 100 ms before this switches it to forced, which warms the die by a
+tenth of a degree; `BME280_SETTLE_MS` waits it out, once, at boot. Forced
+mode keeps the sensor asleep between samples, so half a minute apart it does
+not heat itself. Oversampling and the IIR filter stay off: the window mean
+does that job, over readings half a minute apart rather than milliseconds.
 
 `ca_certs.h` pins ISRG Root X1 and ISRG Root YR. Let's Encrypt renews the leaf
 every few months, so pinning it would break uploads on every renewal. Two roots
 because the chain is served cross-signed today and Root YR is what survives the
 cross-sign being dropped. mbedTLS validates the certificate against the system
-clock, so the firmware checks NTP landed before opening a connection instead of
-failing on an expiry error that says nothing.
+clock, which is set before anything is read.
 
-BSSID and channel are cached in RTC memory so a wakeup skips the channel scan;
-the radio dominates the energy budget. Full scan is the fallback. The sensor is
-read before the radio comes up, and sleep length subtracts time spent awake to
-hold the 10 minute cadence.
+WiFi stays associated. The core reconnects by itself after a drop; the loop
+nudges it every thirty seconds if that gets nowhere, and lists what the radio
+can hear when the first association after boot fails - around -70 dBm is
+comfortable, -80 marginal, past -85 a TLS upload will not survive.
 
 ## Sketches
 
 `weather_station` is the station. `bme280_check` is diagnostics - I2C scan,
 chip id, both addresses, live readings with range checks, and a thermal
-settling profile that reports how long the sensor needs after `begin()`.
+settling profile that reports how long the sensor needs after `begin()`. It
+does not blank the shared LED, so expect it to light up while it runs.

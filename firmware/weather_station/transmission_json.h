@@ -16,13 +16,23 @@ static size_t transmissionToJson(const transmission_t& tx, char* out, size_t out
 
   JsonArray measurements = doc["measurements"].to<JsonArray>();
   for (uint8_t i = 0; i < tx.data_count; i++) {
-    const bme280_reading_t& r = tx.data[i];
+    const bme280_window_t& w = tx.data[i];
     JsonObject entry = measurements.add<JsonObject>();
 
-    entry["timestamp"] = r.timestamp;
-    entry["temperature"] = r.temperature;
-    entry["humidity"] = r.humidity;
-    entry["pressure"] = r.pressure;
+    // The mean goes under the V1 name, so the server aggregates both
+    // versions with one expression; the extremes take the same name with
+    // a suffix.
+    entry["timestamp"] = w.timestamp;
+    entry["temperature"] = w.temperature;
+    entry["temperature_min"] = w.temperature_min;
+    entry["temperature_max"] = w.temperature_max;
+    entry["humidity"] = w.humidity;
+    entry["humidity_min"] = w.humidity_min;
+    entry["humidity_max"] = w.humidity_max;
+    entry["pressure"] = w.pressure;
+    entry["pressure_min"] = w.pressure_min;
+    entry["pressure_max"] = w.pressure_max;
+    entry["samples"] = w.samples;
   }
 
   size_t written = serializeJson(doc, out, outLen);
