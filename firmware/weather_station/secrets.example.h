@@ -8,6 +8,10 @@
 #ifndef SECRETS_H
 #define SECRETS_H
 
+// Sent as "sensor_name". The server registers a sensor under this name on
+// its first upload and files every later one under it.
+#define DEVICE_ID "sensor-001"
+
 // Wifi
 #define WIFI_SSID "your-ssid"
 #define WIFI_PASS "your-password"

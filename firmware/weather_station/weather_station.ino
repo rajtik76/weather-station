@@ -4,7 +4,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <esp_sleep.h>
 #include <esp_sntp.h>
 
 #include <Wire.h>
@@ -13,18 +12,21 @@
 #include <secrets.h>
 
 #include "ca_certs.h"
-#include "rtc_storage.h"
 #include "transmission_json.h"
+#include "window.h"
+#include "window_buffer.h"
 
-#define DEVICE_ID "sensor-001"
-
-// Hardware I2C of the FireBeetle 2 ESP32-C6, silkscreened SDA/SCL
-// (GPIO19 / GPIO20). Change to match the wiring.
+// Hardware I2C of the ESP32-C3-DevKitM-1 as the board variant defines it:
+// SDA on GPIO8, SCL on GPIO9. Change to match the wiring.
 #define BME280_SDA_PIN SDA
 #define BME280_SCL_PIN SCL
 
-// On-board LED of the FireBeetle 2 ESP32-C6, GPIO15, shared with pad D13.
-#define LED_PIN LED_BUILTIN
+// The DevKitM-1 hangs its WS2812 RGB LED on GPIO8 - the same pin as SDA.
+// The LED reads every I2C transfer as its own data and, whenever the line
+// sits low long enough to latch, lights up in whatever colour the bytes
+// happened to spell, usually full white. With this on, the LED is blanked
+// after every transfer. Set to 0 once the LED is cut off the board.
+#define RGB_LED_ON_SDA 1
 
 // Time for the die to shed the heat begin() puts into it. See bme280Begin().
 #define BME280_SETTLE_MS 500
@@ -32,22 +34,13 @@
 // Full endpoint, e.g. "https://weather.example.com/api/v1/measurement".
 #define API_URL "https://weather.rajtik.com/api/v1/measurement"
 
-static const uint64_t MEASURE_INTERVAL_US = 10ULL * 60ULL * 1000000ULL;  // 10 min
-static const uint64_t MIN_SLEEP_US = 10ULL * 1000000ULL;                 // safety floor
+// One reading every half minute, twenty to a window. Fast enough to catch
+// a gust or a cloud crossing the sun, slow enough that the sensor's own
+// self-heating stays negligible in forced mode.
+static const uint32_t SAMPLE_INTERVAL_MS = 30000;
 
-// The LED is for the bench, not for the balcony. It confirms the board came
-// up and that the first upload landed, which is what you stand there waiting
-// for. Every wakeup after that would be blinking at nobody, so it stays dark
-// until the next power cycle.
-static const uint8_t LED_OK_BLINKS = 3;
-static const uint16_t LED_OK_MS = 120;
-static const uint16_t LED_GAP_MS = 200;
-
-// How long a cold boot waits for a serial monitor to open the port. See setup().
-static const uint32_t USB_ATTACH_TIMEOUT_MS = 3000;
-
-static const uint32_t WIFI_FAST_TIMEOUT_MS = 5000;   // known AP, no scan
-static const uint32_t WIFI_SCAN_TIMEOUT_MS = 15000;  // full scan fallback
+static const uint32_t WIFI_TIMEOUT_MS = 15000;
+static const uint32_t WIFI_RETRY_MS = 30000;
 static const uint32_t NTP_TIMEOUT_MS = 10000;
 
 // POSIX TZ for Czech Republic: UTC+1, DST from last Sunday in March
@@ -57,30 +50,25 @@ static const char* TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 // Sanity threshold: any epoch below this means the clock is not set.
 static const uint32_t EPOCH_VALID_MIN = 1700000000UL;
 
-// How stale the clock may get before it is re-synced.
-// Deep sleep is timed by the RTC oscillator, which is an internal RC circuit
-// with a tolerance measured in percent, so the clock drifts minutes per week
-// - enough for readings to be stamped ahead of the server that stores them.
-// One sync an hour is one wakeup in six; the radio is already up for the
-// upload, so it costs a fraction of a second awake and holds the drift to
-// roughly a second.
+// How often SNTP corrects the clock once it runs. The crystal on a powered
+// board drifts seconds a day rather than the minutes a week of the sleeping
+// station, but a stamp lands in the record as sent, so it is kept tight.
 static const uint32_t NTP_RESYNC_AFTER_S = 3600UL;
-
-// When NTP last answered, so drift is corrected without syncing every wakeup.
-RTC_DATA_ATTR static uint32_t rtcLastNtpSync;
-
-// Whether the delivery blink has already been spent this power cycle.
-RTC_DATA_ATTR static bool rtcDeliverySignalled;
-
-// Cached AP details, so the next wakeup can skip the channel scan.
-// The radio is the biggest consumer here, so every second of scanning costs.
-RTC_DATA_ATTR static uint8_t rtcApBssid[6];
-RTC_DATA_ATTR static uint8_t rtcApChannel;
-RTC_DATA_ATTR static bool rtcApValid;
 
 // ---------------------------------------------------------------- sensors
 
 static Adafruit_BME280 bme;
+
+// See RGB_LED_ON_SDA. Wire has to let go of the pin for the LED write and
+// take it back afterwards - the peripheral manager hands a pin to one
+// driver at a time, and a write while I2C holds it goes nowhere.
+static void quietSharedLed() {
+#if RGB_LED_ON_SDA && defined(RGB_BUILTIN)
+  Wire.end();
+  rgbLedWrite(RGB_BUILTIN, 0, 0, 0);
+  Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
+#endif
+}
 
 static bool bme280Begin() {
   Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
@@ -88,13 +76,14 @@ static bool bme280Begin() {
   // Boards ship with either address depending on how SDO is strapped.
   if (!bme.begin(0x76, &Wire) && !bme.begin(0x77, &Wire)) {
     Serial.println("BME280 not found");
+    quietSharedLed();
     return false;
   }
 
-  // Forced mode: the sensor takes one measurement on demand and goes back
-  // to sleep, instead of cycling on its own while the ESP32 is in deep
-  // sleep. Oversampling and filtering stay off - both average across
-  // consecutive samples, and there is one sample every 10 minutes.
+  // Forced mode: the sensor takes one measurement on demand and sleeps
+  // between them, so it does not heat itself between samples. Oversampling
+  // and filtering stay off - the window average does that job, and it does
+  // it on readings half a minute apart rather than milliseconds.
   bme.setSampling(Adafruit_BME280::MODE_FORCED,
                   Adafruit_BME280::SAMPLING_X1,  // temperature
                   Adafruit_BME280::SAMPLING_X1,  // pressure
@@ -103,10 +92,8 @@ static bool bme280Begin() {
 
   // begin() runs the sensor in normal mode at 16x oversampling for over
   // 100 ms before this switches it to forced, and that warms the die by
-  // about 0.1 degC. Measured on this board, the reading is back within
-  // 0.02 degC of ambient after ~350 ms and within 0.01 degC after ~700 ms.
-  // Every wakeup pays this once - 500 ms of an ~80 mA CPU is 0.011 mAh,
-  // against a WiFi window that already runs for seconds.
+  // about 0.1 degC. Measured, the reading is back within 0.02 degC of
+  // ambient after ~350 ms and within 0.01 degC after ~700 ms.
   delay(BME280_SETTLE_MS);
 
   // The data registers hold the previous conversion until a new one
@@ -114,19 +101,24 @@ static bool bme280Begin() {
   // the first forced read would return power-on defaults, not a
   // measurement. This throwaway conversion fills them with a real one.
   bme.takeForcedMeasurement();
+  quietSharedLed();
 
   return true;
 }
 
 static bool readBme280(bme280_reading_t& out) {
-  if (!bme.takeForcedMeasurement()) {
-    Serial.println("BME280 measurement failed");
-    return false;
-  }
+  bool ok = bme.takeForcedMeasurement();
 
   float t = bme.readTemperature();  // degC
   float h = bme.readHumidity();     // %
   float p = bme.readPressure();     // Pa, already the unit the API takes
+
+  quietSharedLed();
+
+  if (!ok) {
+    Serial.println("BME280 measurement failed");
+    return false;
+  }
 
   if (isnan(t) || isnan(h) || isnan(p)) {
     Serial.println("BME280 returned NaN");
@@ -138,8 +130,9 @@ static bool readBme280(bme280_reading_t& out) {
   long pressure = lroundf(p);
 
   // The server validates every entry and rejects the whole batch when one
-  // value is out of range. A single bad reading would then block every
-  // buffered reading behind it forever, so it gets dropped here instead.
+  // value is out of range. A single bad reading would pull a window's
+  // extreme outside the range and block every window behind it, so it is
+  // dropped here instead.
   if (temperature < BME280_TEMP_MIN || temperature > BME280_TEMP_MAX ||
       humidity < BME280_HUMIDITY_MIN || humidity > BME280_HUMIDITY_MAX ||
       pressure < BME280_PRESSURE_MIN || pressure > BME280_PRESSURE_MAX) {
@@ -148,6 +141,7 @@ static bool readBme280(bme280_reading_t& out) {
     return false;
   }
 
+  out.timestamp = (uint32_t)time(nullptr);  // always UTC
   out.temperature = (int16_t)temperature;
   out.humidity = (uint16_t)humidity;
   out.pressure = (uint32_t)pressure;
@@ -194,77 +188,91 @@ static void reportVisibleAps() {
   WiFi.scanDelete();
 }
 
-static bool connectWifi() {
+static void wifiBegin() {
   WiFi.mode(WIFI_STA);
-
-  // Both of these matter only where the link is marginal, which a closed
-  // balcony is. Full transmit power costs nothing the radio does not already
-  // spend, and modem sleep saves nothing here - the window is a few seconds
-  // and the CPU goes into deep sleep straight after it, so all power save
-  // buys is a missed beacon at the edge of range.
-  WiFi.setTxPower(WIFI_POWER_20_5dBm);
-  WiFi.setSleep(WIFI_PS_NONE);
-
-  if (rtcApValid) {
-    // Straight to the known AP - no scan across all channels.
-    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcApChannel, rtcApBssid);
-    if (waitForWifi(WIFI_FAST_TIMEOUT_MS)) {
-      Serial.printf("WiFi connected (cached AP), RSSI %d dBm, TX %.1f dBm\n",
-                    WiFi.RSSI(), WiFi.getTxPower() / 4.0f);
-      return true;
-    }
-    // The AP moved channel or is gone - fall through to a full scan.
-    WiFi.disconnect(true);
-    rtcApValid = false;
-  }
-
+  WiFi.persistent(false);
+  // The core re-associates by itself after a dropped link; the loop only
+  // steps in when that has not worked for a while.
+  WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  if (!waitForWifi(WIFI_SCAN_TIMEOUT_MS)) {
-    Serial.println("WiFi failed");
-    reportVisibleAps();
-    return false;
-  }
-
-  memcpy(rtcApBssid, WiFi.BSSID(), sizeof(rtcApBssid));
-  rtcApChannel = WiFi.channel();
-  rtcApValid = true;
-
-  Serial.printf("WiFi connected (scan), RSSI %d dBm, TX %.1f dBm\n",
-                WiFi.RSSI(), WiFi.getTxPower() / 4.0f);
-  return true;
 }
 
-static bool syncNtp(uint32_t timeoutMs) {
-  const bool clockSet = time(nullptr) >= EPOCH_VALID_MIN;
+/**
+ * Keep the link up, without ever blocking the sampling for long.
+ *
+ * Returns whether the station is online right now. The first association
+ * after boot is waited for, so the clock can be set before the first
+ * reading; later drops are left to the core's own reconnect and nudged
+ * once every WIFI_RETRY_MS if that gets nowhere.
+ */
+static bool ensureWifi() {
+  static uint32_t lastAttemptMs = 0;
+  static bool wasConnected = false;
 
-  // The clock keeps running across deep sleep, but on an oscillator that
-  // drifts, so being set is not the same as being right.
-  if (clockSet && rtcLastNtpSync != 0 &&
-      (uint32_t)time(nullptr) - rtcLastNtpSync < NTP_RESYNC_AFTER_S) {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wasConnected) {
+      Serial.printf("WiFi connected, RSSI %d dBm\n", WiFi.RSSI());
+      wasConnected = true;
+    }
     return true;
   }
 
-  // Ask for the completion flag rather than watching the clock: on a re-sync
-  // the clock is already plausible, so waiting for it to look valid would
-  // return before the server had answered and correct nothing.
-  sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
-  configTzTime(TZ_PRAGUE, "pool.ntp.org", "time.nist.gov");
+  if (wasConnected) {
+    Serial.println("WiFi lost");
+    wasConnected = false;
+  }
+
+  if (lastAttemptMs != 0 && millis() - lastAttemptMs < WIFI_RETRY_MS) {
+    return false;
+  }
+
+  lastAttemptMs = millis();
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  return false;
+}
+
+static bool clockIsSet() {
+  return time(nullptr) >= EPOCH_VALID_MIN;
+}
+
+static volatile bool ntpAnswered = false;
+
+static void onNtpSync(struct timeval*) {
+  ntpAnswered = true;
+}
+
+/**
+ * Start SNTP and wait for its first answer.
+ *
+ * Waits on the sync callback rather than on the clock looking plausible:
+ * that would let a later call return before the server had answered. Once
+ * running, SNTP corrects the clock on its own every NTP_RESYNC_AFTER_S
+ * while the link is up - there is nothing to re-arm.
+ */
+static bool syncClock(uint32_t timeoutMs) {
+  static bool started = false;
+
+  if (!started) {
+    sntp_set_time_sync_notification_cb(onNtpSync);
+    esp_sntp_set_sync_interval(NTP_RESYNC_AFTER_S * 1000UL);
+    sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+    configTzTime(TZ_PRAGUE, "pool.ntp.org", "time.nist.gov");
+    started = true;
+  }
 
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
-    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED &&
-        time(nullptr) >= EPOCH_VALID_MIN) {
-      rtcLastNtpSync = (uint32_t)time(nullptr);
+    if (ntpAnswered && clockIsSet()) {
       Serial.println("clock synced");
       return true;
     }
     delay(200);
   }
 
-  // A missed sync is not a reason to drop the reading: an old but plausible
-  // clock still stamps it close enough and still validates the certificate.
   Serial.println("NTP timed out");
-  return clockSet;
+  return false;
 }
 
 static bool postTransmission(const char* payload) {
@@ -277,14 +285,6 @@ static bool postTransmission(const char* payload) {
     // Without a token the server answers 401 and the buffer would be kept
     // anyway - skip the radio time and say why.
     Serial.println("no API token set, keeping data buffered");
-    return false;
-  }
-
-  // Certificate validity is checked against the system clock. Without a
-  // synced clock the handshake fails on an expiry check with an error that
-  // says nothing about the real cause, so name it here instead.
-  if (time(nullptr) < EPOCH_VALID_MIN) {
-    Serial.println("clock not set, cannot verify the certificate");
     return false;
   }
 
@@ -316,131 +316,128 @@ static bool postTransmission(const char* payload) {
   return code >= 200 && code < 300;
 }
 
-// ---------------------------------------------------------------- signals
-
 /**
- * Blink the on-board LED, blocking until done.
+ * Send the backlog, oldest windows first, one batch per POST.
  *
- * Blocking is fine here: this runs once, immediately before deep sleep, and
- * the sleep that follows subtracts the time spent awake, so the ten-minute
- * cadence holds either way.
+ * Stops at the first failure and leaves the rest for the next window - the
+ * server upserts on (sensor, timestamp), so a batch that was stored but
+ * whose answer got lost is harmless to send again.
  */
-static void blink(uint8_t times, uint16_t onMs) {
-  for (uint8_t i = 0; i < times; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(onMs);
-    digitalWrite(LED_PIN, LOW);
+static void uploadBuffered() {
+  static char payload[8192];
 
-    if (i + 1 < times) delay(LED_GAP_MS);
+  while (windowBufferCount() > 0) {
+    transmission_t tx;
+    windowBufferToTransmission(tx, DEVICE_ID);
+
+    if (!transmissionToJson(tx, payload, sizeof(payload))) {
+      Serial.println("payload buffer too small");
+      return;
+    }
+
+    if (!postTransmission(payload)) {
+      Serial.printf("keeping %u windows buffered\n", windowBufferCount());
+      return;
+    }
+
+    windowBufferDrop(tx.data_count);
   }
-}
-
-// ---------------------------------------------------------------- sleep
-
-static void sleepUntilNextMeasurement() {
-  // Subtract the time spent awake so the cadence stays at 10 minutes
-  // regardless of how long the upload took.
-  uint64_t awakeUs = (uint64_t)micros();
-  uint64_t sleepUs = (MEASURE_INTERVAL_US > awakeUs)
-                       ? MEASURE_INTERVAL_US - awakeUs
-                       : MIN_SLEEP_US;
-
-  Serial.printf("sleeping %llu s\n", sleepUs / 1000000ULL);
-  Serial.flush();
-
-  esp_sleep_enable_timer_wakeup(sleepUs);
-  esp_deep_sleep_start();
 }
 
 // ---------------------------------------------------------------- cycle
 
-void setup() {
-  // Waking on the timer is the ordinary case; anything else means the board
-  // was just powered up or reset.
-  const bool coldBoot = esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER;
+static window_t window;
+static bool windowOpen = false;
+static uint32_t lastSampleMs = 0;
 
+static void closeWindow() {
+  bme280_window_t entry;
+
+  if (!windowClose(window, entry)) {
+    return;
+  }
+
+  Serial.printf("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  n=%u\n",
+                (unsigned long)entry.timestamp,
+                entry.temperature, entry.temperature_min, entry.temperature_max,
+                entry.humidity, entry.humidity_min, entry.humidity_max,
+                (unsigned long)entry.pressure, (unsigned long)entry.pressure_min,
+                (unsigned long)entry.pressure_max,
+                entry.samples);
+
+  if (!windowBufferAdd(entry)) {
+    Serial.println("buffer full, oldest window dropped");
+  }
+}
+
+void setup() {
   Serial.begin(115200);
 
 #if ARDUINO_USB_CDC_ON_BOOT
-  // A CDC write blocks until the host drains it, and on the balcony there is
-  // no host - every line would then stall the wakeup for the whole tx
-  // timeout. Zero means write and move on.
+  // On a board that routes Serial through the chip's own USB, a write
+  // blocks until a host drains it. Zero means write and move on.
   Serial.setTxTimeoutMs(0);
-
-  // There is no USB-serial chip on this board: the port is the CPU's own USB
-  // peripheral, so it is gone while the board sleeps and reappears on the
-  // next wakeup, and the monitor needs a moment to reopen it after a reset.
-  // Without this the whole log is written before anyone is listening and the
-  // monitor shows an empty screen. Cold boot only - a timer wakeup would sit
-  // here waiting for a host that is not there.
-  if (coldBoot) {
-    uint32_t start = millis();
-    while (!Serial && millis() - start < USB_ATTACH_TIMEOUT_MS) {
-      delay(10);
-    }
-  }
 #endif
 
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  delay(1000);  // give the serial bridge time to attach
+  Serial.println("weather station, protocol 2");
 
-  if (coldBoot) {
-    // RTC memory holds garbage after a power loss, so the flag is set rather
-    // than trusted.
-    rtcDeliverySignalled = false;
-    blink(LED_OK_BLINKS, LED_OK_MS);
+  // Without the sensor there is nothing to run, and the log has said why.
+  while (!bme280Begin()) {
+    delay(5000);
   }
 
-  // Must run before anything touches the buffer - RTC memory holds
-  // garbage after a power loss.
-  rtcBufferBegin();
-
-  bool delivered = false;
-
-  bme280_reading_t reading;
-  bool haveMeasurement = bme280Begin() && readBme280(reading);
-
-  bool online = connectWifi();
-  if (online) {
-    syncNtp(NTP_TIMEOUT_MS);
+  wifiBegin();
+  if (!waitForWifi(WIFI_TIMEOUT_MS)) {
+    Serial.println("WiFi failed");
+    reportVisibleAps();
   }
-
-  reading.timestamp = (uint32_t)time(nullptr);  // always UTC
-
-  if (haveMeasurement && reading.timestamp >= EPOCH_VALID_MIN) {
-    if (!rtcBufferAdd(reading)) {
-      Serial.println("buffer full, oldest entry dropped");
-    }
-  } else {
-    // Only happens before the very first NTP sync - an unstamped reading
-    // would be useless to the server, so it is dropped rather than sent.
-    Serial.println("reading discarded: no data or no clock");
-  }
-
-  Serial.printf("buffered entries: %u\n", rtcBufferCount());
-
-  if (online && rtcBufferCount() > 0) {
-    transmission_t tx;
-    rtcBufferToTransmission(tx, DEVICE_ID);
-
-    static char payload[4096];
-    if (transmissionToJson(tx, payload, sizeof(payload)) && postTransmission(payload)) {
-      rtcBufferClear();  // only after the server confirmed
-      delivered = true;
-    }
-  }
-
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-
-  if (delivered && !rtcDeliverySignalled) {
-    blink(LED_OK_BLINKS, LED_OK_MS);
-    rtcDeliverySignalled = true;
-  }
-
-  sleepUntilNextMeasurement();
 }
 
 void loop() {
-  // Never reached - setup() ends in deep sleep.
+  bool online = ensureWifi();
+
+  // A reading without a stamp is useless to the server, and the window it
+  // belongs to cannot be known either - so nothing is read until the clock
+  // is set. After that the clock keeps counting through a lost link.
+  if (!clockIsSet()) {
+    if (online) {
+      syncClock(NTP_TIMEOUT_MS);
+    } else {
+      delay(1000);
+    }
+    return;
+  }
+
+  if (lastSampleMs == 0 || millis() - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+    lastSampleMs = millis();
+
+    bme280_reading_t reading;
+    if (readBme280(reading)) {
+      // The slot comes off the reading's own stamp, not off the clock at
+      // the top of the loop: an SNTP step or the measurement itself can
+      // cross a slot boundary in between, and a reading filed into the
+      // window before its own would carry that window's stamp into the
+      // next bucket.
+      uint32_t slot = windowSlotOf(reading.timestamp);
+
+      if (windowOpen && slot != window.slot) {
+        closeWindow();
+        windowOpen = false;
+
+        if (online) {
+          uploadBuffered();
+        }
+      }
+
+      if (!windowOpen) {
+        windowBegin(window, slot);
+        windowOpen = true;
+      }
+
+      windowAdd(window, reading);
+    }
+  }
+
+  delay(100);
 }
