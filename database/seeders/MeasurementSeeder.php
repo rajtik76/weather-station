@@ -8,12 +8,16 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\MeasurementDataV2;
 use Illuminate\Database\Seeder;
 
 class MeasurementSeeder extends Seeder
 {
     /** Matches the station's reporting interval. */
     private const int STEP_SECONDS = 600;
+
+    /** A V2 window holds one reading every half minute. */
+    private const int SAMPLES_PER_WINDOW = 20;
 
     /**
      * Two stations on the same month of weather.
@@ -23,7 +27,13 @@ class MeasurementSeeder extends Seeder
      * pressure, and a record that opens mid-month. That is enough to tell the
      * two apart on the dashboard, and to show a picker that does something.
      *
-     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int}>
+     * Each station moves from protocol V1 to V2 on `v2FromDay`, the way the
+     * real one did: the first keeps three weeks of single readings before
+     * the band opens, the second is V2 from its first upload. Its
+     * `sunSpikes` are what the band is for - an unshielded sensor's window
+     * carries a maximum well above its mean while the afternoon sun is on it.
+     *
+     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, sunSpikes: bool}>
      */
     private const array SENSORS = [
         [
@@ -32,6 +42,8 @@ class MeasurementSeeder extends Seeder
             'warmerBy' => 0.0,
             'drierBy' => 0.0,
             'skipDays' => 0,
+            'v2FromDay' => 21,
+            'sunSpikes' => false,
         ],
         [
             'name' => 'sensor-002',
@@ -39,6 +51,8 @@ class MeasurementSeeder extends Seeder
             'warmerBy' => 1.8,
             'drierBy' => 6.0,
             'skipDays' => 12,
+            'v2FromDay' => 12,
+            'sunSpikes' => true,
         ],
     ];
 
@@ -68,7 +82,10 @@ class MeasurementSeeder extends Seeder
         // manual comparisons stay reproducible.
         mt_srand(1898);
 
-        $end = (int) (floor(now()->getTimestamp() / self::STEP_SECONDS) * self::STEP_SECONDS);
+        // The last slot that has already closed: a V2 window is stamped
+        // near the end of its slot, and a stamp in the future would show as
+        // a measurement that has not happened yet.
+        $end = (int) (floor(now()->getTimestamp() / self::STEP_SECONDS) - 1) * self::STEP_SECONDS;
         $start = $end - ($count - 1) * self::STEP_SECONDS;
 
         foreach (self::SENSORS as $station) {
@@ -90,17 +107,24 @@ class MeasurementSeeder extends Seeder
                 $humidity = $this->between($observations['humidity_pct'], $hour, $into) - $station['drierBy'] + mt_rand(-20, 20) / 100;
                 $pressure = $this->between($observations['pressure_hpa'], $hour, $into) + mt_rand(-3, 3) / 100;
 
+                // Protocol units: hundredths for temperature and humidity,
+                // pascals for pressure.
+                $t = (int) round($temperature * 100);
+                $h = (int) round(max(0.0, min(100.0, $humidity)) * 100);
+                $p = (int) round($pressure * 100);
+
+                $slot = $start + $i * self::STEP_SECONDS;
+                $v2 = $i >= $station['v2FromDay'] * 24 * $perHour;
+
                 $rows[] = [
                     'sensor_id' => $sensor->id,
-                    'protocol_version' => ProtocolVersion::V1->value,
-                    'timestamp' => $start + $i * self::STEP_SECONDS,
-                    // Protocol units: hundredths for temperature and humidity,
-                    // pascals for pressure.
-                    'data' => (string) new MeasurementDataV1(
-                        temperature: (int) round($temperature * 100),
-                        humidity: (int) round(max(0.0, min(100.0, $humidity)) * 100),
-                        pressure: (int) round($pressure * 100),
-                    ),
+                    'protocol_version' => ($v2 ? ProtocolVersion::V2 : ProtocolVersion::V1)->value,
+                    // A V2 window is stamped by its last reading, half a
+                    // minute short of the slot's end.
+                    'timestamp' => $v2 ? $slot + self::STEP_SECONDS - 30 : $slot,
+                    'data' => (string) ($v2
+                        ? $this->window($t, $h, $p, $station['sunSpikes'] && $this->inAfternoonSun($slot))
+                        : new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p)),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
@@ -111,6 +135,42 @@ class MeasurementSeeder extends Seeder
                 Measurement::insert($chunk);
             }
         }
+    }
+
+    /**
+     * A V2 window around a mean, with the spread a real sensor shows.
+     *
+     * Half-minute readings scatter a few tenths of a degree, a percent of
+     * humidity and a few pascals around their mean over ten minutes. Under
+     * the sun the temperature's maximum runs away from the mean by degrees
+     * while the minimum stays put - the shape of a shield warming up - and
+     * the humidity's minimum drops with it, since the warmed air is drier.
+     */
+    private function window(int $t, int $h, int $p, bool $inSun): MeasurementDataV2
+    {
+        $tSpike = $inSun ? mt_rand(80, 320) : 0;
+        $hDip = $inSun ? mt_rand(100, 400) : 0;
+
+        return new MeasurementDataV2(
+            temperature: $t,
+            humidity: $h,
+            pressure: $p,
+            temperatureMin: $t - mt_rand(5, 35),
+            temperatureMax: $t + mt_rand(5, 35) + $tSpike,
+            humidityMin: max(0, $h - mt_rand(20, 120) - $hDip),
+            humidityMax: min(10000, $h + mt_rand(20, 120)),
+            pressureMin: $p - mt_rand(2, 10),
+            pressureMax: $p + mt_rand(2, 10),
+            samples: mt_rand(0, 9) === 0 ? self::SAMPLES_PER_WINDOW - 1 : self::SAMPLES_PER_WINDOW,
+        );
+    }
+
+    /** Whether a slot falls in the hours the south balcony gets direct sun. */
+    private function inAfternoonSun(int $slot): bool
+    {
+        $hour = (int) now()->setTimestamp($slot)->setTimezone('Europe/Prague')->format('G');
+
+        return $hour >= 12 && $hour < 17;
     }
 
     /**
