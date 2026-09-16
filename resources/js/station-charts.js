@@ -45,12 +45,23 @@ const DRAG_SLOP_PX = 6;
  * `axis` names the channel whose value axis this one is read against; a
  * channel that names itself gets an axis of its own. The dew point is a
  * temperature, so it shares the temperature's.
+ *
+ * `band` names the columns holding the lowest and highest sample behind the
+ * channel's mean; the strip draws them as a tint behind the line. The dew
+ * point is derived from the means and has no samples of its own.
  */
 const CHANNELS = [
-    { key: "t", label: "Temperature", unit: "°C", decimals: 2, axis: "t" },
-    { key: "h", label: "Humidity", unit: "%", decimals: 2, axis: "h" },
+    { key: "t", label: "Temperature", unit: "°C", decimals: 2, axis: "t", band: ["tMin", "tMax"] },
+    { key: "h", label: "Humidity", unit: "%", decimals: 2, axis: "h", band: ["hMin", "hMax"] },
     { key: "d", label: "Dew point", unit: "°C", decimals: 2, axis: "t", dashed: true },
-    { key: "p", label: "Pressure, MSL", unit: "hPa", decimals: 2, axis: "p" },
+    {
+        key: "p",
+        label: "Pressure, MSL",
+        unit: "hPa",
+        decimals: 2,
+        axis: "p",
+        band: ["pMin", "pMax"],
+    },
 ];
 
 const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
@@ -101,9 +112,27 @@ const TIME_LABELS = {
 /**
  * Row layout from the server: wall-clock ms, °C, %, hPa at sea level, dew
  * point °C, epoch seconds - the bucket's slot on the strips, the reading's
- * own stamp on the navigator. A slot the station missed holds nulls.
+ * own stamp on the navigator. A slot the station missed holds nulls. Strip
+ * rows go on with the extremes of the samples in the slot, a min-max pair
+ * per channel; navigator rows stop at the epoch.
  */
-const COLUMN = { time: 0, t: 1, h: 2, p: 3, d: 4, epoch: 5 };
+const COLUMN = {
+    time: 0,
+    t: 1,
+    h: 2,
+    p: 3,
+    d: 4,
+    epoch: 5,
+    tMin: 6,
+    tMax: 7,
+    hMin: 8,
+    hMax: 9,
+    pMin: 10,
+    pMax: 11,
+};
+
+/** How strongly the band behind a line is tinted, on either ground. */
+const BAND_OPACITY = 0.16;
 
 /** Event layout from the server: wall-clock ms, title, CSS colour or null. */
 const EVENT = { time: 0, title: 1, colour: 2 };
@@ -335,12 +364,44 @@ function readingsHtml(row) {
                 `<span>${dot}${channel.label}</span>` +
                 `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text}">` +
                 `${formatValue(row[COLUMN[channel.key]], channel)}</span>` +
-                `</div>`
+                `</div>` +
+                spreadHtml(row, channel)
             );
         })
         .join("");
 
     return heading + lines;
+}
+
+/**
+ * The lowest and highest sample behind a mean, under it in the tooltip.
+ *
+ * Only where the two differ: a V1 reading is its own extreme on every
+ * channel, and the navigator's rows carry none, and neither has a spread
+ * worth a line.
+ */
+function spreadHtml(row, channel) {
+    const [low, high] = spreadOf(row, channel);
+
+    if (low === null || high === null || low === high) {
+        return "";
+    }
+
+    return (
+        `<div style="display:flex;gap:12px;font-size:11px;opacity:0.8">` +
+        `<span style="margin-left:auto;font-variant-numeric:tabular-nums">` +
+        `${formatNumber(low, channel.decimals)} to ${formatNumber(high, channel.decimals)} ${channel.unit}</span>` +
+        `</div>`
+    );
+}
+
+/** A channel's min-max pair off a row, or nulls where it carries none. */
+function spreadOf(row, channel) {
+    if (!channel.band) {
+        return [null, null];
+    }
+
+    return channel.band.map((column) => row[COLUMN[column]] ?? null);
 }
 
 /** Whether a strip prints the event titles; only the top one does. */
@@ -574,23 +635,81 @@ function optionFor(strip) {
                 lineStyle: { color: colours.grid },
             },
         })),
-        series: channels.map((entry, index) => ({
-            type: "line",
-            name: entry.label,
-            yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
-            showSymbol: false,
-            // A derived line is dashed, so it is not mistaken for a reading.
-            lineStyle: {
-                width: 1.5,
-                color: colourFor(entry.key),
-                type: entry.dashed ? [6, 4] : "solid",
-            },
-            itemStyle: { color: colourFor(entry.key) },
-            data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
-            // One set of lines per canvas is enough; they belong to no series.
-            markLine: index === 0 ? eventMarks(strip) : undefined,
-        })),
+        // The bands go first so every line is drawn over every tint.
+        series: [
+            ...channels.flatMap((entry) =>
+                bandSeries(
+                    entry,
+                    axes.findIndex((axis) => axis.key === entry.axis),
+                ),
+            ),
+            ...channels.map((entry, index) => ({
+                type: "line",
+                name: entry.label,
+                yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
+                showSymbol: false,
+                // A derived line is dashed, so it is not mistaken for a reading.
+                lineStyle: {
+                    width: 1.5,
+                    color: colourFor(entry.key),
+                    type: entry.dashed ? [6, 4] : "solid",
+                },
+                itemStyle: { color: colourFor(entry.key) },
+                data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
+                // One set of lines per canvas is enough; they belong to no series.
+                markLine: index === 0 ? eventMarks(strip) : undefined,
+            })),
+        ],
     };
+}
+
+/**
+ * The tint between a channel's lowest and highest sample, behind its line.
+ *
+ * ECharts has no band series, so it is two stacked lines: an invisible one
+ * along the minimum and, stacked on it, the spread up to the maximum with
+ * its area filled. A slot the station missed is null on both and leaves the
+ * same hole the line does. The pair is silent - the tooltip reads the
+ * extremes off the row itself - and neither takes part in the axis pointer's
+ * snapping.
+ */
+function bandSeries(channel, yAxisIndex) {
+    if (!channel.band) {
+        return [];
+    }
+
+    const [lowColumn, highColumn] = channel.band.map((column) => COLUMN[column]);
+    const spread = (row) =>
+        row[lowColumn] === null || row[highColumn] === null
+            ? null
+            : row[highColumn] - row[lowColumn];
+    const shared = {
+        type: "line",
+        stack: `band-${channel.key}`,
+        // The default only stacks values of one sign, and a winter minimum
+        // is below zero while the spread on top of it never is.
+        stackStrategy: "all",
+        yAxisIndex,
+        silent: true,
+        showSymbol: false,
+        lineStyle: { width: 0 },
+        emphasis: { disabled: true },
+        tooltip: { show: false },
+    };
+
+    return [
+        {
+            ...shared,
+            name: `${channel.label} minimum`,
+            data: rows.map((row) => [row[COLUMN.time], row[lowColumn]]),
+        },
+        {
+            ...shared,
+            name: `${channel.label} maximum`,
+            areaStyle: { color: colourFor(channel.key), opacity: BAND_OPACITY },
+            data: rows.map((row) => [row[COLUMN.time], spread(row)]),
+        },
+    ];
 }
 
 let overview = [];

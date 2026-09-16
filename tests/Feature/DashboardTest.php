@@ -8,6 +8,7 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\MeasurementDataV2;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -29,7 +30,7 @@ function chartRows(string $html): string
 /**
  * The window's payload decoded, one row per bucket - holes included.
  *
- * @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}>
+ * @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
  */
 function bucketRows(string $html): array
 {
@@ -39,7 +40,7 @@ function bucketRows(string $html): array
 /**
  * Only the buckets a reading landed in, keyed by their epoch.
  *
- * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}>
+ * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
  */
 function filledBuckets(string $html): array
 {
@@ -270,7 +271,7 @@ it('draws a missed slot as a hole rather than joining its neighbours', function 
         ->and($byEpoch[now()->subMinutes(30)->getTimestamp()][1])->not->toBeNull()
         ->and($byEpoch[now()->subMinutes(10)->getTimestamp()][1])->not->toBeNull()
         ->and($byEpoch[now()->subMinutes(20)->getTimestamp()])
-        ->toBe([1773578400000, null, null, null, null, 1773574800])
+        ->toBe([1773578400000, null, null, null, null, 1773574800, null, null, null, null, null, null])
         ->and($byEpoch[now()->getTimestamp()][1])->toBeNull();
 });
 
@@ -437,9 +438,95 @@ it('carries the dew point in the chart payload', function (): void {
     // chart draws it like any other column, between the pressure and the epoch.
     $row = array_values(filledBuckets($html))[0];
 
-    expect($row)->toHaveCount(6)
+    expect($row)->toHaveCount(12)
         ->and($row[4])->toBe(10.02)
         ->and(navigatorRows($html)[0][4])->toBe(10.02);
+});
+
+it('carries the spread of the samples behind each bucket', function (): void {
+    $start = Date::parse('2026-03-01 00:00:00', 'UTC');
+    $this->travelTo($start->copy()->addDay());
+
+    $sensor = Sensor::factory()->create();
+
+    // Two V2 windows in the same hour, each a mean with the extremes of the
+    // samples behind it. The hour's band is the coldest and warmest sample
+    // of either, not the extremes of the means.
+    foreach ([[2100, 1950, 2380, 5000, 4800, 5300, 97389, 97380, 97395], [2200, 2100, 2250, 4900, 4750, 5100, 97400, 97390, 97410]] as $slot => [$t, $tMin, $tMax, $h, $hMin, $hMax, $p, $pMin, $pMax]) {
+        Measurement::factory()->for($sensor)->v2()->create([
+            'timestamp' => $start->getTimestamp() + $slot * 600,
+            'data' => (string) new MeasurementDataV2(
+                temperature: $t, humidity: $h, pressure: $p,
+                temperatureMin: $tMin, temperatureMax: $tMax,
+                humidityMin: $hMin, humidityMax: $hMax,
+                pressureMin: $pMin, pressureMax: $pMax,
+                samples: 20,
+            ),
+        ]);
+    }
+
+    $hour = array_values(filledBuckets(Livewire::test(Dashboard::class)
+        ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
+        ->html()))[0];
+
+    expect(array_slice($hour, 6, 4))->toEqual([19.5, 23.8, 47.5, 53.0])
+        // The pressure extremes are reduced to sea level like the mean, with
+        // the mean's temperature: 97 380 Pa at 21,5 °C and 345 m is 1013,39 hPa.
+        ->and($hour[10])->toBe(1013.39)
+        ->and($hour[11])->toBe(1013.7)
+        ->and($hour[3])->toBeGreaterThan(1013.39)
+        ->and($hour[3])->toBeLessThan(1013.7);
+});
+
+it('bands a V1 reading on itself', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // A V1 entry is one sample, so at the station's own cadence the band
+    // has no width: the row still carries it, equal to the mean, so the
+    // chart draws every bucket the same way.
+    Measurement::factory()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
+    ]);
+
+    $row = array_values(filledBuckets(Livewire::test(Dashboard::class)->html()))[0];
+
+    expect(array_slice($row, 6))->toEqual([21.5, 21.5, 48.0, 48.0, $row[3], $row[3]]);
+});
+
+it('reads the day\'s extremes off the samples rather than the means', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    // The night's coldest window averaged 2,10 °C, but one sample in it read
+    // 1,05 °C; the noon window averaged 21,50 °C with a sample at 24,90 °C.
+    Measurement::factory()->for($sensor)->v2()->create([
+        'timestamp' => now()->subHours(8)->getTimestamp(),
+        'data' => (string) new MeasurementDataV2(
+            temperature: 210, humidity: 9000, pressure: 97389,
+            temperatureMin: 105, temperatureMax: 300,
+            humidityMin: 8850, humidityMax: 9300,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+        ),
+    ]);
+    Measurement::factory()->for($sensor)->v2()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV2(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2010, temperatureMax: 2490,
+            humidityMin: 4400, humidityMax: 5100,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+        ),
+    ]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('21,50')
+        ->assertSee('min 1,05 · max 24,90')
+        ->assertSee('min 44,00 · max 93,00');
 });
 
 it('keeps the dew point off until the reader asks for it', function (): void {
@@ -636,7 +723,7 @@ it('lists the last three transmissions as the station sent them', function (): v
     $this->get('/')
         ->assertOk()
         // The protocol's own fixed point integers, as the endpoint received them.
-        ->assertSee('2134')
+        ->assertSee('"temperature": <span class="text-amber-600">2134</span>', false)
         ->assertSee('5812')
         ->assertSee('97389')
         ->assertSee('2112')
@@ -651,6 +738,30 @@ it('lists the last three transmissions as the station sent them', function (): v
         ->assertDontSee('15. 3. 2026 11:50')
         // A fourth packet, and the oldest of them, has scrolled off the tail.
         ->assertDontSee('1901');
+});
+
+it('lists a V2 packet under its own keys', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v2()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV2(
+            temperature: 2134, humidity: 5812, pressure: 97389,
+            temperatureMin: 2101, temperatureMax: 2177,
+            humidityMin: 5700, humidityMax: 5900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+        ),
+    ]);
+
+    // The tail prints the entry as it arrived, so a window's extremes and its
+    // sample count are listed beside the mean, each in its channel's colour.
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('"temperature_min": <span class="text-amber-600">2101</span>', false)
+        ->assertSee('"humidity_max": <span class="text-cyan-600">5900</span>', false)
+        ->assertSee('"pressure_max": <span class="text-violet-600 dark:text-violet-500">97395</span>', false)
+        ->assertSee('"samples": <span class="text-zinc-700 dark:text-zinc-300">20</span>', false);
 });
 
 it('dates the tail by arrival while the readout dates the measurement', function (): void {

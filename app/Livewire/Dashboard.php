@@ -36,9 +36,9 @@ use UnexpectedValueException;
  * @property-read array{from: int, to: int} $windowMs
  * @property-read bool $hasReadings
  * @property-read int $recordCount
- * @property-read list<array{t: float, h: float, p: float}> $lastDay
+ * @property-read list<DayRow> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
- * @property-read list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
+ * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastMeasurement
@@ -55,10 +55,14 @@ use UnexpectedValueException;
  *
  * Chart rows are positional: the payload is JSON and a month runs to 720 of
  * them. A reading row is a stored record; a bucket row is a slot, and holds
- * nulls where the station missed it.
+ * nulls where the station missed it. A bucket row goes on to carry the
+ * extremes of the samples inside it, temperature, humidity and pressure in
+ * turn, each as a min-max pair.
  *
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
- * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int}
+ * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
+ * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float}
+ * @phpstan-type Bucket object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string, t_min: ?string, t_max: ?string, h_min: ?string, h_max: ?string, p_min: ?string, p_max: ?string}
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -278,7 +282,10 @@ class Dashboard extends Component
      *
      * Arrays rather than keyed objects because this is the chart payload and
      * a month runs to seven hundred rows. Each row is
-     * `[wall-clock ms, °C, %, hPa, dew point °C, bucket epoch seconds]`.
+     * `[wall-clock ms, °C, %, hPa, dew point °C, bucket epoch seconds]`
+     * followed by the extremes of the samples in the bucket, `°C min, °C max,
+     * % min, % max, hPa min, hPa max` - the band the chart draws behind each
+     * mean.
      *
      * The bucket width follows the span on screen (ChartRange::bucketSeconds)
      * and every bucket in the window is a row, whether a reading landed in it
@@ -384,13 +391,23 @@ class Dashboard extends Component
      * the station is a few minutes late, so the last row is not the last
      * reading.
      *
-     * @return array{t: float, h: float, p: float}|null
+     * @return DayRow|null
      */
     private function newestPlottedReading(): ?array
     {
         foreach (array_reverse($this->readings) as $row) {
             if ($row[1] !== null && $row[2] !== null && $row[3] !== null) {
-                return ['t' => $row[1], 'h' => $row[2], 'p' => $row[3]];
+                return [
+                    't' => $row[1],
+                    'h' => $row[2],
+                    'p' => $row[3],
+                    'tMin' => $row[6] ?? $row[1],
+                    'tMax' => $row[7] ?? $row[1],
+                    'hMin' => $row[8] ?? $row[2],
+                    'hMax' => $row[9] ?? $row[2],
+                    'pMin' => $row[10] ?? $row[3],
+                    'pMax' => $row[11] ?? $row[3],
+                ];
             }
         }
 
@@ -425,7 +442,12 @@ class Dashboard extends Component
      * that bucket's slot on a window wider than a day, which is as close to
      * the last reading as the payload gets.
      *
-     * @return list<array{t: float, h: float, p: float}>
+     * Each row carries the entry's extremes beside its value: on V2 those
+     * are the coldest and warmest sample of the window, on V1 the reading
+     * itself, so the day's minimum and maximum read what the sensor saw
+     * rather than what the means smoothed over.
+     *
+     * @return list<DayRow>
      */
     #[Computed]
     public function lastDay(): array
@@ -439,6 +461,12 @@ class Dashboard extends Component
                     't' => round($measurement->data->temperature / 100, 2),
                     'h' => round($measurement->data->humidity / 100, 2),
                     'p' => $this->seaLevelHpa($measurement->data),
+                    'tMin' => round($measurement->data->temperatureMin / 100, 2),
+                    'tMax' => round($measurement->data->temperatureMax / 100, 2),
+                    'hMin' => round($measurement->data->humidityMin / 100, 2),
+                    'hMax' => round($measurement->data->humidityMax / 100, 2),
+                    'pMin' => $this->seaLevelHpa($this->withPressure($measurement->data, $measurement->data->pressureMin)),
+                    'pMax' => $this->seaLevelHpa($this->withPressure($measurement->data, $measurement->data->pressureMax)),
                 ])
                 ->all()
         );
@@ -473,10 +501,11 @@ class Dashboard extends Component
      * The newest transmissions, in the units the station sent them in.
      *
      * Read across the whole table rather than the window, so that zooming into
-     * last spring does not empty the tail. Each row keeps the protocol's fixed
-     * point integers - that is what the endpoint received and what the blob
-     * holds - with the converted figures alongside for the second column, where
-     * pressure is the reduced one the rest of the page shows.
+     * last spring does not empty the tail. Each row keeps the entry's fixed
+     * point integers under the protocol's own keys - that is what the endpoint
+     * received and what the blob holds, whichever version sent it - with the
+     * converted figures alongside for the second column, where pressure is
+     * the reduced one the rest of the page shows.
      *
      * The date is `created_at`, when the row reached the server - the reading's
      * own stamp is already printed in the JSON beside it, and repeating it as
@@ -484,7 +513,7 @@ class Dashboard extends Component
      * half of the story: a buffered batch lands minutes or hours after it was
      * measured, and this is the only place that shows the gap.
      *
-     * @return list<array{timestamp: int, temperature: int, humidity: int, pressure: int, at: string, ago: string, t: float, h: float, p: float}>
+     * @return list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}>
      */
     #[Computed]
     public function recentTransmissions(): array
@@ -503,9 +532,7 @@ class Dashboard extends Component
 
                     return [
                         'timestamp' => $measurement->timestamp,
-                        'temperature' => $measurement->data->temperature,
-                        'humidity' => $measurement->data->humidity,
-                        'pressure' => $measurement->data->pressure,
+                        'packet' => $measurement->data->jsonSerialize(),
                         'at' => $receivedAt->format('j. n. Y H:i'),
                         'ago' => $this->ago($receivedAt),
                         't' => round($measurement->data->temperature / 100, 2),
@@ -757,11 +784,16 @@ class Dashboard extends Component
      * rather than not at all. The buckets divide the epoch, not the local
      * day, which is why they never move with daylight saving.
      *
-     * The blob is read with the V1 keys directly. Aggregating cannot go
+     * The blob is read with the protocol keys directly. Aggregating cannot go
      * through ProtocolVersion::hydrate() row by row, so a later protocol that
-     * renames a field has to teach this query about it as well.
+     * renames a field has to teach this query about it as well. The mean is
+     * read under the V1 keys, which V2 keeps for its window mean; the
+     * extremes fall back to the value itself where an entry has none (V1),
+     * which is the same statement the value objects make - a single reading
+     * is its own minimum and maximum. The bucket's band is therefore the
+     * spread of every sample inside it, whichever version stored them.
      *
-     * @return SupportCollection<int, object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}>
+     * @return SupportCollection<int, Bucket>
      */
     private function buckets(int $step, int $from, int $to): SupportCollection
     {
@@ -770,21 +802,25 @@ class Dashboard extends Component
 
         $readings = DB::table('measurements')
             ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
-            ->selectRaw("AVG((data->>'temperature')::int) AS t_avg")
-            ->selectRaw("AVG((data->>'humidity')::int) AS h_avg")
-            ->selectRaw("AVG((data->>'pressure')::int) AS p_avg")
             ->where('sensor_id', $this->selectedSensor?->id)
             // The whole of the first and last buckets, so an edge bucket is
             // the same average whichever instant inside it the window opened on.
             ->whereBetween('timestamp', [$first, $last + $step - 1])
             ->groupByRaw('1');
 
-        /** @var SupportCollection<int, object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}> $buckets */
+        foreach (['t' => 'temperature', 'h' => 'humidity', 'p' => 'pressure'] as $column => $field) {
+            $readings
+                ->selectRaw("AVG((data->>'{$field}')::int) AS {$column}_avg")
+                ->selectRaw("MIN(COALESCE(data->>'{$field}_min', data->>'{$field}')::int) AS {$column}_min")
+                ->selectRaw("MAX(COALESCE(data->>'{$field}_max', data->>'{$field}')::int) AS {$column}_max");
+        }
+
+        /** @var SupportCollection<int, Bucket> $buckets */
         $buckets = DB::query()
             ->fromRaw('generate_series(?::int, ?::int, ?::int) AS slot (bucket)', [$first, $last, $step])
             ->leftJoinSub($readings, 'reading', 'reading.bucket', '=', 'slot.bucket')
             ->select('slot.bucket')
-            ->addSelect(['t_avg', 'h_avg', 'p_avg'])
+            ->addSelect(['t_avg', 'h_avg', 'p_avg', 't_min', 't_max', 'h_min', 'h_max', 'p_min', 'p_max'])
             ->orderBy('slot.bucket')
             ->get();
 
@@ -796,9 +832,11 @@ class Dashboard extends Component
      *
      * The averages are turned back into a measurement in the protocol's own
      * units, so the pressure reduction and the dew point run through the same
-     * code as a single reading.
+     * code as a single reading. The pressure extremes are reduced with the
+     * bucket's mean temperature: the reduction needs one, and the sample that
+     * read the lowest pressure did not record its own.
      *
-     * @param  object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string}  $bucket
+     * @param  Bucket  $bucket
      * @return BucketRow
      */
     private function plotBucket(object $bucket): array
@@ -806,7 +844,7 @@ class Dashboard extends Component
         $time = $this->wallClockMs($bucket->bucket);
 
         if ($bucket->t_avg === null || $bucket->h_avg === null || $bucket->p_avg === null) {
-            return [$time, null, null, null, null, $bucket->bucket];
+            return [$time, null, null, null, null, $bucket->bucket, null, null, null, null, null, null];
         }
 
         $mean = new MeasurementDataV1(
@@ -822,7 +860,29 @@ class Dashboard extends Component
             $this->seaLevelHpa($mean),
             $this->dewPointCelsius($mean),
             $bucket->bucket,
+            round((float) $bucket->t_min / 100, 2),
+            round((float) $bucket->t_max / 100, 2),
+            round((float) $bucket->h_min / 100, 2),
+            round((float) $bucket->h_max / 100, 2),
+            $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_min)),
+            $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_max)),
         ];
+    }
+
+    /**
+     * The same entry with another pressure, for reducing an extreme.
+     *
+     * SeaLevelPressure reads the temperature off the entry it is given, and
+     * the extremes were read by samples that kept no temperature of their
+     * own - the entry's is the nearest thing to it.
+     */
+    private function withPressure(MeasurementData $data, int $pressure): MeasurementData
+    {
+        return new MeasurementDataV1(
+            temperature: $data->temperature,
+            humidity: $data->humidity,
+            pressure: $pressure,
+        );
     }
 
     /**
@@ -880,13 +940,19 @@ class Dashboard extends Component
     /**
      * Hero readout figures for one metric.
      *
+     * The day's minimum and maximum come off the entries' extremes, not their
+     * values: a V2 entry is a ten-minute mean, and the coldest sample of the
+     * night sits below the coldest mean.
+     *
      * @return array{now: float, delta: float, dayMin: float, dayMax: float}
      */
     private function figures(string $field): array
     {
         $day = array_column($this->lastDay, $field);
+        $lows = array_column($this->lastDay, "{$field}Min");
+        $highs = array_column($this->lastDay, "{$field}Max");
 
-        if ($day === []) {
+        if ($day === [] || $lows === [] || $highs === []) {
             throw new UnexpectedValueException("No readings to summarise for [{$field}].");
         }
 
@@ -896,8 +962,8 @@ class Dashboard extends Component
             'now' => $now,
             // vs. one hour ago, or the oldest point we have if the window is shorter
             'delta' => $now - (float) $day[max(0, count($day) - 7)],
-            'dayMin' => min($day),
-            'dayMax' => max($day),
+            'dayMin' => min($lows),
+            'dayMax' => max($highs),
         ];
     }
 }
