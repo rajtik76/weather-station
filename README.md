@@ -40,7 +40,7 @@ Authorization: Bearer <token>
 ```
 
 Uploads are batches. The firmware buffers what it could not deliver and sends
-it on the next wakeup, so a batch is often a retry: `(sensor_name, timestamp)`
+it with the next window, so a batch is often a retry: `(sensor_name, timestamp)`
 is unique and the write upserts, which makes a partially delivered batch safe
 to send again. One invalid entry rejects the whole batch, so a bad reading
 never wedges the ones queued behind it. Payload shape, units and ranges are in
@@ -49,7 +49,11 @@ the firmware README.
 The protocol is versioned. `protocol_version` is a column of its own and never
 lives inside the stored blob; `ProtocolVersion` maps a version to the value
 object that validates and decodes it. A new firmware format is a new case and a
-new class, and rows written by older firmware stay readable.
+new class, and rows written by older firmware stay readable. V1 was one reading
+every ten minutes; V2 is a ten-minute window of half-minute readings, sent as
+the mean under the V1 keys with the extremes and the sample count beside it.
+The dashboard averages both with one query - a V1 row is its own minimum and
+maximum - and draws the band between the extremes behind each line.
 
 ## Running it
 

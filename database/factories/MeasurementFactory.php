@@ -8,6 +8,7 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\MeasurementDataV2;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -38,5 +39,34 @@ class MeasurementFactory extends Factory
             'created_at' => $date,
             'updated_at' => $date,
         ];
+    }
+
+    /**
+     * A ten-minute window as the station reports it since protocol V2: a
+     * mean per channel with the extremes of the samples around it.
+     */
+    public function v2(): static
+    {
+        return $this->state(function (): array {
+            $temperature = fake()->numberBetween(-3800, 8300);
+            $humidity = fake()->numberBetween(200, 9800);
+            $pressure = fake()->numberBetween(30200, 109800);
+
+            return [
+                'protocol_version' => ProtocolVersion::V2,
+                'data' => (string) new MeasurementDataV2(
+                    temperature: $temperature,
+                    humidity: $humidity,
+                    pressure: $pressure,
+                    temperatureMin: $temperature - fake()->numberBetween(0, 200),
+                    temperatureMax: $temperature + fake()->numberBetween(0, 200),
+                    humidityMin: $humidity - fake()->numberBetween(0, 200),
+                    humidityMax: $humidity + fake()->numberBetween(0, 200),
+                    pressureMin: $pressure - fake()->numberBetween(0, 200),
+                    pressureMax: $pressure + fake()->numberBetween(0, 200),
+                    samples: fake()->numberBetween(1, 20),
+                ),
+            ];
+        });
     }
 }
