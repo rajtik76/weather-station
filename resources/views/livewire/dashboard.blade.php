@@ -63,10 +63,8 @@
                      standfirst is set a step larger to hold the same weight on
                      the page. --}}
                 <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
-                    A BME280 on an ESP32 reads temperature, humidity and pressure every thirty seconds, around the clock, and reports
-                    each ten minutes as a mean with its extremes. The charts draw every slot, averaged to the hour on a month and left
-                    as a gap where the station missed one, with the band behind each line spanning the samples it averaged. Pressure is
-                    measured at 345 m and shown reduced to mean sea level.
+                    A BME280 on an ESP32 samples every thirty seconds and reports each ten minutes as a mean with its extremes.
+                    Pressure is measured at 345 m and shown reduced to mean sea level.
                 </flux:text>
             </div>
 
@@ -336,17 +334,15 @@
                     ])
                 >
                     {{-- The entry exactly as it arrived in `measurements`,
-                         under whichever keys its protocol version carries. It
-                         outruns a phone, so there it breaks into the pretty
-                         printed form, one field per line - a scrollbar would
-                         hide half the packet behind a gesture. From `md` up
-                         the same markup collapses back onto one line, and a
-                         V2 packet scrolls sideways there rather than wrapping
-                         into a paragraph. Each field takes its channel's
-                         colour by the key's first word. --}}
-                    <p class="font-mono text-xs text-zinc-500 tabular-nums md:overflow-x-auto md:whitespace-nowrap dark:text-zinc-400">
-                        <span class="block text-zinc-400 md:inline dark:text-zinc-600">{</span>
-                        <span class="block pl-4 md:inline md:pl-0">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
+                         under whichever keys its protocol version carries,
+                         pretty printed one field per line at every width. A
+                         V2 packet on one line outruns a desktop as well as a
+                         phone, and a scrollbar hides half of it behind a
+                         gesture. Each field takes its channel's colour by the
+                         key's first word. --}}
+                    <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                        <span class="block text-zinc-400 dark:text-zinc-600">{</span>
+                        <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
                         @foreach ($packet['packet'] as $field => $value)
                             @php($accent = match (strtok($field, '_')) {
                                 'temperature' => 'text-amber-600',
@@ -354,9 +350,9 @@
                                 'pressure' => 'text-violet-600 dark:text-violet-500',
                                 default => 'text-zinc-700 dark:text-zinc-300',
                             })
-                            <span class="block pl-4 md:inline md:pl-0">"{{ $field }}": <span class="{{ $accent }}">{{ $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
+                            <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}">{{ $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
                         @endforeach
-                        <span class="block text-zinc-400 md:inline dark:text-zinc-600">}</span>
+                        <span class="block text-zinc-400 dark:text-zinc-600">}</span>
                     </p>
 
                     <p class="flex flex-wrap gap-x-4 font-mono text-xs text-zinc-500 tabular-nums xl:justify-end dark:text-zinc-400">
