@@ -43,6 +43,10 @@ The upload buffer holds a day of windows and goes out sixteen to a POST (`TRANSM
 
 With LittleFS, WebServer and mDNS the image is ~1.3 MB, past the 1.2 MB app slot of the default scheme. Build with `PartitionScheme=no_ota` (2 MB app, 2 MB FS) - the IDE menu entry _No OTA (2MB APP/2MB SPIFFS)_. Verify a build from the terminal with the IDE's bundled CLI: `"/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli" compile --fqbn esp32:esp32:esp32c3:PartitionScheme=no_ota firmware/weather_station`.
 
+## The HTTP server starts after wifiBegin(), never before
+
+`WebServer::begin()` opens a socket, and lwIP's TCP/IP task only exists once `WiFi.mode()` has run. Called earlier it asserts inside `xQueueSemaphoreTake` on a NULL lock and the board boot-loops - v2.1.0 shipped that way. `stationHttpBegin()` stays at the end of `setup()`, after `wifiBegin()`; it does not need an association, only the stack.
+
 ## Log through station_log, never Serial directly
 
 `logInfo()` goes to serial, the RAM ring the HTTP server hands out at `/log`, and the flash file at `/log/flash`; `logTrace()` skips the flash. A per-sample line is trace - one every half minute would wear the flash for nothing. Anything a post-mortem needs (window closed, POST result, WiFi up/down/switch, restart and why) is info. A bare `Serial.print` is invisible to everyone without the cable, and the cable resets the board - that is the whole point of the log module.

@@ -578,13 +578,16 @@ void setup() {
 
   watchdogBegin();
 
-  stationHttpBegin(&status, refreshStatus);
-
   wifiBegin();
   if (!waitForWifi(WIFI_TIMEOUT_MS)) {
     logInfo("WiFi failed");
     reportVisibleAps();
   }
+
+  // After wifiBegin(): the server opens a socket, and the TCP/IP stack
+  // only exists once WiFi.mode() has brought it up - before that the
+  // socket call asserts on a lock that is not there yet.
+  stationHttpBegin(&status, refreshStatus);
 }
 
 void loop() {

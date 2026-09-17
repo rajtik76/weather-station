@@ -27,6 +27,10 @@ bool stationFsBegin() {
   return fsMounted;
 }
 
+bool stationFsMounted() {
+  return fsMounted;
+}
+
 bool stationClockIsSet() {
   return time(nullptr) >= EPOCH_VALID_MIN;
 }

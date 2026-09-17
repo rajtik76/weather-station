@@ -34,6 +34,10 @@ static uint16_t count = 0;
 static void persist() {
   const char* scratch = WINDOW_BUFFER_SCRATCH;
 
+  if (!stationFsMounted()) {
+    return;
+  }
+
   File f = LittleFS.open(scratch, "w");
   if (!f) {
     logInfo("window buffer: cannot open %s for writing", scratch);
@@ -93,6 +97,10 @@ static bool loadFrom(const char* path) {
 
 uint16_t windowBufferLoad() {
   count = 0;
+
+  if (!stationFsMounted()) {
+    return 0;
+  }
 
   // A complete scratch file with no real one beside it is a write that got
   // as far as the remove and no further; it is the newest state there is.
