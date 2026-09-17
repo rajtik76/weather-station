@@ -41,7 +41,7 @@ use UnexpectedValueException;
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
- * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, ssid: string, ip: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null $stationReport
+ * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastMeasurement
  * @property-read string|null $measuredAt
@@ -554,7 +554,10 @@ class Dashboard extends Component
      * The date is arrival, like the payload tail's - the report describes the
      * board at the moment it uploaded, so the two are the same instant.
      *
-     * @return array{firmware: string, resetReason: string, uptime: string, network: string, ssid: string, ip: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null
+     * The SSID and the address stay in the record and off the page: the page
+     * is public, and which network the station is on is said by its role.
+     *
+     * @return array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null
      */
     #[Computed]
     public function stationReport(): ?array
@@ -576,8 +579,6 @@ class Dashboard extends Component
             'resetReason' => (string) $data['reset_reason'],
             'uptime' => $this->duration((int) $data['uptime']),
             'network' => (int) $data['wifi_network'] === 0 ? 'primary' : 'backup',
-            'ssid' => (string) ($data['ssid'] ?? ''),
-            'ip' => (string) ($data['ip'] ?? ''),
             'rssi' => (int) $data['rssi'],
             'switches' => (int) $data['wifi_switches'],
             'heapFree' => (int) $data['heap_free'],
