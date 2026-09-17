@@ -100,7 +100,9 @@ it('puts the names back on the readings when rolled back', function (): void {
     oldMeasurements(['bme280-north', 'bme280-south']);
     Artisan::call('migrate');
 
-    Artisan::call('migrate:rollback', ['--step' => 3]);
+    // Everything the migrate above ran is one batch, so this rolls back the
+    // sensor migrations whatever has been added since.
+    Artisan::call('migrate:rollback');
 
     expect(Schema::hasTable('sensors'))->toBeFalse()
         ->and(DB::table('measurements')->orderBy('timestamp')->pluck('sensor_name')->all())

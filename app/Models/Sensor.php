@@ -74,4 +74,12 @@ class Sensor extends Model
     {
         return $this->hasMany(StationEvent::class);
     }
+
+    /**
+     * @return HasMany<StationReport, $this>
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(StationReport::class);
+    }
 }

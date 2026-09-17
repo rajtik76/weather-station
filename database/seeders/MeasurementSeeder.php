@@ -7,6 +7,7 @@ namespace Database\Seeders;
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use Illuminate\Database\Seeder;
@@ -134,6 +135,26 @@ class MeasurementSeeder extends Seeder
             foreach (array_chunk($rows, 500) as $chunk) {
                 Measurement::insert($chunk);
             }
+
+            // What the board said about itself with the last upload, so the
+            // station block on the dashboard has something to show.
+            StationReport::query()->create([
+                'sensor_id' => $sensor->id,
+                'data' => [
+                    'firmware' => '2.1.0',
+                    'reset_reason' => 'power on',
+                    'uptime' => ($count - $station['skipDays'] * 24 * $perHour) * self::STEP_SECONDS,
+                    'heap_free' => 186_000 - mt_rand(0, 8_000),
+                    'heap_min' => 151_000 - mt_rand(0, 4_000),
+                    'ssid' => 'home',
+                    'ip' => '192.168.0.'.(40 + $sensor->id),
+                    'rssi' => -60 - mt_rand(0, 15),
+                    'wifi_network' => 0,
+                    'wifi_switches' => 0,
+                    'buffered' => 0,
+                    'upload_failures' => 0,
+                ],
+            ]);
         }
     }
 

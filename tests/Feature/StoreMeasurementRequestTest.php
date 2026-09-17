@@ -277,6 +277,48 @@ describe('protocol V2', function (): void {
     });
 });
 
+describe('station report', function (): void {
+    it('is optional as a whole', function (): void {
+        postJson('/api/v1/measurement', ['protocol_version' => ProtocolVersion::V1->value])
+            ->assertJsonMissingValidationErrors(['station', 'station.firmware', 'station.ssid']);
+    });
+
+    it('demands every field once present', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['firmware' => '2.1.0']])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'station.reset_reason' => 'The station.reset reason field is required when station is present.',
+                'station.uptime' => 'The station.uptime field is required when station is present.',
+                'station.heap_free' => 'The station.heap free field is required when station is present.',
+                'station.heap_min' => 'The station.heap min field is required when station is present.',
+                'station.ssid' => 'The station.ssid field must be present when station is present.',
+                'station.ip' => 'The station.ip field must be present when station is present.',
+                'station.rssi' => 'The station.rssi field is required when station is present.',
+                'station.wifi_network' => 'The station.wifi network field is required when station is present.',
+                'station.wifi_switches' => 'The station.wifi switches field is required when station is present.',
+                'station.buffered' => 'The station.buffered field is required when station is present.',
+                'station.upload_failures' => 'The station.upload failures field is required when station is present.',
+            ]);
+    });
+
+    it('takes an empty network name and address from a station that is offline', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['ssid' => '', 'ip' => '']])
+            ->assertJsonMissingValidationErrors(['station.ssid', 'station.ip']);
+    });
+
+    it('bounds the signal strength', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['rssi' => 1]])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['station.rssi' => 'The station.rssi field must not be greater than 0.']);
+    });
+
+    it('knows two networks only', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['wifi_network' => 2]])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['station.wifi_network' => 'The station.wifi network field must not be greater than 1.']);
+    });
+});
+
 it('has valid request data', function (): void {
     postJson('/api/v1/measurement', [
         'sensor_name' => 'test-sensor',

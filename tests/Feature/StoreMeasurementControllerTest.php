@@ -4,6 +4,7 @@ declare(strict_types=1);
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -172,4 +173,84 @@ it('registers a sensor on its first upload and reuses it afterwards', function (
     assertDatabaseCount(Sensor::class, 1);
     assertDatabaseHas(Sensor::class, ['name' => 'bme280-north', 'description' => null]);
     expect(Sensor::query()->sole()->measurements()->count())->toBe(2);
+});
+
+/**
+ * The `station` object a V2 firmware sends beside its measurements.
+ *
+ * @return array<string, int|string>
+ */
+function stationReport(): array
+{
+    return [
+        'firmware' => '2.1.0',
+        'reset_reason' => 'task watchdog',
+        'uptime' => 4212,
+        'heap_free' => 187_000,
+        'heap_min' => 151_000,
+        'ssid' => 'home',
+        'ip' => '192.168.0.42',
+        'rssi' => -67,
+        'wifi_network' => 1,
+        'wifi_switches' => 2,
+        'buffered' => 3,
+        'upload_failures' => 0,
+    ];
+}
+
+it('keeps the station report that came with a batch', function (): void {
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+        'station' => stationReport(),
+    ])->assertCreated();
+
+    $report = StationReport::query()->sole();
+
+    expect($report->sensor_id)->toBe(Sensor::query()->where('name', 'bme280')->sole()->id)
+        ->and($report->data)->toEqualCanonicalizing(stationReport());
+});
+
+it('keeps only the report fields it validates', function (): void {
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+        'station' => [...stationReport(), 'debug' => str_repeat('x', 10_000)],
+    ])->assertCreated();
+
+    expect(StationReport::query()->sole()->data)->toEqualCanonicalizing(stationReport());
+});
+
+it('stores a batch that carries no station report', function (): void {
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+    ])->assertCreated();
+
+    assertDatabaseCount(Measurement::class, 1);
+    assertDatabaseCount(StationReport::class, 0);
+});
+
+it('keeps a report per batch rather than the latest only', function (): void {
+    foreach ([1757000000, 1757000600] as $timestamp) {
+        postJson('/api/v1/measurement', [
+            'sensor_name' => 'bme280',
+            'protocol_version' => 1,
+            'measurements' => [
+                ['timestamp' => $timestamp, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+            ],
+            'station' => stationReport(),
+        ])->assertCreated();
+    }
+
+    assertDatabaseCount(StationReport::class, 2);
 });
