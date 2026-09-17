@@ -26,6 +26,9 @@
 // anything else touches the flash.
 bool stationFsBegin();
 
+// Whether the mount worked. Without it the station runs on RAM alone.
+bool stationFsMounted();
+
 // Whether SNTP has set the wall clock yet - a stamp before that is junk.
 bool stationClockIsSet();
 
