@@ -33,8 +33,24 @@ Serial goes through the on-board CP2102N, so the port is `/dev/cu.usbserial-*`, 
 
 GPIO8 and GPIO9 are strapping pins. The breakout's I2C pull-ups have not upset the bootloader so far; if flashing ever fails, move the bus before blaming the cable.
 
-## The board never sleeps; the buffer is plain RAM
+## The board never sleeps; the buffer is on the flash
 
-Mains powered over USB. No deep sleep, no `RTC_DATA_ATTR`, no magic number to validate on wakeup - `window_buffer.cpp` is a static array that lives as long as the power does. A power cut loses the backlog of an outage and nothing else. Do not bring deep sleep back for a battery: the sampling rate that makes V2 worth having is the opposite of a sleeping design.
+Mains powered over USB. No deep sleep, no `RTC_DATA_ATTR`. `window_buffer.cpp` keeps the windows in a static array and mirrors it to `/windows.bin` on LittleFS after every add and drop - written whole into a scratch file that is renamed over the old one, so a power cut mid-write leaves the previous copy. A restart of any kind loses only the window being filled. Do not bring deep sleep back for a battery: the sampling rate that makes V2 worth having is the opposite of a sleeping design.
 
-The upload buffer holds a day of windows and goes out sixteen to a POST (`TRANSMISSION_MAX_ENTRIES`, bounded by the 8 kB payload buffer); a longer backlog is several POSTs in a row, oldest first, stopping at the first failure.
+The upload buffer holds a day of windows and goes out sixteen to a POST (`TRANSMISSION_MAX_ENTRIES`, bounded by the 8 kB payload buffer); a longer backlog is several POSTs in a row, oldest first, stopping at the first failure. A failure is retried after `UPLOAD_RETRY_MS`, not left for the next window.
+
+## Partition scheme is No OTA; the sketch does not fit the default
+
+With LittleFS, WebServer and mDNS the image is ~1.3 MB, past the 1.2 MB app slot of the default scheme. Build with `PartitionScheme=no_ota` (2 MB app, 2 MB FS) - the IDE menu entry _No OTA (2MB APP/2MB SPIFFS)_. Verify a build from the terminal with the IDE's bundled CLI: `"/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli" compile --fqbn esp32:esp32:esp32c3:PartitionScheme=no_ota firmware/weather_station`.
+
+## Log through station_log, never Serial directly
+
+`logInfo()` goes to serial, the RAM ring the HTTP server hands out at `/log`, and the flash file at `/log/flash`; `logTrace()` skips the flash. A per-sample line is trace - one every half minute would wear the flash for nothing. Anything a post-mortem needs (window closed, POST result, WiFi up/down/switch, restart and why) is info. A bare `Serial.print` is invisible to everyone without the cable, and the cable resets the board - that is the whole point of the log module.
+
+## Two networks, switched on failed uploads, not on association
+
+`WIFI_NETWORKS[]` is primary then backup. The failover triggers on two minutes without association or on `UPLOAD_FAILURES_BEFORE_SWITCH` POSTs failing in a row while associated - `WL_CONNECTED` says nothing about the uplink behind the router, and the 2026-09-17 stall (associated, silent for an hour, fixed by a power cycle) is the case this is for. `wifiConnectTo()` resets the kick timer so the nudge in `ensureWifi()` does not tear down an association still forming; keep it that way.
+
+## Two guards restart the board; both rely on the flash buffer
+
+Task watchdog (`WATCHDOG_TIMEOUT_MS`, subscribed in `watchdogBegin()`, fed at the top of the loop and after every batch) catches a loop that stopped running. `restartIfStuck()` catches a loop that runs but gets nowhere: an hour with a backlog and no 2xx. It is called right after `closeWindow()` and before the next `windowBegin()`, so the restart drops one reading, not a window. The next boot logs `esp_reset_reason()`, which is how a watchdog reset is told from a power cut afterwards.
