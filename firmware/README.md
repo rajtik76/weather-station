@@ -101,7 +101,7 @@ Fill in the device name, WiFi and the token, then set `API_URL` in
 server's `.env`. `secrets.h` is gitignored.
 
 Two networks can be given. The station lives on the primary and moves to
-the backup when the primary will not associate for two minutes, or when
+the backup when the primary will not associate for a minute, or when
 three uploads in a row fail while it is associated - a link that is up
 with nothing behind it looks the same as no link from the server's side,
 and a second provider is what a backup is for. Once on the backup it tries
@@ -241,7 +241,7 @@ clock, which is set before anything is read.
 
 WiFi stays associated. The core reconnects by itself after a drop; the loop
 nudges it every thirty seconds if that gets nowhere, hands the other network
-a turn after two minutes of that, and lists what the radio can hear when the
+a turn after a minute of that, and lists what the radio can hear when the
 first association after boot fails - around -70 dBm is comfortable, -80
 marginal, past -85 a TLS upload will not survive.
 

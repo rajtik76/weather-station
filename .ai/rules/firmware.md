@@ -51,9 +51,11 @@ With LittleFS, WebServer and mDNS the image is ~1.3 MB, past the 1.2 MB app slot
 
 `logInfo()` goes to serial, the RAM ring the HTTP server hands out at `/log`, and the flash file at `/log/flash`; `logTrace()` skips the flash. A per-sample line is trace - one every half minute would wear the flash for nothing. Anything a post-mortem needs (window closed, POST result, WiFi up/down/switch, restart and why) is info. A bare `Serial.print` is invisible to everyone without the cable, and the cable resets the board - that is the whole point of the log module.
 
+Never log from a WiFi event callback. `WiFi.onEvent()` handlers run on the core's event task - a 4 kB stack that `emit()` plus a LittleFS write would blow, and no lock on the ring - so `onWifiEvent()` only sets flags and `reportWifiEvents()` writes the lines from `loop()`. It logs a disconnect reason once per outage, not per retry: with the AP gone the core reconnects every two seconds and each try is another `NO_AP_FOUND`.
+
 ## Two networks, switched on failed uploads, not on association
 
-`WIFI_NETWORKS[]` is primary then backup. The failover triggers on two minutes without association or on `UPLOAD_FAILURES_BEFORE_SWITCH` POSTs failing in a row while associated - `WL_CONNECTED` says nothing about the uplink behind the router, and the 2026-09-17 stall (associated, silent for an hour, fixed by a power cycle) is the case this is for. `wifiConnectTo()` resets the kick timer so the nudge in `ensureWifi()` does not tear down an association still forming; keep it that way.
+`WIFI_NETWORKS[]` is primary then backup. The failover triggers on a minute without association or on `UPLOAD_FAILURES_BEFORE_SWITCH` POSTs failing in a row while associated - `WL_CONNECTED` says nothing about the uplink behind the router, and the 2026-09-17 stall (associated, silent for an hour, fixed by a power cycle) is the case this is for. `wifiConnectTo()` resets the kick timer so the nudge in `ensureWifi()` does not tear down an association still forming; keep it that way.
 
 ## Two guards restart the board; both rely on the flash buffer
 

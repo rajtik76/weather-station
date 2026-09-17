@@ -57,7 +57,7 @@ static const uint32_t NTP_TIMEOUT_MS = 10000;
 // the backup it tries the primary again every WIFI_PRIMARY_RETRY_MS - the
 // primary is the one the station is meant to live on.
 static const uint32_t WIFI_RETRY_MS = 30000;
-static const uint32_t WIFI_FAILOVER_MS = 120000;
+static const uint32_t WIFI_FAILOVER_MS = 60000;
 static const uint32_t WIFI_PRIMARY_RETRY_MS = 3600000;
 
 // A failed upload is retried this often rather than waiting for the next
@@ -241,6 +241,75 @@ static uint8_t wifiNetworkCount() {
 static uint8_t wifiCurrent = 0;
 static uint32_t wifiSwitchedMs = 0;
 static uint32_t wifiKickedMs = 0;
+static uint32_t wifiDownSinceMs = 0;  // when the current outage began; 0 while online
+static bool wifiEverBegan = false;
+
+// The driver's own account of the link, which is the only place the reason
+// for a failed association is said: wrong password, no such network, AP
+// went away. The core logs it at warning level, invisible without a debug
+// build, so it is picked up here.
+//
+// The handler runs on the core's event task - small stack, and it can cut
+// into the loop mid-line - so it only notes what happened and the loop
+// writes the log (reportWifiEvents()).
+static volatile bool wifiEventGotIp = false;
+static volatile bool wifiEventLostIp = false;
+static volatile bool wifiEventDisconnected = false;
+static volatile uint8_t wifiEventReason = 0;
+
+static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      wifiEventReason = info.wifi_sta_disconnected.reason;
+      wifiEventDisconnected = true;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      wifiEventGotIp = true;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      wifiEventLostIp = true;
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * Writes what the driver reported since the last call.
+ *
+ * A disconnect is logged once per reason, not once per attempt: with the
+ * network gone the core retries every couple of seconds and each try is
+ * another NO_AP_FOUND, which would push the lines the flash log is for
+ * out of it within the hour. The reasons the station gives itself - a
+ * disconnect it asked for - are skipped altogether; there is nothing in
+ * them the surrounding lines do not already say.
+ */
+static void reportWifiEvents() {
+  static uint8_t lastReason = 0;
+
+  if (wifiEventGotIp) {
+    wifiEventGotIp = false;
+    lastReason = 0;
+    logInfo("WiFi: got IP %s", WiFi.localIP().toString().c_str());
+  }
+
+  if (wifiEventLostIp) {
+    wifiEventLostIp = false;
+    logInfo("WiFi: lost IP");
+  }
+
+  if (wifiEventDisconnected) {
+    wifiEventDisconnected = false;
+    uint8_t reason = wifiEventReason;
+
+    bool selfInflicted = reason == WIFI_REASON_ASSOC_LEAVE || reason == WIFI_REASON_STA_LEAVING;
+    if (!selfInflicted && reason != lastReason) {
+      lastReason = reason;
+      logInfo("WiFi: disconnected, reason %u (%s)", reason,
+              WiFi.STA.disconnectReasonName((wifi_err_reason_t)reason));
+    }
+  }
+}
 
 static bool waitForWifi(uint32_t timeoutMs) {
   uint32_t start = millis();
@@ -260,11 +329,17 @@ static bool waitForWifi(uint32_t timeoutMs) {
  * will not survive a TLS upload.
  */
 static void reportVisibleAps() {
+  // A scan cannot start while the driver is still trying to associate -
+  // it fails outright and would read as an empty sky.
+  WiFi.disconnect();
+  delay(200);
+
   int found = WiFi.scanNetworks();
 
-  if (found <= 0) {
+  if (found < 0) {
+    logInfo("scan: failed (%d)", found);
+  } else if (found == 0) {
     logInfo("scan: nothing on the air");
-    return;
   }
 
   for (int i = 0; i < found; i++) {
@@ -277,17 +352,29 @@ static void reportVisibleAps() {
   }
 
   WiFi.scanDelete();
+
+  // Back to trying the network the scan interrupted, with the kick timer
+  // restarted so the nudge does not land on the association forming.
+  wifiKickedMs = millis();
+  WiFi.begin(WIFI_NETWORKS[wifiCurrent].ssid, WIFI_NETWORKS[wifiCurrent].pass);
 }
 
 static void wifiConnectTo(uint8_t network) {
   wifiCurrent = network;
   wifiSwitchedMs = millis();
   wifiKickedMs = millis();
+  wifiDownSinceMs = millis();
   status.wifi_network = network;
 
   logInfo("WiFi: joining %s (%s)", WIFI_NETWORKS[network].ssid, network == 0 ? "primary" : "backup");
 
-  WiFi.disconnect();
+  // Nothing to leave on the first join; a disconnect there only sends the
+  // driver a stray event to answer while the association is forming.
+  if (wifiEverBegan) {
+    WiFi.disconnect();
+  }
+  wifiEverBegan = true;
+
   WiFi.begin(WIFI_NETWORKS[network].ssid, WIFI_NETWORKS[network].pass);
 }
 
@@ -302,6 +389,7 @@ static void wifiSwitch(const char* why) {
 }
 
 static void wifiBegin() {
+  WiFi.onEvent(onWifiEvent);
   WiFi.setHostname(STATION_HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
@@ -321,7 +409,6 @@ static void wifiBegin() {
  * handed to the other network.
  */
 static bool ensureWifi() {
-  static uint32_t downSinceMs = 0;
   static bool wasConnected = false;
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -329,7 +416,7 @@ static bool ensureWifi() {
       logInfo("WiFi connected to %s, %s, RSSI %d dBm",
               WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
       wasConnected = true;
-      downSinceMs = 0;
+      wifiDownSinceMs = 0;
       stationHttpAnnounce();
     }
 
@@ -349,14 +436,13 @@ static bool ensureWifi() {
   if (wasConnected) {
     logInfo("WiFi lost");
     wasConnected = false;
+    wifiDownSinceMs = millis();
   }
 
-  if (downSinceMs == 0) {
-    downSinceMs = millis();
-  }
-
-  if (millis() - downSinceMs >= WIFI_FAILOVER_MS && wifiNetworkCount() > 1) {
-    downSinceMs = millis();
+  // Counted from the join attempt or the drop, whichever began this
+  // outage, so the first failover after boot comes a minute after the
+  // first try rather than a minute after the loop got going.
+  if (millis() - wifiDownSinceMs >= WIFI_FAILOVER_MS && wifiNetworkCount() > 1) {
     wifiSwitch("down too long");
     return false;
   }
@@ -594,6 +680,7 @@ void loop() {
   esp_task_wdt_reset();
   stationHttpHandle();
 
+  reportWifiEvents();
   bool online = ensureWifi();
 
   // A reading without a stamp is useless to the server, and the window it
