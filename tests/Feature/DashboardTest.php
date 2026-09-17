@@ -1124,9 +1124,11 @@ it('shows what the station last reported about itself', function (): void {
         ->assertSeeInOrder(['firmware', '2.1.0'])
         ->assertSeeInOrder(['uptime', '3 d 4 h'])
         ->assertSeeInOrder(['last reset', 'task watchdog'])
-        ->assertSeeInOrder(['network', 'home (backup)'])
-        ->assertSeeInOrder(['ip', '192.168.0.42'])
+        ->assertSeeInOrder(['network', 'backup'])
         ->assertSeeInOrder(['rssi', '-67 dBm'])
+        // The page is public: which network, never which SSID or address.
+        ->assertDontSee('home')
+        ->assertDontSee('192.168.0.42')
         ->assertSeeInOrder(['heap free', '187 kB'])
         ->assertSeeInOrder(['heap lowest', '151 kB'])
         ->assertSeeInOrder(['buffered', '3 windows'])
