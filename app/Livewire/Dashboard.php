@@ -8,6 +8,7 @@ use App\Enums\ChartRange;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
+use App\Models\StationReport;
 use App\ValueObject\DewPoint;
 use App\ValueObject\MeasurementData;
 use App\ValueObject\MeasurementDataV1;
@@ -40,6 +41,7 @@ use UnexpectedValueException;
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
+ * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, ssid: string, ip: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastMeasurement
  * @property-read string|null $measuredAt
@@ -545,6 +547,49 @@ class Dashboard extends Component
     }
 
     /**
+     * The board's last word about itself: what the newest upload from the
+     * selected sensor carried in its `station` object, or null when the
+     * firmware has not reported yet.
+     *
+     * The date is arrival, like the payload tail's - the report describes the
+     * board at the moment it uploaded, so the two are the same instant.
+     *
+     * @return array{firmware: string, resetReason: string, uptime: string, network: string, ssid: string, ip: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null
+     */
+    #[Computed]
+    public function stationReport(): ?array
+    {
+        $report = StationReport::query()
+            ->where('sensor_id', $this->selectedSensor?->id)
+            ->latest('id')
+            ->first();
+
+        if ($report === null) {
+            return null;
+        }
+
+        $data = $report->data;
+        $receivedAt = $this->localise($report->created_at?->getTimestamp() ?? 0);
+
+        return [
+            'firmware' => (string) $data['firmware'],
+            'resetReason' => (string) $data['reset_reason'],
+            'uptime' => $this->duration((int) $data['uptime']),
+            'network' => (int) $data['wifi_network'] === 0 ? 'primary' : 'backup',
+            'ssid' => (string) ($data['ssid'] ?? ''),
+            'ip' => (string) ($data['ip'] ?? ''),
+            'rssi' => (int) $data['rssi'],
+            'switches' => (int) $data['wifi_switches'],
+            'heapFree' => (int) $data['heap_free'],
+            'heapMin' => (int) $data['heap_min'],
+            'buffered' => (int) $data['buffered'],
+            'uploadFailures' => (int) $data['upload_failures'],
+            'at' => $receivedAt->format('j. n. Y H:i'),
+            'ago' => $this->ago($receivedAt),
+        ];
+    }
+
+    /**
      * Centre and radius of the area shown on the location map.
      *
      * @return array{lat: float, lng: float, radius: int}
@@ -728,6 +773,20 @@ class Dashboard extends Component
     private function localise(int $timestamp): CarbonInterface
     {
         return Date::createFromTimestamp($timestamp, self::DISPLAY_TIMEZONE);
+    }
+
+    /** Seconds as the largest two units that fit: "3 d 4 h", "4 h 12 min", "12 min 5 s". */
+    private function duration(int $seconds): string
+    {
+        $days = intdiv($seconds, 86_400);
+        $hours = intdiv($seconds % 86_400, 3_600);
+        $minutes = intdiv($seconds % 3_600, 60);
+
+        return match (true) {
+            $days > 0 => "{$days} d {$hours} h",
+            $hours > 0 => "{$hours} h {$minutes} min",
+            default => "{$minutes} min ".($seconds % 60).' s',
+        };
     }
 
     /**

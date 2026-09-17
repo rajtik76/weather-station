@@ -7,6 +7,7 @@ use App\Livewire\Dashboard;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
+use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use Illuminate\Support\Facades\Date;
@@ -1091,4 +1092,64 @@ it('marks only the selected sensor\'s events', function (): void {
     $component->set('sensor', $other->slug);
 
     expect(array_column(chartEvents($component->html()), 1))->toBe(['Moved to the balcony']);
+});
+
+it('shows what the station last reported about itself', function (): void {
+    $this->travelTo(Date::parse('2026-09-17 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    StationReport::factory()->for($sensor)->create([
+        'data' => [
+            'firmware' => '2.1.0',
+            'reset_reason' => 'task watchdog',
+            'uptime' => 3 * 86_400 + 4 * 3_600 + 12 * 60,
+            'heap_free' => 187 * 1024,
+            'heap_min' => 151 * 1024,
+            'ssid' => 'home',
+            'ip' => '192.168.0.42',
+            'rssi' => -67,
+            'wifi_network' => 1,
+            'wifi_switches' => 2,
+            'buffered' => 3,
+            'upload_failures' => 1,
+        ],
+    ]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Station · as reported with the last upload')
+        // 12:00 UTC is 14:00 in Prague in September.
+        ->assertSee('17. 9. 2026 14:00')
+        ->assertSeeInOrder(['firmware', '2.1.0'])
+        ->assertSeeInOrder(['uptime', '3 d 4 h'])
+        ->assertSeeInOrder(['last reset', 'task watchdog'])
+        ->assertSeeInOrder(['network', 'home (backup)'])
+        ->assertSeeInOrder(['ip', '192.168.0.42'])
+        ->assertSeeInOrder(['rssi', '-67 dBm'])
+        ->assertSeeInOrder(['heap free', '187 kB'])
+        ->assertSeeInOrder(['heap lowest', '151 kB'])
+        ->assertSeeInOrder(['buffered', '3 windows'])
+        ->assertSeeInOrder(['failed uploads', '1 in a row'])
+        ->assertSeeInOrder(['network switches', '2']);
+});
+
+it('shows no station block before the firmware has reported', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->getTimestamp()]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertDontSee('Station · as reported');
+});
+
+it('shows the selected sensor\'s report, not another station\'s', function (): void {
+    $shown = Sensor::factory()->create(['name' => 'north']);
+    $other = Sensor::factory()->create(['name' => 'south']);
+    StationReport::factory()->for($shown)->create(['data' => [...StationReport::factory()->raw()['data'], 'firmware' => 'north-build']]);
+    StationReport::factory()->for($other)->create(['data' => [...StationReport::factory()->raw()['data'], 'firmware' => 'south-build']]);
+
+    $this->get('/?sensor=north')
+        ->assertOk()
+        ->assertSee('north-build')
+        ->assertDontSee('south-build');
 });
