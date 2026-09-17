@@ -367,6 +367,45 @@
         </section>
     @endif
 
+    {{-- ── Station report ─────────────────────────────────────────── --}}
+    @if ($this->stationReport !== null)
+        @php($report = $this->stationReport)
+        <section aria-label="Station report" class="border-b border-zinc-900/10 dark:border-white/10">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
+                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                    Station · as reported with the last upload
+                </p>
+                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ $report['at'] }} · {{ $report['ago'] }}
+                </p>
+            </div>
+
+            {{-- The board's own account of itself. A stall reads here before
+                 the flash log on the board does: a heap that keeps sinking,
+                 uploads failing in a row, a watchdog as the reset reason. --}}
+            <dl class="grid grid-cols-2 gap-x-8 gap-y-3 px-4 pb-4 font-mono text-xs tabular-nums sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
+                @foreach ([
+                    'firmware' => $report['firmware'],
+                    'uptime' => $report['uptime'],
+                    'last reset' => $report['resetReason'],
+                    'network' => $report['ssid'].' ('.$report['network'].')',
+                    'ip' => $report['ip'],
+                    'rssi' => $report['rssi'].' dBm',
+                    'heap free' => number_format($report['heapFree'] / 1024, 0, ',', ' ').' kB',
+                    'heap lowest' => number_format($report['heapMin'] / 1024, 0, ',', ' ').' kB',
+                    'buffered' => $report['buffered'].' '.($report['buffered'] === 1 ? 'window' : 'windows'),
+                    'failed uploads' => $report['uploadFailures'].' in a row',
+                    'network switches' => $report['switches'],
+                ] as $label => $value)
+                    <div>
+                        <dt class="text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">{{ $label }}</dt>
+                        <dd class="text-zinc-800 dark:text-zinc-200">{{ $value }}</dd>
+                    </div>
+                @endforeach
+            </dl>
+        </section>
+    @endif
+
     {{-- ── Site location ──────────────────────────────────────────── --}}
     <section aria-label="Station location" class="border-b border-zinc-900/10 dark:border-white/10">
         <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-5 pb-4 sm:px-8">
