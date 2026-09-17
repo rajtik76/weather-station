@@ -5,8 +5,9 @@
 [![Readings](https://status.rajtik.com/api/badge/18/status?label=readings)](https://status.rajtik.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.md)
 
-A personal weather station, end to end. An ESP32 wakes on a timer, reads a
-BME280, and uploads to a Laravel API that stores the readings and draws them.
+A personal weather station, end to end. An ESP32 reads a BME280 every half
+minute, folds the readings into ten-minute windows, and uploads them to a
+Laravel API that stores the readings and draws them.
 
 ```
 BME280 --I2C--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
@@ -60,6 +61,14 @@ is unique and the write upserts, which makes a partially delivered batch safe
 to send again. One invalid entry rejects the whole batch, so a bad reading
 never wedges the ones queued behind it. Payload shape, units and ranges are in
 the firmware README.
+
+Beside the measurements a batch may carry a `station` object - firmware
+version, reset reason, uptime, heap, network, how many windows wait on the
+board and how many uploads failed in a row. It goes into `station_reports`,
+one row per batch, and the dashboard shows the newest under the payload
+tail: the board's own account of how it was doing, readable after the fact
+when it has stopped answering. The board also serves the same over HTTP on
+the LAN; the firmware README has the paths.
 
 The protocol is versioned. `protocol_version` is a column of its own and never
 lives inside the stored blob; `ProtocolVersion` maps a version to the value

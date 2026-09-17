@@ -8,6 +8,7 @@ use App\Enums\ProtocolVersion;
 use App\Http\Requests\StoreMeasurementRequest;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\Models\StationReport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
 
@@ -36,6 +37,15 @@ class StoreMeasurementController extends Controller
             // A sensor can resend the same timestamp on a newer protocol after a firmware upgrade.
             update: ['data', 'protocol_version'],
         );
+
+        $station = $request->stationReport();
+
+        if ($station !== null) {
+            StationReport::query()->create([
+                'sensor_id' => $sensor->id,
+                'data' => $station,
+            ]);
+        }
 
         $this->pingHeartbeat();
 
