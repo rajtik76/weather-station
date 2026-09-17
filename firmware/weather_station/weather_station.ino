@@ -5,6 +5,9 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <esp_sntp.h>
+#include <esp_system.h>
+#include <esp_timer.h>
+#include <esp_task_wdt.h>
 
 #include <Wire.h>
 #include <Adafruit_BME280.h>
@@ -12,9 +15,16 @@
 #include <secrets.h>
 
 #include "ca_certs.h"
+#include "station_http.h"
+#include "station_log.h"
+#include "station_status.h"
 #include "transmission_json.h"
 #include "window.h"
 #include "window_buffer.h"
+
+// Reported to the server with every batch and on the LAN. Bump it with the
+// firmware, so a log or a row in the record says which build wrote it.
+#define FIRMWARE_VERSION "2.1.0"
 
 // Hardware I2C of the ESP32-C3-DevKitM-1 as the board variant defines it:
 // SDA on GPIO8, SCL on GPIO9. Change to match the wiring.
@@ -40,20 +50,83 @@
 static const uint32_t SAMPLE_INTERVAL_MS = 30000;
 
 static const uint32_t WIFI_TIMEOUT_MS = 15000;
-static const uint32_t WIFI_RETRY_MS = 30000;
 static const uint32_t NTP_TIMEOUT_MS = 10000;
+
+// The WiFi is nudged this often while it is down, and after WIFI_FAILOVER_MS
+// of that the station moves to the other network, if there is one. Once on
+// the backup it tries the primary again every WIFI_PRIMARY_RETRY_MS - the
+// primary is the one the station is meant to live on.
+static const uint32_t WIFI_RETRY_MS = 30000;
+static const uint32_t WIFI_FAILOVER_MS = 120000;
+static const uint32_t WIFI_PRIMARY_RETRY_MS = 3600000;
+
+// A failed upload is retried this often rather than waiting for the next
+// window, and this many failures in a row while associated mean the link
+// is up but the uplink behind it is not - the other network gets a turn.
+static const uint32_t UPLOAD_RETRY_MS = 60000;
+static const uint16_t UPLOAD_FAILURES_BEFORE_SWITCH = 3;
+
+// An hour with a backlog and no upload that worked is a state the loop has
+// not found its way out of. The buffer is on the flash, so a restart costs
+// nothing, and the reset reason plus the flash log say afterwards what was
+// going on.
+static const uint32_t NO_UPLOAD_RESTART_MS = 3600000;
+
+// The hardware watchdog catches what the restart above cannot: a loop that
+// stopped running at all, stuck in I2C or TLS. Long enough for a full
+// backlog to go out, one POST after another.
+static const uint32_t WATCHDOG_TIMEOUT_MS = 120000;
 
 // POSIX TZ for Czech Republic: UTC+1, DST from last Sunday in March
 // to last Sunday in October at 03:00. Used only for display.
 static const char* TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 
-// Sanity threshold: any epoch below this means the clock is not set.
-static const uint32_t EPOCH_VALID_MIN = 1700000000UL;
-
 // How often SNTP corrects the clock once it runs. The crystal on a powered
 // board drifts seconds a day rather than the minutes a week of the sleeping
 // station, but a stamp lands in the record as sent, so it is kept tight.
 static const uint32_t NTP_RESYNC_AFTER_S = 3600UL;
+
+// ---------------------------------------------------------------- status
+
+static station_status_t status;
+
+static const char* resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON: return "power on";
+    case ESP_RST_EXT: return "external reset";
+    case ESP_RST_SW: return "software restart";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "interrupt watchdog";
+    case ESP_RST_TASK_WDT: return "task watchdog";
+    case ESP_RST_WDT: return "other watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "sdio";
+    default: return "unknown";
+  }
+}
+
+// Fills in the parts that change on their own; the rest is kept up to date
+// by whoever changes it.
+static void refreshStatus() {
+  status.firmware = FIRMWARE_VERSION;
+  status.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);  // 64-bit, no wrap at 49 days
+  status.heap_free = ESP.getFreeHeap();
+  status.heap_min = ESP.getMinFreeHeap();
+  status.clock_set = stationClockIsSet();
+  status.online = WiFi.status() == WL_CONNECTED;
+  status.buffered = windowBufferCount();
+
+  if (status.online) {
+    strncpy(status.ssid, WiFi.SSID().c_str(), sizeof(status.ssid) - 1);
+    status.ssid[sizeof(status.ssid) - 1] = '\0';
+    strncpy(status.ip, WiFi.localIP().toString().c_str(), sizeof(status.ip) - 1);
+    status.ip[sizeof(status.ip) - 1] = '\0';
+    status.rssi = (int8_t)WiFi.RSSI();
+  } else {
+    status.rssi = 0;
+  }
+}
 
 // ---------------------------------------------------------------- sensors
 
@@ -75,7 +148,7 @@ static bool bme280Begin() {
 
   // Boards ship with either address depending on how SDO is strapped.
   if (!bme.begin(0x76, &Wire) && !bme.begin(0x77, &Wire)) {
-    Serial.println("BME280 not found");
+    logInfo("BME280 not found");
     quietSharedLed();
     return false;
   }
@@ -116,12 +189,12 @@ static bool readBme280(bme280_reading_t& out) {
   quietSharedLed();
 
   if (!ok) {
-    Serial.println("BME280 measurement failed");
+    logInfo("BME280 measurement failed");
     return false;
   }
 
   if (isnan(t) || isnan(h) || isnan(p)) {
-    Serial.println("BME280 returned NaN");
+    logInfo("BME280 returned NaN");
     return false;
   }
 
@@ -136,8 +209,7 @@ static bool readBme280(bme280_reading_t& out) {
   if (temperature < BME280_TEMP_MIN || temperature > BME280_TEMP_MAX ||
       humidity < BME280_HUMIDITY_MIN || humidity > BME280_HUMIDITY_MAX ||
       pressure < BME280_PRESSURE_MIN || pressure > BME280_PRESSURE_MAX) {
-    Serial.printf("BME280 out of range: t=%ld h=%ld p=%ld\n",
-                  temperature, humidity, pressure);
+    logInfo("BME280 out of range: t=%ld h=%ld p=%ld", temperature, humidity, pressure);
     return false;
   }
 
@@ -146,11 +218,29 @@ static bool readBme280(bme280_reading_t& out) {
   out.humidity = (uint16_t)humidity;
   out.pressure = (uint32_t)pressure;
 
-  Serial.printf("BME280: %.2f C  %.2f %%  %.2f hPa\n", t, h, p / 100.0f);
+  logTrace("BME280: %.2f C  %.2f %%  %.2f hPa", t, h, p / 100.0f);
   return true;
 }
 
 // ---------------------------------------------------------------- network
+
+typedef struct {
+  const char* ssid;
+  const char* pass;
+} wifi_network_t;
+
+static const wifi_network_t WIFI_NETWORKS[] = {
+  { PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS },
+  { BACKUP_WIFI_SSID, BACKUP_WIFI_PASS },
+};
+
+static uint8_t wifiNetworkCount() {
+  return BACKUP_WIFI_SSID[0] == '\0' ? 1 : 2;
+}
+
+static uint8_t wifiCurrent = 0;
+static uint32_t wifiSwitchedMs = 0;
+static uint32_t wifiKickedMs = 0;
 
 static bool waitForWifi(uint32_t timeoutMs) {
   uint32_t start = millis();
@@ -173,28 +263,52 @@ static void reportVisibleAps() {
   int found = WiFi.scanNetworks();
 
   if (found <= 0) {
-    Serial.println("scan: nothing on the air");
+    logInfo("scan: nothing on the air");
     return;
   }
 
   for (int i = 0; i < found; i++) {
-    Serial.printf("scan: %s  %d dBm  ch %d%s\n",
-                  WiFi.SSID(i).c_str(),
-                  WiFi.RSSI(i),
-                  WiFi.channel(i),
-                  WiFi.SSID(i) == WIFI_SSID ? "  <- ours" : "");
+    const char* ours = "";
+    for (uint8_t n = 0; n < wifiNetworkCount(); n++) {
+      if (WiFi.SSID(i) == WIFI_NETWORKS[n].ssid) ours = "  <- ours";
+    }
+
+    logInfo("scan: %s  %ld dBm  ch %ld%s", WiFi.SSID(i).c_str(), (long)WiFi.RSSI(i), (long)WiFi.channel(i), ours);
   }
 
   WiFi.scanDelete();
 }
 
+static void wifiConnectTo(uint8_t network) {
+  wifiCurrent = network;
+  wifiSwitchedMs = millis();
+  wifiKickedMs = millis();
+  status.wifi_network = network;
+
+  logInfo("WiFi: joining %s (%s)", WIFI_NETWORKS[network].ssid, network == 0 ? "primary" : "backup");
+
+  WiFi.disconnect();
+  WiFi.begin(WIFI_NETWORKS[network].ssid, WIFI_NETWORKS[network].pass);
+}
+
+static void wifiSwitch(const char* why) {
+  if (wifiNetworkCount() < 2) {
+    return;
+  }
+
+  status.wifi_switches++;
+  logInfo("WiFi: %s, switching network", why);
+  wifiConnectTo(wifiCurrent == 0 ? 1 : 0);
+}
+
 static void wifiBegin() {
+  WiFi.setHostname(STATION_HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   // The core re-associates by itself after a dropped link; the loop only
   // steps in when that has not worked for a while.
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  wifiConnectTo(0);
 }
 
 /**
@@ -202,39 +316,60 @@ static void wifiBegin() {
  *
  * Returns whether the station is online right now. The first association
  * after boot is waited for, so the clock can be set before the first
- * reading; later drops are left to the core's own reconnect and nudged
- * once every WIFI_RETRY_MS if that gets nowhere.
+ * reading; later drops are left to the core's own reconnect, nudged every
+ * WIFI_RETRY_MS if that gets nowhere, and after WIFI_FAILOVER_MS of that
+ * handed to the other network.
  */
 static bool ensureWifi() {
-  static uint32_t lastAttemptMs = 0;
+  static uint32_t downSinceMs = 0;
   static bool wasConnected = false;
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!wasConnected) {
-      Serial.printf("WiFi connected, RSSI %d dBm\n", WiFi.RSSI());
+      logInfo("WiFi connected to %s, %s, RSSI %d dBm",
+              WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
       wasConnected = true;
+      downSinceMs = 0;
+      stationHttpAnnounce();
     }
+
+    // Back to the primary once it has had time to recover. Only with an
+    // empty buffer, so the try costs no data - the sampling carries on
+    // regardless, and the failover timer brings the backup back if the
+    // primary is still down.
+    if (wifiCurrent != 0 && windowBufferCount() == 0 && millis() - wifiSwitchedMs >= WIFI_PRIMARY_RETRY_MS) {
+      logInfo("WiFi: trying the primary again");
+      wifiConnectTo(0);
+      return false;
+    }
+
     return true;
   }
 
   if (wasConnected) {
-    Serial.println("WiFi lost");
+    logInfo("WiFi lost");
     wasConnected = false;
   }
 
-  if (lastAttemptMs != 0 && millis() - lastAttemptMs < WIFI_RETRY_MS) {
+  if (downSinceMs == 0) {
+    downSinceMs = millis();
+  }
+
+  if (millis() - downSinceMs >= WIFI_FAILOVER_MS && wifiNetworkCount() > 1) {
+    downSinceMs = millis();
+    wifiSwitch("down too long");
     return false;
   }
 
-  lastAttemptMs = millis();
+  if (millis() - wifiKickedMs < WIFI_RETRY_MS) {
+    return false;
+  }
+
+  wifiKickedMs = millis();
   WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(WIFI_NETWORKS[wifiCurrent].ssid, WIFI_NETWORKS[wifiCurrent].pass);
 
   return false;
-}
-
-static bool clockIsSet() {
-  return time(nullptr) >= EPOCH_VALID_MIN;
 }
 
 static volatile bool ntpAnswered = false;
@@ -264,30 +399,25 @@ static bool syncClock(uint32_t timeoutMs) {
 
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
-    if (ntpAnswered && clockIsSet()) {
-      Serial.println("clock synced");
+    if (ntpAnswered && stationClockIsSet()) {
+      logInfo("clock synced");
       return true;
     }
     delay(200);
   }
 
-  Serial.println("NTP timed out");
+  logInfo("NTP timed out");
   return false;
 }
 
+// Without an endpoint or a token there is nowhere to upload to: the
+// windows stay buffered, and none of the failure handling - the retries,
+// the network switch, the restart - has anything to say about it.
+static bool uploadConfigured() {
+  return API_URL[0] != '\0' && BEARER_TOKEN[0] != '\0';
+}
+
 static bool postTransmission(const char* payload) {
-  if (API_URL[0] == '\0') {
-    Serial.println("no API URL set, keeping data buffered");
-    return false;
-  }
-
-  if (BEARER_TOKEN[0] == '\0') {
-    // Without a token the server answers 401 and the buffer would be kept
-    // anyway - skip the radio time and say why.
-    Serial.println("no API token set, keeping data buffered");
-    return false;
-  }
-
   WiFiClientSecure client;
   client.setCACert(ROOT_CA_BUNDLE);
 
@@ -298,49 +428,71 @@ static bool postTransmission(const char* payload) {
 
   int code = http.POST((uint8_t*)payload, strlen(payload));
 
-  Serial.printf("POST -> %d\n", code);
+  status.last_post_code = code;
+  status.last_post_at = (uint32_t)time(nullptr);
 
   // A negative code is a client side failure, not an HTTP status - most
   // often the TLS handshake, which is the interesting one here.
   if (code < 0) {
-    Serial.printf("transport error: %s\n", http.errorToString(code).c_str());
-  }
-
-  // 422 means the payload does not match the contract. Without the body
-  // there is no way to tell which field the server refused.
-  if (code == 401 || code == 422) {
-    Serial.println(http.getString());
+    logInfo("POST -> %d, transport error: %s", code, http.errorToString(code).c_str());
+  } else if (code == 401 || code == 422) {
+    // 422 means the payload does not match the contract. Without the body
+    // there is no way to tell which field the server refused.
+    logInfo("POST -> %d: %s", code, http.getString().c_str());
+  } else {
+    logInfo("POST -> %d", code);
   }
 
   http.end();
   return code >= 200 && code < 300;
 }
 
+static uint32_t lastUploadAttemptMs = 0;
+static uint32_t lastUploadOkMs = 0;
+
 /**
  * Send the backlog, oldest windows first, one batch per POST.
  *
- * Stops at the first failure and leaves the rest for the next window - the
+ * Stops at the first failure and leaves the rest for the next try - the
  * server upserts on (sensor, timestamp), so a batch that was stored but
  * whose answer got lost is harmless to send again.
  */
 static void uploadBuffered() {
   static char payload[8192];
 
+  lastUploadAttemptMs = millis();
+
+  if (!uploadConfigured()) {
+    logInfo("no API URL or token set, keeping %u windows buffered", windowBufferCount());
+    return;
+  }
+
   while (windowBufferCount() > 0) {
     transmission_t tx;
     windowBufferToTransmission(tx, DEVICE_ID);
+    refreshStatus();
 
-    if (!transmissionToJson(tx, payload, sizeof(payload))) {
-      Serial.println("payload buffer too small");
+    if (!transmissionToJson(tx, status, payload, sizeof(payload))) {
+      logInfo("payload buffer too small");
       return;
     }
 
     if (!postTransmission(payload)) {
-      Serial.printf("keeping %u windows buffered\n", windowBufferCount());
+      status.upload_failures++;
+      logInfo("keeping %u windows buffered, %u failures in a row", windowBufferCount(), status.upload_failures);
+
+      if (status.upload_failures >= UPLOAD_FAILURES_BEFORE_SWITCH && wifiNetworkCount() > 1) {
+        status.upload_failures = 0;
+        wifiSwitch("uploads keep failing");
+      }
       return;
     }
 
+    status.upload_failures = 0;
+    status.last_upload_ok_at = (uint32_t)time(nullptr);
+    lastUploadOkMs = millis();
     windowBufferDrop(tx.data_count);
+    esp_task_wdt_reset();
   }
 }
 
@@ -357,17 +509,45 @@ static void closeWindow() {
     return;
   }
 
-  Serial.printf("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  n=%u\n",
-                (unsigned long)entry.timestamp,
-                entry.temperature, entry.temperature_min, entry.temperature_max,
-                entry.humidity, entry.humidity_min, entry.humidity_max,
-                (unsigned long)entry.pressure, (unsigned long)entry.pressure_min,
-                (unsigned long)entry.pressure_max,
-                entry.samples);
+  logInfo("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  n=%u",
+          (unsigned long)entry.timestamp,
+          entry.temperature, entry.temperature_min, entry.temperature_max,
+          entry.humidity, entry.humidity_min, entry.humidity_max,
+          (unsigned long)entry.pressure, (unsigned long)entry.pressure_min,
+          (unsigned long)entry.pressure_max,
+          entry.samples);
 
   if (!windowBufferAdd(entry)) {
-    Serial.println("buffer full, oldest window dropped");
+    logInfo("buffer full, oldest window dropped");
   }
+}
+
+// Checked between windows, when nothing is half measured: the buffer is on
+// the flash and the next window has not begun, so the restart loses one
+// reading.
+static void restartIfStuck() {
+  if (!uploadConfigured() || windowBufferCount() == 0 || millis() - lastUploadOkMs < NO_UPLOAD_RESTART_MS) {
+    return;
+  }
+
+  logInfo("no upload for an hour with %u windows waiting, restarting", windowBufferCount());
+  delay(200);
+  ESP.restart();
+}
+
+static void watchdogBegin() {
+  esp_task_wdt_config_t config = {
+    .timeout_ms = WATCHDOG_TIMEOUT_MS,
+    .idle_core_mask = 0,
+    .trigger_panic = true,
+  };
+
+  // The core may have started the watchdog already, with its own timeout.
+  if (esp_task_wdt_reconfigure(&config) != ESP_OK) {
+    esp_task_wdt_init(&config);
+  }
+
+  esp_task_wdt_add(nullptr);
 }
 
 void setup() {
@@ -380,27 +560,43 @@ void setup() {
 #endif
 
   delay(1000);  // give the serial bridge time to attach
-  Serial.println("weather station, protocol 2");
+
+  stationFsBegin();
+  status.reset_reason = resetReasonName(esp_reset_reason());
+  logInfo("weather station %s, protocol %d, reset reason: %s",
+          FIRMWARE_VERSION, TRANSMISSION_VERSION, status.reset_reason);
+
+  uint16_t restored = windowBufferLoad();
+  if (restored > 0) {
+    logInfo("%u windows restored from the flash", restored);
+  }
 
   // Without the sensor there is nothing to run, and the log has said why.
   while (!bme280Begin()) {
     delay(5000);
   }
 
+  watchdogBegin();
+
+  stationHttpBegin(&status, refreshStatus);
+
   wifiBegin();
   if (!waitForWifi(WIFI_TIMEOUT_MS)) {
-    Serial.println("WiFi failed");
+    logInfo("WiFi failed");
     reportVisibleAps();
   }
 }
 
 void loop() {
+  esp_task_wdt_reset();
+  stationHttpHandle();
+
   bool online = ensureWifi();
 
   // A reading without a stamp is useless to the server, and the window it
   // belongs to cannot be known either - so nothing is read until the clock
   // is set. After that the clock keeps counting through a lost link.
-  if (!clockIsSet()) {
+  if (!stationClockIsSet()) {
     if (online) {
       syncClock(NTP_TIMEOUT_MS);
     } else {
@@ -424,10 +620,11 @@ void loop() {
       if (windowOpen && slot != window.slot) {
         closeWindow();
         windowOpen = false;
+        restartIfStuck();
 
-        if (online) {
-          uploadBuffered();
-        }
+        // A closed window goes out at once; the retry timer below covers
+        // the case where it could not.
+        lastUploadAttemptMs = 0;
       }
 
       if (!windowOpen) {
@@ -437,6 +634,11 @@ void loop() {
 
       windowAdd(window, reading);
     }
+  }
+
+  if (online && windowBufferCount() > 0 &&
+      (lastUploadAttemptMs == 0 || millis() - lastUploadAttemptMs >= UPLOAD_RETRY_MS)) {
+    uploadBuffered();
   }
 
   delay(100);

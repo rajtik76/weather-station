@@ -3,12 +3,15 @@
 
 #include <ArduinoJson.h>
 
+#include "station_status.h"
 #include "transmission_type.h"
 
-// Serializes a transmission into the server's JSON payload.
+// Serializes a transmission into the server's JSON payload, with the
+// station's own state beside the measurements.
 // Returns the number of bytes written, excluding the terminator,
 // or 0 if the buffer was too small.
-static size_t transmissionToJson(const transmission_t& tx, char* out, size_t outLen) {
+static size_t transmissionToJson(const transmission_t& tx, const station_status_t& status,
+                                 char* out, size_t outLen) {
   JsonDocument doc;
 
   doc["sensor_name"] = tx.device;
@@ -34,6 +37,8 @@ static size_t transmissionToJson(const transmission_t& tx, char* out, size_t out
     entry["pressure_max"] = w.pressure_max;
     entry["samples"] = w.samples;
   }
+
+  stationStatusToJson(status, doc["station"].to<JsonObject>());
 
   size_t written = serializeJson(doc, out, outLen);
   return (written > 0 && written < outLen) ? written : 0;

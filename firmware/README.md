@@ -3,12 +3,15 @@
 ESP32 firmware for the weather station. Reads a BME280 every thirty seconds,
 folds the readings into ten-minute windows - mean, minimum and maximum per
 channel - and uploads each closed window to `POST /api/v1/measurement` over
-HTTPS. Anything that fails to upload stays buffered until the link is back.
+HTTPS. Anything that fails to upload stays buffered on the flash until the
+link is back, and the station can be looked at over the LAN without a cable.
 
 ```
 BME280 --I2C--> ESP32-C3 --HTTPS--> Laravel API
+                  |    \
+                  |     HTTP on the LAN: status and log
                   |
-          window buffer, 144 entries (a day)
+          window buffer on the flash, 144 entries (a day)
 ```
 
 The board is mains powered over USB and never sleeps. The earlier design - a
@@ -81,8 +84,13 @@ board does not bring out, and the monitor goes quiet.
 ## Build
 
 Arduino IDE, board _ESP32C3 Dev Module_ from ESP32 core 3.x. Needs
-`Adafruit BME280 Library` and `ArduinoJson` v7. Defaults are fine: 4 MB
-flash, the default partition scheme, _USB CDC On Boot_ disabled.
+`Adafruit BME280 Library` and `ArduinoJson` v7. Set _Partition Scheme_ to
+_No OTA (2MB APP/2MB SPIFFS)_: the sketch is past the 1.2 MB the default
+scheme gives an app, and there is no OTA to keep a second slot for. The
+rest stays at the defaults - 4 MB flash, _USB CDC On Boot_ disabled.
+
+Changing the partition scheme wipes the filesystem, so a backlog buffered
+on the flash does not survive the switch. It is a one-time cost.
 
 ```
 cp secrets.example.h secrets.h
@@ -91,6 +99,42 @@ cp secrets.example.h secrets.h
 Fill in the device name, WiFi and the token, then set `API_URL` in
 `weather_station.ino`. `BEARER_TOKEN` has to match `SENSOR_API_TOKEN` in the
 server's `.env`. `secrets.h` is gitignored.
+
+Two networks can be given. The station lives on the primary and moves to
+the backup when the primary will not associate for two minutes, or when
+three uploads in a row fail while it is associated - a link that is up
+with nothing behind it looks the same as no link from the server's side,
+and a second provider is what a backup is for. Once on the backup it tries
+the primary again every hour, with an empty buffer, so the try costs no
+data. Leave `BACKUP_WIFI_SSID` empty to run on one network.
+
+To build from the terminal, the IDE's own `arduino-cli` does it:
+
+```
+arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=no_ota weather_station
+```
+
+## Looking at the station
+
+Plugging in the serial cable resets the board, which is the one thing a
+look should not do. So the station serves itself over plain HTTP on the
+LAN, as `http://weather-station.local/` through mDNS on whichever network
+it is on, or by the IP the router hands it.
+
+| Path         | What it is                                                        |
+| ------------ | ----------------------------------------------------------------- |
+| `/`          | What the station is doing, as text                                |
+| `/status`    | The same as JSON                                                  |
+| `/log`       | The last 8 kB of log from RAM, readings included                  |
+| `/log/flash` | The log on the flash: everything but readings, survives a restart |
+
+`/status` and the `station` object in every upload carry the same things:
+firmware version, why the board last booted, uptime, free heap and the
+lowest it has been, SSID, IP and RSSI, which network the station is on and
+how many times it switched, how many windows wait in the buffer and how
+many uploads failed in a row. `/status` adds the last POST's code and time.
+
+There is no authentication. It only reads, and it is only on the LAN.
 
 ## Protocol
 
@@ -127,6 +171,11 @@ taken. One entry per ten-minute window.
 | `pressure`, `_min`, `_max`    | Pa               | 30000 .. 110000 |
 | `samples`                     | readings         | 1 .. 65535      |
 
+Beside `measurements` goes a `station` object with the state of the board
+at the time of the upload - see _Looking at the station_ for the fields.
+The server stores it apart from the readings, and it is optional: a batch
+without it is still a valid V2 batch.
+
 The bare field is the mean over the window, rounded to nearest; `_min` and
 `_max` are the lowest and highest reading in it. The server refuses a
 minimum above its mean or a maximum below it. The mean keeps the V1 field
@@ -153,12 +202,24 @@ lost link, and SNTP corrects it every hour while the link is up. The sync is
 waited on through the notification callback, not by watching the clock look
 plausible - on a re-sync it already does.
 
-Closed windows wait in RAM, oldest first, a day of them. The upload goes out
-in batches of sixteen straight after a window closes, and stops at the first
-failure; the rest goes with the next window. A batch is dropped from the
-buffer only after a 2xx, and the server upserts on `(sensor, timestamp)`, so
-a batch whose answer got lost is harmless to send twice. A power cut loses
-the backlog of an outage and nothing more.
+Closed windows wait in a buffer, oldest first, a day of them. The buffer is
+in RAM and mirrored to a file on the flash after every change, written
+whole into a scratch file that replaces the old one, so a restart of any
+kind - a power cut, the watchdog, a cable plugged in - loses only the window
+being filled at that moment. The upload goes out in batches of sixteen
+straight after a window closes, and stops at the first failure; a failure
+is retried a minute later rather than with the next window. A batch is
+dropped from the buffer only after a 2xx, and the server upserts on
+`(sensor, timestamp)`, so a batch whose answer got lost is harmless to send
+twice.
+
+Two things guard against a stall. The task watchdog restarts the board
+when the loop has not run for two minutes - stuck in I2C or TLS - and the
+loop itself restarts the board when an hour passes with a backlog and no
+upload that worked, checked between windows so nothing half measured is
+lost. Both are cheap with the buffer on the flash, and the next boot logs
+the reset reason, so the flash log says afterwards what the station was
+doing when it stopped. The log itself rotates at 32 kB, two files deep.
 
 Readings outside the protocol ranges are dropped before they reach the
 window. The API validates each entry and rejects the whole batch on one bad
@@ -179,9 +240,10 @@ cross-sign being dropped. mbedTLS validates the certificate against the system
 clock, which is set before anything is read.
 
 WiFi stays associated. The core reconnects by itself after a drop; the loop
-nudges it every thirty seconds if that gets nowhere, and lists what the radio
-can hear when the first association after boot fails - around -70 dBm is
-comfortable, -80 marginal, past -85 a TLS upload will not survive.
+nudges it every thirty seconds if that gets nowhere, hands the other network
+a turn after two minutes of that, and lists what the radio can hear when the
+first association after boot fails - around -70 dBm is comfortable, -80
+marginal, past -85 a TLS upload will not survive.
 
 ## Sketches
 
