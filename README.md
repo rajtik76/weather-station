@@ -21,6 +21,21 @@ Running at [weather.rajtik.com](https://weather.rajtik.com).
 The screenshot is seeded sample data, not measurements - the live station has
 been reporting for days rather than the month the seeded record covers.
 
+## Accuracy
+
+This is a hobby station, and the readings should be read as such. The sensor
+sits in a passive radiation shield on an east-facing balcony, and on a clear
+morning the sun hits it head on: for an hour or two the temperature then runs
+more than 10 °C above the real air temperature, and the band behind the line
+shows how far the samples inside a window spread. The shield went up in
+September 2026 and took some of it away, not enough.
+
+There is no fix coming. A properly ventilated site or an aspirated shield is
+beyond the means and the setting the station has, and the point of the project
+was the pipeline from sensor to chart, not a reference instrument. Overnight
+and under cloud the numbers are as good as a BME280 gets; on a sunny morning
+they are not the air temperature.
+
 ## Layout
 
 | Path               | Contents                                                                                                                   |

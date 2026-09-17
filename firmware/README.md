@@ -27,9 +27,10 @@ recorded; see the git history before this file for it.
 
 The shield hangs on a bracket off the top rail of an east-facing balcony,
 more than half a metre from the wall and outboard of the railing, so air
-reaches it from every side. Direct sun still lifts the reading by 2-4 °C
-around late morning - that is the residual error of a passive shield, and
-the V2 window band is what shows it.
+reaches it from every side. Direct sun still gets through: on a clear
+morning the reading runs more than 10 °C above the air around it - that is
+the error of a passive shield facing the sunrise, and the V2 window band is
+what shows it. The main README says what to make of it.
 
 The breakout goes on the board's hardware I2C pins as the Arduino variant
 defines them.
