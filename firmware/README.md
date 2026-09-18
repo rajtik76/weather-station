@@ -85,9 +85,11 @@ board does not bring out, and the monitor goes quiet.
 
 Arduino IDE, board _ESP32C3 Dev Module_ from ESP32 core 3.x. Needs
 `Adafruit BME280 Library` and `ArduinoJson` v7. Set _Partition Scheme_ to
-_No OTA (2MB APP/2MB SPIFFS)_: the sketch is past the 1.2 MB the default
-scheme gives an app, and there is no OTA to keep a second slot for. The
-rest stays at the defaults - 4 MB flash, _USB CDC On Boot_ disabled.
+_Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_: the sketch is past the
+1.2 MB the default scheme gives an app, and OTA needs two app slots. The
+128 kB of filesystem hold the 4 kB window buffer and two 32 kB logs with
+room to spare. The rest stays at the defaults - 4 MB flash, _USB CDC On
+Boot_ disabled.
 
 Changing the partition scheme wipes the filesystem, so a backlog buffered
 on the flash does not survive the switch. It is a one-time cost.
@@ -96,9 +98,9 @@ on the flash does not survive the switch. It is a one-time cost.
 cp secrets.example.h secrets.h
 ```
 
-Fill in the device name, WiFi and the token, then set `API_URL` in
-`weather_station.ino`. `BEARER_TOKEN` has to match `SENSOR_API_TOKEN` in the
-server's `.env`. `secrets.h` is gitignored.
+Fill in the device name, WiFi, the token and an OTA password, then set
+`API_URL` in `weather_station.ino`. `BEARER_TOKEN` has to match
+`SENSOR_API_TOKEN` in the server's `.env`. `secrets.h` is gitignored.
 
 Two networks can be given. The station lives on the primary and moves to
 the backup when the primary will not associate for a minute, or when
@@ -111,8 +113,30 @@ data. Leave `BACKUP_WIFI_SSID` empty to run on one network.
 To build from the terminal, the IDE's own `arduino-cli` does it:
 
 ```
-arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=no_ota weather_station
+arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs weather_station
 ```
+
+## Updating over the air
+
+Once a build with OTA runs on the board, the next one goes over the LAN:
+the board listens on port 3232, announces itself over mDNS, and the IDE
+lists `weather-station at 192.168.0.200` under _Port_ next to the serial
+ones. From the terminal:
+
+```
+arduino-cli upload --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs --port weather-station.local weather_station
+```
+
+The IP does instead of the name when mDNS is slow to answer. The image
+lands in the other app slot and the board restarts from it; the window
+being filled is closed into the buffer first, so the update costs no
+readings. The board asks for `OTA_PASSWORD` - an open OTA port would take
+any image from anyone on the network - and with the password left empty
+OTA is off altogether.
+
+There is no rollback. A build that boot-loops, as v2.1.0 did, stays in
+the slot the bootloader picks, and only the cable gets it out. Compile
+before uploading, and keep the cable for that one case.
 
 ## Looking at the station
 

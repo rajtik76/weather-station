@@ -16,13 +16,19 @@
 // No authentication: it only reads, and it is only on the LAN.
 #define STATION_HOSTNAME "weather-station"
 
+// Where ArduinoOTA listens. Advertised over mDNS with the HTTP service,
+// so the IDE and arduino-cli find the board as a network port.
+#define STATION_OTA_PORT 3232
+
 // Starts the server. `refresh` is called before every answer so the
 // status it hands out is current.
 void stationHttpBegin(const station_status_t* status, void (*refresh)());
 
 // Registers the mDNS name. Call every time the WiFi comes up: the
-// responder binds to the interface as it was when it started.
-void stationHttpAnnounce();
+// responder binds to the interface as it was when it started. The OTA
+// port is advertised only when something listens on it, so the IDE does
+// not offer a network port that would time out.
+void stationHttpAnnounce(bool otaListening);
 
 // Serves whatever is waiting. Call from the loop.
 void stationHttpHandle();

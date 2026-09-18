@@ -125,7 +125,7 @@ void stationHttpBegin(const station_status_t* status, void (*refresh)()) {
   server.begin();
 }
 
-void stationHttpAnnounce() {
+void stationHttpAnnounce(bool otaListening) {
   MDNS.end();
 
   if (!MDNS.begin(STATION_HOSTNAME)) {
@@ -134,6 +134,9 @@ void stationHttpAnnounce() {
   }
 
   MDNS.addService("http", "tcp", 80);
+  if (otaListening) {
+    MDNS.enableArduino(STATION_OTA_PORT, true);
+  }
 }
 
 void stationHttpHandle() {
