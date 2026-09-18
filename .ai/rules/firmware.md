@@ -11,7 +11,13 @@ SNTP must correct the clock at least once an hour (`NTP_RESYNC_AFTER_S`, handed 
 
 Why: an earlier, sleeping firmware that synced only at cold boot let the clock free-run and it gained four minutes, so the dashboard reported the last transmission as arriving "4 minutes from now". A powered board drifts less, but the server stores what the device sends, verbatim, so any skew still lands straight in the record.
 
-Wait on the SNTP notification callback (`sntp_set_time_sync_notification_cb`), never on the clock looking plausible: on a re-sync it already does, so that test returns before the server has answered and corrects nothing. `sntp_get_sync_status()` is no better - it resets itself to RESET when read.
+Wait on SNTP's own update, never on the clock looking plausible: on a re-sync it already does, so that test returns before the server has answered and corrects nothing. `sntp_get_sync_status()` is no better - it resets itself to RESET when read.
+
+The sketch replaces the weak-linked `sntp_sync_time()` (declared so in `esp_sntp.h`; the Arduino core does not override it) to read the clock before stepping it - the step is the drift since the previous sync, and it rides in the station report as `clock_step_ms` / `clock_step_over_s` / `clock_step_max_ms` / `clock_synced_at`. The stock function steps first and then notifies, so the old reading is gone by the time a notification callback runs; that is why it is an override and not `sntp_set_time_sync_notification_cb`, which the override also makes redundant (it sets `ntpAnswered` itself). It runs on lwIP's task, so it only notes the numbers and `reportClockStep()` logs from `loop()` - the same rule as the WiFi events. The first answer after boot is not a drift and is skipped on `status.clock_synced_at == 0`, never on the clock being unset: after a software restart the clock comes through the RTC already set, and the interval since it was last corrected is unknown.
+
+## SNTP starts whenever the station is online, never gated on the clock
+
+`CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER` is on for the C3: the wall clock survives `ESP.restart()`, a watchdog panic and the OTA restart. `stationClockIsSet()` is therefore true from the first loop after any soft reset, and a `configTzTime()` reached only through the "clock unset" branch never runs on such a boot - no hourly re-sync, no drift, unbounded skew until a power cycle. `sntpBegin()` is called from `loop()` on every pass while online (idempotent); `syncClock()` only waits, and only while the clock is unset.
 
 Nothing is read until the first sync landed. A reading without a stamp cannot be filed into a window, and a wrong stamp would land it in the wrong one.
 

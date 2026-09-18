@@ -131,8 +131,15 @@ it is on, or by the IP the router hands it.
 `/status` and the `station` object in every upload carry the same things:
 firmware version, why the board last booted, uptime, free heap and the
 lowest it has been, SSID, IP and RSSI, which network the station is on and
-how many times it switched, how many windows wait in the buffer and how
-many uploads failed in a row. `/status` adds the last POST's code and time.
+how many times it switched, how many windows wait in the buffer, how many
+uploads failed in a row, and the clock's drift - `clock_step_ms`, the
+correction the last SNTP re-sync made (positive when the board's clock ran
+slow), `clock_step_over_s`, how long that drift accumulated, the largest
+correction since boot as `clock_step_max_ms`, and `clock_synced_at`, the
+epoch of the last sync. The drift fields are zero until the first re-sync
+after boot: the first answer steps the clock from 1970 on a cold boot, or
+from a clock nobody knows the age of after a software restart, and neither
+says anything about the crystal. `/status` adds the last POST's code and time.
 
 There is no authentication. It only reads, and it is only on the LAN.
 
@@ -198,9 +205,18 @@ once a later version carries it.
 
 Nothing is read until NTP has answered once: a reading without a stamp
 cannot be filed into a window. After that the clock keeps counting through a
-lost link, and SNTP corrects it every hour while the link is up. The sync is
-waited on through the notification callback, not by watching the clock look
-plausible - on a re-sync it already does.
+lost link, and SNTP corrects it every hour while the link is up. SNTP is
+started whenever the station is online, not only while the clock is unset:
+the clock lives in the RTC and comes through a software restart - the
+watchdog's, an OTA update's - already set, and a start gated on it would
+never happen on such a boot. The sync is
+waited on through SNTP's own update function, `sntp_sync_time()`, which the
+sketch replaces - not by watching the clock look plausible, which on a
+re-sync it already does. The replacement reads the clock before stepping
+it, and the difference is the drift the crystal accumulated since the
+previous sync; it goes out with the station report and shows on the
+dashboard. Like the WiFi event handler it runs on a task of its own and
+only notes the numbers - the loop writes the log line.
 
 Closed windows wait in a buffer, oldest first, a day of them. The buffer is
 in RAM and mirrored to a file on the flash after every change, written

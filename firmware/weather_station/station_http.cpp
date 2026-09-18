@@ -29,17 +29,19 @@ static void sendSummary() {
   refreshStatus();
   const station_status_t& s = *current;
 
-  char lastPost[24], lastOk[24];
+  char lastPost[24], lastOk[24], synced[24];
   formatEpoch(s.last_post_at, lastPost, sizeof(lastPost));
   formatEpoch(s.last_upload_ok_at, lastOk, sizeof(lastOk));
+  formatEpoch(s.clock_synced_at, synced, sizeof(synced));
 
-  char body[768];
+  char body[1024];
   snprintf(body, sizeof(body),
            "weather station %s\n"
            "\n"
            "uptime          %lu s\n"
            "reset reason    %s\n"
-           "clock           %s\n"
+           "clock           %s, synced %s\n"
+           "clock drift     %+ld ms over %lu s, worst %+ld ms since boot\n"
            "heap            %lu free, %lu lowest\n"
            "\n"
            "wifi            %s%s (%s, %d dBm), network %u, switched %u times\n"
@@ -53,7 +55,8 @@ static void sendSummary() {
            s.firmware,
            (unsigned long)s.uptime_s,
            s.reset_reason,
-           s.clock_set ? "set" : "NOT SET",
+           s.clock_set ? "set" : "NOT SET", synced,
+           (long)s.clock_step_ms, (unsigned long)s.clock_step_over_s, (long)s.clock_step_max_ms,
            (unsigned long)s.heap_free, (unsigned long)s.heap_min,
            s.online ? "" : "OFFLINE, last ", s.ssid, s.ip, s.rssi, s.wifi_network, s.wifi_switches,
            s.buffered,

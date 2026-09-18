@@ -24,7 +24,7 @@
 
 // Reported to the server with every batch and on the LAN. Bump it with the
 // firmware, so a log or a row in the record says which build wrote it.
-#define FIRMWARE_VERSION "2.1.0"
+#define FIRMWARE_VERSION "2.2.0"
 
 // Hardware I2C of the ESP32-C3-DevKitM-1 as the board variant defines it:
 // SDA on GPIO8, SCL on GPIO9. Change to match the wiring.
@@ -458,30 +458,95 @@ static bool ensureWifi() {
   return false;
 }
 
+// ---------------------------------------------------------------- clock
+
 static volatile bool ntpAnswered = false;
 
-static void onNtpSync(struct timeval*) {
+// The last SNTP correction, noted by the override below and written out
+// by reportClockStep() from the loop.
+static volatile bool clockStepPending = false;
+static volatile int32_t clockStepMs = 0;
+static volatile uint32_t clockStepOverS = 0;
+
+/**
+ * SNTP's own time update, replaced to measure the drift.
+ *
+ * The stock sntp_sync_time() steps the clock and then tells the callback,
+ * by which time the old reading is gone. This one reads the clock first,
+ * so the step - server time minus the board's - is the drift the crystal
+ * accumulated since the previous sync. The first answer after boot is
+ * only counted as an answer: from a cold boot it steps from 1970, and
+ * after a soft reset the clock came through the RTC and nobody knows
+ * when it was last set, so neither says anything about the crystal.
+ *
+ * Runs on lwIP's task, like the WiFi events: note the numbers, no logging.
+ */
+extern "C" void sntp_sync_time(struct timeval* tv) {
+  struct timeval before;
+  gettimeofday(&before, nullptr);
+  settimeofday(tv, nullptr);
+
+  uint32_t previousSyncAt = status.clock_synced_at;
+  status.clock_synced_at = (uint32_t)tv->tv_sec;
+
+  if (previousSyncAt != 0) {
+    int64_t stepUs = (int64_t)(tv->tv_sec - before.tv_sec) * 1000000LL + (tv->tv_usec - before.tv_usec);
+    int32_t stepMs = (int32_t)(stepUs / 1000);
+
+    status.clock_step_ms = stepMs;
+    status.clock_step_over_s = (uint32_t)tv->tv_sec - previousSyncAt;
+    if (labs(stepMs) > labs(status.clock_step_max_ms)) {
+      status.clock_step_max_ms = stepMs;
+    }
+
+    clockStepMs = stepMs;
+    clockStepOverS = status.clock_step_over_s;
+    clockStepPending = true;
+  }
+
   ntpAnswered = true;
 }
 
+// Writes the correction the override noted, from the loop.
+static void reportClockStep() {
+  if (!clockStepPending) {
+    return;
+  }
+
+  clockStepPending = false;
+  logInfo("clock stepped %+ld ms after %lu s", (long)clockStepMs, (unsigned long)clockStepOverS);
+}
+
 /**
- * Start SNTP and wait for its first answer.
+ * Start SNTP, once. Once running it corrects the clock on its own every
+ * NTP_RESYNC_AFTER_S while the link is up - there is nothing to re-arm.
  *
- * Waits on the sync callback rather than on the clock looking plausible:
- * that would let a later call return before the server had answered. Once
- * running, SNTP corrects the clock on its own every NTP_RESYNC_AFTER_S
- * while the link is up - there is nothing to re-arm.
+ * Called whenever the station is online, not only while the clock is
+ * unset: the wall clock lives in the RTC and comes through a software
+ * restart - the watchdog's, restartIfStuck()'s, an OTA update's - already
+ * set, and a start gated on the clock would never happen on such a boot.
  */
-static bool syncClock(uint32_t timeoutMs) {
+static void sntpBegin() {
   static bool started = false;
 
-  if (!started) {
-    sntp_set_time_sync_notification_cb(onNtpSync);
-    esp_sntp_set_sync_interval(NTP_RESYNC_AFTER_S * 1000UL);
-    sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
-    configTzTime(TZ_PRAGUE, "pool.ntp.org", "time.nist.gov");
-    started = true;
+  if (started) {
+    return;
   }
+
+  esp_sntp_set_sync_interval(NTP_RESYNC_AFTER_S * 1000UL);
+  sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+  configTzTime(TZ_PRAGUE, "pool.ntp.org", "time.nist.gov");
+  started = true;
+}
+
+/**
+ * Wait for SNTP's first answer.
+ *
+ * Waits on the answer rather than on the clock looking plausible: that
+ * would let a later call return before the server had answered.
+ */
+static bool syncClock(uint32_t timeoutMs) {
+  sntpBegin();
 
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
@@ -495,6 +560,8 @@ static bool syncClock(uint32_t timeoutMs) {
   logInfo("NTP timed out");
   return false;
 }
+
+// ---------------------------------------------------------------- upload
 
 // Without an endpoint or a token there is nowhere to upload to: the
 // windows stay buffered, and none of the failure handling - the retries,
@@ -681,7 +748,12 @@ void loop() {
   stationHttpHandle();
 
   reportWifiEvents();
+  reportClockStep();
   bool online = ensureWifi();
+
+  if (online) {
+    sntpBegin();
+  }
 
   // A reading without a stamp is useless to the server, and the window it
   // belongs to cannot be known either - so nothing is read until the clock
