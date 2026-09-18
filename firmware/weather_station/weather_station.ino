@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <ArduinoOTA.h>
 #include <esp_sntp.h>
 #include <esp_system.h>
 #include <esp_timer.h>
@@ -238,6 +239,9 @@ static uint8_t wifiNetworkCount() {
   return BACKUP_WIFI_SSID[0] == '\0' ? 1 : 2;
 }
 
+// Set by otaBegin(); the mDNS announcement reads it.
+static bool otaListening = false;
+
 static uint8_t wifiCurrent = 0;
 static uint32_t wifiSwitchedMs = 0;
 static uint32_t wifiKickedMs = 0;
@@ -417,7 +421,7 @@ static bool ensureWifi() {
               WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
       wasConnected = true;
       wifiDownSinceMs = 0;
-      stationHttpAnnounce();
+      stationHttpAnnounce(otaListening);
     }
 
     // Back to the primary once it has had time to recover. Only with an
@@ -688,6 +692,55 @@ static void restartIfStuck() {
   ESP.restart();
 }
 
+// ---------------------------------------------------------------- ota
+
+/**
+ * Take a new firmware over the LAN, so a build does not need the cable.
+ *
+ * The image lands in the other app slot and the board restarts from it.
+ * The window being filled is closed into the buffer first - a partial
+ * window is still readings, and the buffer is on the flash. The upload
+ * blocks the loop for as long as it runs, so the watchdog is fed from the
+ * progress callback; a transfer that stalls for two minutes still trips
+ * it, and the board comes back on the image it had.
+ *
+ * Off without a password: an open OTA port takes any image from anyone
+ * on the LAN.
+ */
+static void otaBegin() {
+  if (OTA_PASSWORD[0] == '\0') {
+    logInfo("no OTA password set, OTA off");
+    return;
+  }
+
+  ArduinoOTA.setHostname(STATION_HOSTNAME);
+  ArduinoOTA.setPort(STATION_OTA_PORT);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  // The HTTP module owns mDNS and re-announces on every association;
+  // it advertises the OTA service alongside its own.
+  ArduinoOTA.setMdnsEnabled(false);
+
+  ArduinoOTA.onStart([]() {
+    logInfo("OTA: update starting");
+    if (windowOpen) {
+      closeWindow();
+      windowOpen = false;
+    }
+  });
+  ArduinoOTA.onProgress([](unsigned int, unsigned int) {
+    esp_task_wdt_reset();
+  });
+  ArduinoOTA.onEnd([]() {
+    logInfo("OTA: update written, restarting");
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    logInfo("OTA: failed (%u), staying on %s", (unsigned)error, FIRMWARE_VERSION);
+  });
+
+  ArduinoOTA.begin();
+  otaListening = true;
+}
+
 static void watchdogBegin() {
   esp_task_wdt_config_t config = {
     .timeout_ms = WATCHDOG_TIMEOUT_MS,
@@ -741,11 +794,13 @@ void setup() {
   // only exists once WiFi.mode() has brought it up - before that the
   // socket call asserts on a lock that is not there yet.
   stationHttpBegin(&status, refreshStatus);
+  otaBegin();
 }
 
 void loop() {
   esp_task_wdt_reset();
   stationHttpHandle();
+  ArduinoOTA.handle();
 
   reportWifiEvents();
   reportClockStep();

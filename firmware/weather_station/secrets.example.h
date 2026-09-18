@@ -27,4 +27,9 @@
 // buffered on the device.
 #define BEARER_TOKEN "your-api-token"
 
+// Asked for by the board before it takes a firmware over the LAN. Leave
+// empty to switch OTA off - an open OTA port takes any image from anyone
+// on the network.
+#define OTA_PASSWORD ""
+
 #endif

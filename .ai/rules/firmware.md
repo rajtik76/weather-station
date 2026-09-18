@@ -45,9 +45,13 @@ Mains powered over USB. No deep sleep, no `RTC_DATA_ATTR`. `window_buffer.cpp` k
 
 The upload buffer holds a day of windows and goes out sixteen to a POST (`TRANSMISSION_MAX_ENTRIES`, bounded by the 8 kB payload buffer); a longer backlog is several POSTs in a row, oldest first, stopping at the first failure. A failure is retried after `UPLOAD_RETRY_MS`, not left for the next window.
 
-## Partition scheme is No OTA; the sketch does not fit the default
+## Partition scheme is Minimal SPIFFS; the sketch does not fit the default, and OTA needs two slots
 
-With LittleFS, WebServer and mDNS the image is ~1.3 MB, past the 1.2 MB app slot of the default scheme. Build with `PartitionScheme=no_ota` (2 MB app, 2 MB FS) - the IDE menu entry _No OTA (2MB APP/2MB SPIFFS)_. Verify a build from the terminal with the IDE's bundled CLI: `"/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli" compile --fqbn esp32:esp32:esp32c3:PartitionScheme=no_ota firmware/weather_station`.
+With LittleFS, WebServer, mDNS and ArduinoOTA the image is ~1.3 MB, past the 1.2 MB app slot of the default scheme. Build with `PartitionScheme=min_spiffs` (two 1.9 MB app slots, 128 kB FS) - the IDE menu entry _Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_. The FS holds the 4 kB window buffer and two 32 kB logs; do not grow the logs past what fits. v2.1.x ran on `no_ota` (2 MB app, 2 MB FS) before OTA came in v2.2.0; a scheme change wipes the FS. Verify a build from the terminal with the IDE's bundled CLI: `"/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli" compile --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs firmware/weather_station`.
+
+## OTA goes over the LAN, with a password, and mDNS belongs to the HTTP module
+
+`otaBegin()` runs at the end of `setup()` after `stationHttpBegin()` - it binds a UDP port and needs the stack, same trap as the WebServer. It is off without `OTA_PASSWORD` in `secrets.h`: an open port takes any image from anyone on the LAN. `ArduinoOTA.setMdnsEnabled(false)`, because `stationHttpAnnounce()` restarts mDNS on every association and would drop the OTA service; it advertises the OTA port itself with `MDNS.enableArduino(STATION_OTA_PORT, true)`, and only when `otaBegin()` actually started listening - an advertised port with nothing behind it shows up in the IDE and times out without a hint. The upload blocks the loop, so `onProgress` feeds the task watchdog - a transfer that stalls for two minutes still trips it, and the board comes back on the old image. `onStart` closes the open window into the buffer, so the update drops no readings. There is no rollback: a boot-looping build stays until the cable replaces it. The board has a static IP on the primary network, 192.168.0.200, which does when mDNS is slow.
 
 ## The HTTP server starts after wifiBegin(), never before
 
