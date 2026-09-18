@@ -1113,6 +1113,11 @@ it('shows what the station last reported about itself', function (): void {
             'wifi_switches' => 2,
             'buffered' => 3,
             'upload_failures' => 1,
+            'clock_step_ms' => 812,
+            'clock_step_over_s' => 3600,
+            'clock_step_max_ms' => -1204,
+            // 11:20 UTC, 13:20 in Prague.
+            'clock_synced_at' => now()->subMinutes(40)->getTimestamp(),
         ],
     ]);
 
@@ -1133,7 +1138,34 @@ it('shows what the station last reported about itself', function (): void {
         ->assertSeeInOrder(['heap lowest', '151 kB'])
         ->assertSeeInOrder(['buffered', '3 windows'])
         ->assertSeeInOrder(['failed uploads', '1 in a row'])
-        ->assertSeeInOrder(['network switches', '2']);
+        ->assertSeeInOrder(['network switches', '2'])
+        ->assertSeeInOrder(['clock drift', '+812 ms in 1 h 0 min'])
+        ->assertSeeInOrder(['clock drift worst', '-1 204 ms'])
+        ->assertSeeInOrder(['clock synced', '13:20']);
+});
+
+it('shows no clock drift before the station has re-synced once', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+
+    // A fresh boot: the boot sync steps from 1970, which is not a drift, so
+    // the firmware sends zeros until the next one. A firmware before 2.2
+    // sends nothing at all.
+    foreach ([
+        ['clock_step_ms' => 0, 'clock_step_over_s' => 0, 'clock_step_max_ms' => 0, 'clock_synced_at' => now()->getTimestamp()],
+        [],
+    ] as $clock) {
+        StationReport::query()->delete();
+        $data = StationReport::factory()->raw()['data'];
+        unset($data['clock_step_ms'], $data['clock_step_over_s'], $data['clock_step_max_ms'], $data['clock_synced_at']);
+        StationReport::factory()->for($sensor)->create(['data' => [...$data, ...$clock]]);
+
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('Station · as reported')
+            ->assertDontSee('clock drift')
+            ->assertDontSee('clock synced');
+    }
 });
 
 it('shows no station block before the firmware has reported', function (): void {

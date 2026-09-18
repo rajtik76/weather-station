@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * What the board said about itself alongside one upload: firmware, why it
- * last booted, uptime, heap, which network it is on and how the link has
- * been behaving. One row per batch, so a stall can be read back from the
+ * last booted, uptime, heap, which network it is on, how the link has
+ * been behaving and how far its clock had drifted by the last SNTP sync. One row per batch, so a stall can be read back from the
  * record after the station recovered - the flash log on the board says what
  * happened, this says when it started going wrong.
  *

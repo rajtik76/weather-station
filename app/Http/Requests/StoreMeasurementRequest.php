@@ -61,7 +61,8 @@ class StoreMeasurementRequest extends FormRequest
      * The board's own state, sent beside the readings. Optional as a whole -
      * a batch without it is still a batch - but once present every field
      * has to be there, so a firmware that reports is held to the shape the
-     * dashboard reads.
+     * dashboard reads. The fields a later firmware added are the exception:
+     * the station in the field keeps uploading through a server upgrade.
      *
      * @return array<string, array<int, string>>
      */
@@ -82,6 +83,13 @@ class StoreMeasurementRequest extends FormRequest
             'station.wifi_switches' => ['required_with:station', 'integer', 'min:0'],
             'station.buffered' => ['required_with:station', 'integer', 'min:0'],
             'station.upload_failures' => ['required_with:station', 'integer', 'min:0'],
+            // The clock's drift, measured at each SNTP re-sync. Optional as a set: a firmware before 2.2 does not
+            // send it, and the one that does sends zeros until its first re-sync after boot. One of them makes the
+            // other three required, so the dashboard never reads a half-reported set.
+            'station.clock_step_ms' => ['required_with:station.clock_step_over_s,station.clock_step_max_ms,station.clock_synced_at', 'integer'],
+            'station.clock_step_over_s' => ['required_with:station.clock_step_ms,station.clock_step_max_ms,station.clock_synced_at', 'integer', 'min:0'],
+            'station.clock_step_max_ms' => ['required_with:station.clock_step_ms,station.clock_step_over_s,station.clock_synced_at', 'integer'],
+            'station.clock_synced_at' => ['required_with:station.clock_step_ms,station.clock_step_over_s,station.clock_step_max_ms', 'integer', 'min:0', 'max:4294967295'],
         ];
     }
 

@@ -41,7 +41,7 @@ use UnexpectedValueException;
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
- * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null $stationReport
+ * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastMeasurement
  * @property-read string|null $measuredAt
@@ -557,7 +557,13 @@ class Dashboard extends Component
      * The SSID and the address stay in the record and off the page: the page
      * is public, and which network the station is on is said by its role.
      *
-     * @return array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, at: string, ago: string}|null
+     * The clock rows are the drift the board measured at its last SNTP
+     * re-sync: how far the clock had to be stepped and over how long it got
+     * there. Null until the firmware has re-synced once since boot - the boot
+     * sync steps from 1970 and says nothing about the crystal - and for a
+     * firmware that does not measure it.
+     *
+     * @return array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null
      */
     #[Computed]
     public function stationReport(): ?array
@@ -585,9 +591,45 @@ class Dashboard extends Component
             'heapMin' => (int) $data['heap_min'],
             'buffered' => (int) $data['buffered'],
             'uploadFailures' => (int) $data['upload_failures'],
+            ...$this->clockDrift($data),
             'at' => $receivedAt->format('j. n. Y H:i'),
             'ago' => $this->ago($receivedAt),
         ];
+    }
+
+    /**
+     * The clock rows of the station block, or nulls when the report has no
+     * measured drift to show.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null}
+     */
+    private function clockDrift(array $data): array
+    {
+        $overSeconds = (int) ($data['clock_step_over_s'] ?? 0);
+        $syncedAt = (int) ($data['clock_synced_at'] ?? 0);
+
+        if ($overSeconds <= 0 || $syncedAt <= 0) {
+            return ['clockDrift' => null, 'clockDriftWorst' => null, 'clockSynced' => null];
+        }
+
+        return [
+            'clockDrift' => $this->signedMilliseconds((int) $data['clock_step_ms']).' in '.$this->duration($overSeconds),
+            'clockDriftWorst' => $this->signedMilliseconds((int) ($data['clock_step_max_ms'] ?? $data['clock_step_ms'])),
+            'clockSynced' => $this->localise($syncedAt)->format('H:i'),
+        ];
+    }
+
+    /** A clock correction with its sign: "+812 ms", "-1 204 ms". A zero is "0 ms". */
+    private function signedMilliseconds(int $milliseconds): string
+    {
+        $sign = match (true) {
+            $milliseconds > 0 => '+',
+            $milliseconds < 0 => '-',
+            default => '',
+        };
+
+        return $sign.number_format(abs($milliseconds), 0, ',', ' ').' ms';
     }
 
     /**

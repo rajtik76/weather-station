@@ -382,7 +382,9 @@
 
             {{-- The board's own account of itself. A stall reads here before
                  the flash log on the board does: a heap that keeps sinking,
-                 uploads failing in a row, a watchdog as the reset reason. --}}
+                 uploads failing in a row, a watchdog as the reset reason. The
+                 clock rows only once the board has measured a drift: before
+                 the first re-sync there is nothing to say. --}}
             <dl class="grid grid-cols-2 gap-x-8 gap-y-3 px-4 pb-4 font-mono text-xs tabular-nums sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
                 @foreach ([
                     'firmware' => $report['firmware'],
@@ -395,6 +397,11 @@
                     'buffered' => $report['buffered'].' '.($report['buffered'] === 1 ? 'window' : 'windows'),
                     'failed uploads' => $report['uploadFailures'].' in a row',
                     'network switches' => $report['switches'],
+                    ...($report['clockDrift'] === null ? [] : [
+                        'clock drift' => $report['clockDrift'],
+                        'clock drift worst' => $report['clockDriftWorst'],
+                        'clock synced' => $report['clockSynced'],
+                    ]),
                 ] as $label => $value)
                     <div>
                         <dt class="text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">{{ $label }}</dt>

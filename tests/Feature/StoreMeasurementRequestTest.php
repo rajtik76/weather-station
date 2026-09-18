@@ -317,6 +317,32 @@ describe('station report', function (): void {
             ->assertStatus(422)
             ->assertJsonValidationErrors(['station.wifi_network' => 'The station.wifi network field must not be greater than 1.']);
     });
+
+    // A firmware before 2.2 sends no clock fields, and it keeps uploading through the server upgrade.
+    it('does not demand the clock drift', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['firmware' => '2.1.0']])
+            ->assertJsonMissingValidationErrors(['station.clock_step_ms', 'station.clock_step_over_s', 'station.clock_step_max_ms', 'station.clock_synced_at']);
+    });
+
+    it('demands the whole clock set once any of it is present', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['clock_synced_at' => 1756998000]])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'station.clock_step_ms' => 'The station.clock step ms field is required when station.clock step over s / station.clock step max ms / station.clock synced at is present.',
+                'station.clock_step_over_s' => 'The station.clock step over s field is required when station.clock step ms / station.clock step max ms / station.clock synced at is present.',
+                'station.clock_step_max_ms' => 'The station.clock step max ms field is required when station.clock step ms / station.clock step over s / station.clock synced at is present.',
+            ]);
+    });
+
+    it('takes a clock step of either sign, over a positive interval', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['clock_step_ms' => -812, 'clock_step_max_ms' => -1204, 'clock_step_over_s' => -1, 'clock_synced_at' => 'yesterday']])
+            ->assertStatus(422)
+            ->assertJsonMissingValidationErrors(['station.clock_step_ms', 'station.clock_step_max_ms'])
+            ->assertJsonValidationErrors([
+                'station.clock_step_over_s' => 'The station.clock step over s field must be at least 0.',
+                'station.clock_synced_at' => 'The station.clock synced at field must be an integer.',
+            ]);
+    });
 });
 
 it('has valid request data', function (): void {
