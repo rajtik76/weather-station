@@ -16,6 +16,10 @@ typedef struct {
   uint32_t heap_free;         // bytes
   uint32_t heap_min;          // lowest heap_free since boot
   bool clock_set;
+  int32_t clock_step_ms;      // last SNTP correction: positive when the board's clock ran slow, 0 before the first re-sync
+  uint32_t clock_step_over_s; // seconds between the previous sync and the one that made the step
+  int32_t clock_step_max_ms;  // the correction of largest magnitude since boot, sign kept
+  uint32_t clock_synced_at;   // epoch of the last SNTP correction, 0 never
 
   bool online;
   char ssid[33];              // the last network seen; kept while offline
@@ -45,6 +49,10 @@ static void stationStatusToJson(const station_status_t& s, JsonObject out) {
   out["wifi_switches"] = s.wifi_switches;
   out["buffered"] = s.buffered;
   out["upload_failures"] = s.upload_failures;
+  out["clock_step_ms"] = s.clock_step_ms;
+  out["clock_step_over_s"] = s.clock_step_over_s;
+  out["clock_step_max_ms"] = s.clock_step_max_ms;
+  out["clock_synced_at"] = s.clock_synced_at;
 }
 
 #endif
