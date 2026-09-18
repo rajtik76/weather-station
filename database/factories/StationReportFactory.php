@@ -25,7 +25,7 @@ class StationReportFactory extends Factory
         return [
             'sensor_id' => Sensor::factory(),
             'data' => [
-                'firmware' => '2.1.0',
+                'firmware' => '2.2.0',
                 'reset_reason' => fake()->randomElement(['power on', 'software restart', 'task watchdog']),
                 'uptime' => fake()->numberBetween(60, 864_000),
                 'heap_free' => fake()->numberBetween($heapMin, 220_000),
@@ -37,6 +37,10 @@ class StationReportFactory extends Factory
                 'wifi_switches' => 0,
                 'buffered' => fake()->numberBetween(0, 3),
                 'upload_failures' => 0,
+                'clock_step_ms' => fake()->numberBetween(-1500, 1500),
+                'clock_step_over_s' => 3600,
+                'clock_step_max_ms' => fake()->numberBetween(1500, 3000),
+                'clock_synced_at' => now()->subMinutes(20)->getTimestamp(),
             ],
         ];
     }

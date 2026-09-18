@@ -65,7 +65,8 @@ the firmware README.
 
 Beside the measurements a batch may carry a `station` object - firmware
 version, reset reason, uptime, heap, network, how many windows wait on the
-board and how many uploads failed in a row. It goes into `station_reports`,
+board, how many uploads failed in a row and how far the clock had drifted
+by its last NTP re-sync. It goes into `station_reports`,
 one row per batch, and the dashboard shows the newest under the payload
 tail: the board's own account of how it was doing, readable after the fact
 when it has stopped answering. The board also serves the same over HTTP on

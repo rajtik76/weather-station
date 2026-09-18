@@ -183,7 +183,7 @@ it('registers a sensor on its first upload and reuses it afterwards', function (
 function stationReport(): array
 {
     return [
-        'firmware' => '2.1.0',
+        'firmware' => '2.2.0',
         'reset_reason' => 'task watchdog',
         'uptime' => 4212,
         'heap_free' => 187_000,
@@ -195,6 +195,10 @@ function stationReport(): array
         'wifi_switches' => 2,
         'buffered' => 3,
         'upload_failures' => 0,
+        'clock_step_ms' => 812,
+        'clock_step_over_s' => 3600,
+        'clock_step_max_ms' => -1204,
+        'clock_synced_at' => 1756998000,
     ];
 }
 
