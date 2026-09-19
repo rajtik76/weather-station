@@ -9,13 +9,9 @@ use JsonSerializable;
 use Stringable;
 
 /**
- * One stored entry, in the protocol's fixed point units.
- *
- * Every version reports a representative value per channel - the reading
- * itself on V1, the mean over the window on V2 - plus the extremes and the
- * sample count behind it. A single reading is its own minimum and maximum
- * with one sample, so the dashboard can aggregate any mix of versions the
- * same way.
+ * One stored entry in protocol units. Every version exposes a value, its
+ * extremes and a sample count per channel; a single V1 reading is its own
+ * min and max with one sample, so versions aggregate alike.
  */
 interface MeasurementData extends JsonSerializable, Stringable
 {
@@ -37,7 +33,6 @@ interface MeasurementData extends JsonSerializable, Stringable
 
     public int $pressureMax { get; }
 
-    /** How many sensor readings the entry stands for. */
     public int $samples { get; }
 
     public ProtocolVersion $protocolVersion { get; }

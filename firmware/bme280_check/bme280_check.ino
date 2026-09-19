@@ -1,6 +1,4 @@
-// Standalone diagnostic sketch for the BME280 wiring.
-// Not part of the weather_station sketch - flash it, read the serial log,
-// then flash weather_station again.
+// Standalone wiring check for the BME280. Flash, read serial, flash the station again.
 
 #include <Wire.h>
 #include <Adafruit_BME280.h>
@@ -9,8 +7,7 @@
 #define SDA_PIN SDA
 #define SCL_PIN SCL
 
-// Register 0xD0 holds a fixed chip id. It tells a real BME280 apart from
-// a BMP280, which is pin compatible but has no humidity sensor.
+// Chip id register; tells a BME280 from a pin-compatible BMP280 without humidity.
 #define REG_CHIP_ID 0xD0
 #define CHIP_ID_BME280 0x60
 #define CHIP_ID_BMP280 0x58
@@ -66,8 +63,7 @@ static void reportChipId(uint8_t addr) {
   }
 }
 
-// Tries both strap options for SDO. Leaves the sensor initialised on
-// whichever one answered.
+// Both SDO strap addresses.
 static bool initSensor(uint8_t& usedAddr) {
   const uint8_t addrs[] = {0x76, 0x77};
 
@@ -106,34 +102,29 @@ void setup() {
   Serial.println();
   Serial.printf("RESULT: sensor OK at 0x%02X\n", addr);
 
-  // Same settings the weather station uses, so a value that reads fine
-  // here will read fine there too.
+  // Same settings as the station.
   bme.setSampling(Adafruit_BME280::MODE_FORCED,
                   Adafruit_BME280::SAMPLING_X1,
                   Adafruit_BME280::SAMPLING_X1,
                   Adafruit_BME280::SAMPLING_X1,
                   Adafruit_BME280::FILTER_OFF);
 
-  // Same throwaway conversion as the station firmware - without it the
-  // first line below is the power-on default rather than a measurement.
+  // Same throwaway conversion as the station; the first read after reset is power-on defaults.
   bme.takeForcedMeasurement();
   delay(10);
 
   profileSettling();
 }
 
-// begin() leaves the sensor in normal mode at 16x oversampling for over
-// 100 ms, which warms the die. Forced mode then lets it cool. This traces
-// that decay so the station firmware can pick a settle delay that is long
-// enough without wasting awake time on battery.
+// begin() warms the die (normal mode, 16x oversampling, >100 ms). This
+// traces the cool-down so the station can pick its settle delay.
 #define PROFILE_SAMPLES  50
 #define PROFILE_STEP_MS  100
 
-// Spread of the readings once settled, measured on a quiet bench. A sample
-// within this band of the plateau counts as settled.
+// Noise band once settled, measured on a quiet bench.
 #define PROFILE_NOISE_C  0.02f
 
-// Averaged into the plateau. Taken from the tail, where the die is cold.
+// Tail samples averaged into the plateau.
 #define PROFILE_TAIL     10
 
 static void profileSettling() {
@@ -156,9 +147,7 @@ static void profileSettling() {
   }
   plateau /= PROFILE_TAIL;
 
-  // First sample that stays inside the noise band for the rest of the run.
-  // Checking that it stays put avoids stopping on a single sample that
-  // crosses the band on its way down.
+  // First sample that stays inside the band for the rest of the run.
   uint8_t settled = PROFILE_SAMPLES;
   for (uint8_t i = 0; i < PROFILE_SAMPLES; i++) {
     bool holds = true;
@@ -203,8 +192,7 @@ void loop() {
 
   Serial.printf("T=%.2f C  H=%.2f %%  P=%.2f hPa", t, h, p);
 
-  // A dead or mis-wired sensor usually reads a constant or NaN rather
-  // than nothing at all, so flag values that cannot be real.
+  // A dead or mis-wired sensor reads a constant or NaN rather than nothing.
   if (isnan(t) || isnan(h) || isnan(p)) {
     Serial.print("   <- NaN, sensor not usable");
   } else if (t < -40.0f || t > 85.0f || p < 300.0f || p > 1100.0f) {

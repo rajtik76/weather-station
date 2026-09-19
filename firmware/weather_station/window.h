@@ -5,10 +5,8 @@
 
 #include "bme280_types.h"
 
-// Accumulates readings over one window and closes it into the entry the
-// server takes. A window is an epoch slot, WINDOW_SECONDS wide, so the
-// station's windows line up with the dashboard's ten-minute buckets and a
-// reboot in the middle of one only shortens that one.
+// A window is an epoch slot WINDOW_SECONDS wide, so it lines up with the
+// dashboard's buckets and a reboot only shortens the one it falls in.
 #define WINDOW_SECONDS 600
 
 typedef struct {
@@ -23,16 +21,14 @@ typedef struct {
   uint32_t p_min, p_max;
 } window_t;
 
-// Which slot a stamp falls in.
 uint32_t windowSlotOf(uint32_t timestamp);
 
-// Empties the accumulator for a new slot.
 void windowBegin(window_t& w, uint32_t slot);
 
-// Folds one reading in. The reading must belong to the window's slot.
+// The reading must belong to the window's slot.
 void windowAdd(window_t& w, const bme280_reading_t& reading);
 
-// Turns the accumulator into an entry. False when the window holds nothing.
+// False when the window holds nothing.
 bool windowClose(const window_t& w, bme280_window_t& out);
 
 #endif

@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    # The firmware is Arduino sources; nothing here builds or tests it.
+    # Nothing here builds or tests the firmware.
     paths-ignore: ["firmware/**"]
   pull_request:
     paths-ignore: ["firmware/**"]
@@ -17,9 +17,7 @@ jobs:
     name: Lint, analyse, test
     runs-on: ubuntu-latest
 
-    # The dashboard aggregates in SQL that only PostgreSQL speaks
-    # (generate_series, jsonb operators), so the suite runs against the same
-    # major as production rather than an in-memory SQLite.
+    # The dashboard's SQL is PostgreSQL only (generate_series, jsonb), so no SQLite.
     services:
       pgsql:
         image: postgres:18-alpine
@@ -45,8 +43,6 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          # Read from .node-version, so the runner and the local version
-          # manager cannot drift apart.
           node-version-file: .node-version
           cache: npm
 
@@ -74,8 +70,7 @@ jobs:
       - name: Pint
         run: vendor/bin/pint --test
 
-      # The three steps below are what composer review runs locally, split up
-      # so a failure names itself in the job list instead of hiding in one log.
+      # What composer review runs locally, split so a failure names itself.
       - name: Rector
         run: vendor/bin/rector process --dry-run --no-progress-bar
 

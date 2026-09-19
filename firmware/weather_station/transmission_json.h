@@ -6,10 +6,7 @@
 #include "station_status.h"
 #include "transmission_type.h"
 
-// Serializes a transmission into the server's JSON payload, with the
-// station's own state beside the measurements.
-// Returns the number of bytes written, excluding the terminator,
-// or 0 if the buffer was too small.
+// Returns bytes written excluding the terminator, 0 if the buffer was too small.
 static size_t transmissionToJson(const transmission_t& tx, const station_status_t& status,
                                  char* out, size_t outLen) {
   JsonDocument doc;
@@ -22,9 +19,7 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
     const bme280_window_t& w = tx.data[i];
     JsonObject entry = measurements.add<JsonObject>();
 
-    // The mean goes under the V1 name, so the server aggregates both
-    // versions with one expression; the extremes take the same name with
-    // a suffix.
+    // The mean keeps the V1 name so the server aggregates both versions alike.
     entry["timestamp"] = w.timestamp;
     entry["temperature"] = w.temperature;
     entry["temperature_min"] = w.temperature_min;

@@ -318,7 +318,7 @@ describe('station report', function (): void {
             ->assertJsonValidationErrors(['station.wifi_network' => 'The station.wifi network field must not be greater than 1.']);
     });
 
-    // A firmware before 2.2 sends no clock fields, and it keeps uploading through the server upgrade.
+    // Firmware before 2.2 sends no clock fields.
     it('does not demand the clock drift', function (): void {
         postJson('/api/v1/measurement', ['station' => ['firmware' => '2.1.0']])
             ->assertJsonMissingValidationErrors(['station.clock_step_ms', 'station.clock_step_over_s', 'station.clock_step_max_ms', 'station.clock_synced_at']);

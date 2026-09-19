@@ -15,11 +15,8 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 /**
- * The window's own chart payload.
- *
- * The page also carries the navigator's payload, which spans the whole record
- * by design - asserting against the raw HTML would find readings the window
- * deliberately excludes.
+ * The window's payload only; the raw HTML also carries the navigator's,
+ * which spans the whole record.
  */
 function chartRows(string $html): string
 {
@@ -90,9 +87,7 @@ it('renders the readings stored in the database', function (): void {
 
     $this->get('/')
         ->assertOk()
-        // Raw units are converted for display, keeping the sensor's two decimals:
-        // 2150 -> 21,50 °C, 4800 -> 48,00 %. Pressure is also reduced to sea
-        // level, so 97 389 Pa read at 345 m and 21,50 °C shows as 1013,5 hPa.
+        // 2150 -> 21,50 °C, 4800 -> 48,00 %; 97 389 Pa at 345 m and 21,50 °C reduces to 1013,5 hPa.
         ->assertSee('21,50')
         ->assertSee('48,00')
         ->assertSee('1 013,5')
@@ -109,8 +104,7 @@ it('labels readings in Czech local time, not UTC', function (): void {
 
     $this->get('/')
         ->assertOk()
-        // 12:00 UTC + 2 h, as milliseconds: the chart reads its axis as UTC,
-        // so the offset is folded into the value before it leaves the server.
+        // 12:00 UTC + 2 h, as milliseconds (see Dashboard::wallClockMs).
         ->assertSee('1784124000000')
         ->assertSee('15. 7. 2026 14:00');
 });
@@ -172,8 +166,7 @@ it('plots only the readings inside the window', function (): void {
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subHour()->getTimestamp()]);
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(10)->getTimestamp()]);
 
-    // Prague runs an hour ahead of UTC in March, and the payload carries that
-    // shift already (see wallClockMs() on the component).
+    // CET in March: payload stamps carry the +1 h already.
     $recent = '1773576000000';
     $older = '1772715600000';
 
@@ -195,8 +188,7 @@ it('averages a long range into buckets', function (): void {
 
     $sensor = Sensor::factory()->create();
 
-    // A full day at the station's ten-minute cadence, warming a tenth of a
-    // degree per slot so every bucket has a mean of its own.
+    // A day of ten-minute slots, +0,1 °C per slot so every bucket's mean differs.
     foreach (range(0, 143) as $slot) {
         Measurement::factory()->for($sensor)->create([
             'timestamp' => $start->getTimestamp() + $slot * 600,
@@ -208,15 +200,13 @@ it('averages a long range into buckets', function (): void {
         ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
         ->html());
 
-    // A month is drawn in hourly buckets, twenty-four to the day, each
-    // stamped on the slot it covers rather than on any reading inside it.
+    // A month is hourly buckets, stamped on the slot, not on a reading.
     expect(array_keys($month))->toBe(array_map(
         fn (int $hour): int => $start->getTimestamp() + $hour * 3600,
         range(0, 23),
     ));
 
-    // The first bucket holds slots 0-5: 10,00 °C up to 10,50 °C, so its mean
-    // is 10,25 °C. Whole numbers come back from the JSON as integers.
+    // First bucket: slots 0-5, 10,00 to 10,50 °C, mean 10,25. Whole numbers decode as integers.
     $first = $month[$start->getTimestamp()];
 
     expect($first[1])->toBe(10.25)
@@ -229,10 +219,7 @@ it('stamps a bucket on its slot whatever time its readings carry', function (): 
     $start = Date::parse('2026-03-01 00:00:00', 'UTC');
     $this->travelTo($start->copy()->addDay());
 
-    // The same day, stamped fifteen minutes off every slot - the drift a
-    // station accumulates by uploading when it wakes. The buckets divide the
-    // epoch, so a drifting reading still lands in the slot it belongs to and
-    // the row is dated by that slot, not by the reading.
+    // The same day stamped fifteen minutes off every slot, as a real station drifts.
     $sensor = Sensor::factory()->create();
 
     foreach (range(0, 143) as $slot) {
@@ -243,8 +230,7 @@ it('stamps a bucket on its slot whatever time its readings carry', function (): 
         ->call('zoomTo', $start->getTimestamp() - 20 * 86400, now()->getTimestamp())
         ->html());
 
-    // Hourly buckets: the last reading, at 23:55, spills into the one that
-    // opens at midnight - the window's own last slot - so there are 25.
+    // 23:55 spills into the midnight bucket, so 25.
     expect(array_keys($month))->toBe(array_map(
         fn (int $hour): int => $start->getTimestamp() + $hour * 3600,
         range(0, 24),
@@ -264,8 +250,7 @@ it('draws a missed slot as a hole rather than joining its neighbours', function 
         ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
         ->html());
 
-    // Every ten-minute slot from 10:00 to 12:00 is a row, thirteen in all,
-    // and the ones the station missed carry nothing but their stamp.
+    // Thirteen slots 10:00-12:00, the missed ones as nulls.
     $byEpoch = array_combine(array_column($rows, 5), $rows);
 
     expect($rows)->toHaveCount(13)
@@ -285,8 +270,7 @@ it('counts stored readings in the footer, not slots', function (): void {
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
 
-    // The payload is thirteen slots for a two-hour window; the station sent
-    // two of them, and the third reading lies outside the window.
+    // Thirteen slots, two filled; the third reading is outside the window.
     Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
         ->assertSee('2 records')
@@ -308,16 +292,14 @@ it('widens the buckets with the window', function (): void {
         'data' => (string) new MeasurementDataV1(temperature: 2200, humidity: 5000, pressure: 97389),
     ]);
 
-    // A week is drawn in half-hour buckets: the pair averages into one point
-    // on the half hour.
+    // A week is half-hour buckets: the pair averages into one point.
     $week = filledBuckets(Livewire::test(Dashboard::class)->html());
 
     expect($week)->toHaveCount(1)
         ->and(array_key_first($week))->toBe(now()->subMinutes(30)->getTimestamp())
         ->and(array_values($week)[0][1])->toEqual(21);
 
-    // Zoomed to an hour the buckets are the station's own slots, and each
-    // reading is a point again.
+    // An hour is ten-minute buckets: each reading is a point again.
     $hour = filledBuckets(Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subHour()->getTimestamp(), now()->getTimestamp())
         ->html());
@@ -345,8 +327,6 @@ it('picks the bucket width from the span on screen', function (int $days, int $b
     $rows = bucketRows($html);
     $filled = filledBuckets($html);
 
-    // Every slot of the window is a row, the hour falls into as many of
-    // them as the width allows, and each is stamped on its slot.
     expect($rows)->toHaveCount(intdiv($days * 86400, $bucketSeconds) + 1)
         ->and(array_column($rows, 5))->each->toBeIn(range($rows[0][5], now()->getTimestamp(), $bucketSeconds))
         ->and(array_keys($filled))->toBe(array_map(fn (int $epoch): int => now()->getTimestamp() + $epoch, $epochs));
@@ -363,9 +343,7 @@ it('draws no wider than a month', function (int $days): void {
 
     Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 
-    // A strip is a thousand pixels across; a year on it is three per day.
-    // The window is clipped from the front to the month ending where the
-    // reader pointed, and the buckets stay hourly.
+    // Clipped from the front to the month ending where the reader pointed.
     $component = Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subDays($days)->getTimestamp(), now()->getTimestamp())
         ->assertSet('to', now()->getTimestamp())
@@ -394,8 +372,7 @@ it('clips a window wider than a month from the query string', function (): void 
 it('reads the hero off the newest bucket that holds a reading', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Quiet for three days: the window ends in a run of empty slots, and the
-    // readouts must find the reading behind them rather than a hole.
+    // Quiet for three days: the readouts must find the last reading behind the empty slots.
     Measurement::factory()->create([
         'timestamp' => now()->subDays(3)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
@@ -418,12 +395,10 @@ it('plots pressure at the sensor\'s own resolution', function (): void {
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // The strip's axis scales to whatever the window holds, and a day of
-    // weather is a couple of hPa, so tenths drew the line as a staircase. The
-    // station reports whole pascals, which is a hundredth of a hectopascal.
+    // Whole pascals are hundredths of a hectopascal; tenths drew a staircase.
     expect(chartRows($html))->toContain('1013.62');
 
-    // The readouts and the payload tail still print a tenth of it.
+    // Readouts and tail print tenths.
     expect($html)->toContain('1 013,6');
 });
 
@@ -435,8 +410,7 @@ it('carries the dew point in the chart payload', function (): void {
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // 21,50 °C at 48 % condenses at about 10 °C. Derived on the server so the
-    // chart draws it like any other column, between the pressure and the epoch.
+    // 21,50 °C at 48 % condenses at about 10 °C.
     $row = array_values(filledBuckets($html))[0];
 
     expect($row)->toHaveCount(12)
@@ -450,9 +424,7 @@ it('carries the spread of the samples behind each bucket', function (): void {
 
     $sensor = Sensor::factory()->create();
 
-    // Two V2 windows in the same hour, each a mean with the extremes of the
-    // samples behind it. The hour's band is the coldest and warmest sample
-    // of either, not the extremes of the means.
+    // The hour's band is the extreme sample of either window, not the extreme mean.
     foreach ([[2100, 1950, 2380, 5000, 4800, 5300, 97389, 97380, 97395], [2200, 2100, 2250, 4900, 4750, 5100, 97400, 97390, 97410]] as $slot => [$t, $tMin, $tMax, $h, $hMin, $hMax, $p, $pMin, $pMax]) {
         Measurement::factory()->for($sensor)->v2()->create([
             'timestamp' => $start->getTimestamp() + $slot * 600,
@@ -471,8 +443,7 @@ it('carries the spread of the samples behind each bucket', function (): void {
         ->html()))[0];
 
     expect(array_slice($hour, 6, 4))->toEqual([19.5, 23.8, 47.5, 53.0])
-        // The pressure extremes are reduced to sea level like the mean, with
-        // the mean's temperature: 97 380 Pa at 21,5 °C and 345 m is 1013,39 hPa.
+        // Reduced with the mean's temperature: 97 380 Pa at 21,5 °C and 345 m is 1013,39 hPa.
         ->and($hour[10])->toBe(1013.39)
         ->and($hour[11])->toBe(1013.7)
         ->and($hour[3])->toBeGreaterThan(1013.39)
@@ -482,9 +453,7 @@ it('carries the spread of the samples behind each bucket', function (): void {
 it('bands a V1 reading on itself', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // A V1 entry is one sample, so at the station's own cadence the band
-    // has no width: the row still carries it, equal to the mean, so the
-    // chart draws every bucket the same way.
+    // A V1 entry is its own extreme: the band is there, with no width.
     Measurement::factory()->create([
         'timestamp' => now()->subMinutes(10)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389),
@@ -500,8 +469,7 @@ it('reads the day\'s extremes off the samples rather than the means', function (
 
     $sensor = Sensor::factory()->create();
 
-    // The night's coldest window averaged 2,10 °C, but one sample in it read
-    // 1,05 °C; the noon window averaged 21,50 °C with a sample at 24,90 °C.
+    // Coldest mean 2,10 °C with a sample at 1,05; warmest mean 21,50 with a sample at 24,90.
     Measurement::factory()->for($sensor)->v2()->create([
         'timestamp' => now()->subHours(8)->getTimestamp(),
         'data' => (string) new MeasurementDataV2(
@@ -535,9 +503,7 @@ it('keeps the dew point off until the reader asks for it', function (): void {
 
     $component = Livewire::test(Dashboard::class);
 
-    // Derived rather than measured, so it is a third line the reader opts
-    // into. Its label on the shared strip is the switch; the payload tells
-    // the chart which lines to leave out.
+    // Derived, so off by default; the label is the switch.
     expect($component->html())
         ->toContain('data-hidden-channels="[&quot;d&quot;]"')
         ->toContain('aria-pressed="false"');
@@ -556,8 +522,7 @@ it('never lets the shared strip go blank', function (): void {
     $component = Livewire::test(Dashboard::class)
         ->call('toggleChannel', 't');
 
-    // Temperature off leaves humidity on its own, so its switch is disabled
-    // and pressing it anyway changes nothing.
+    // The last line on cannot be switched off.
     expect($component->html())
         ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"')
         ->toMatch('/toggleChannel\(\'h\'\)"[^>]*disabled/')
@@ -566,7 +531,6 @@ it('never lets the shared strip go blank', function (): void {
     expect($component->call('toggleChannel', 'h')->html())
         ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"');
 
-    // Bringing another line back frees it again.
     expect($component->call('toggleChannel', 'd')->call('toggleChannel', 'h')->html())
         ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;h&quot;]"');
 });
@@ -593,7 +557,7 @@ it('narrows the window to a dragged selection', function (): void {
 
     expect(chartRows($component->html()))->toContain($recent)->toContain($older);
 
-    // The chart hands back real epochs, not the shifted stamps it plots.
+    // Real epochs come back, not the shifted stamps.
     $component->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp());
 
     expect(chartRows($component->html()))->toContain($recent)->not->toContain($older);
@@ -606,7 +570,7 @@ it('narrows the window to a dragged selection', function (): void {
 it('orders and widens a backwards or tiny selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Dragged right to left, and far too narrow to draw a line through.
+    // Reversed and too narrow.
     Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->getTimestamp(), now()->subMinutes(5)->getTimestamp())
         ->assertSet('to', now()->getTimestamp())
@@ -649,8 +613,7 @@ it('reports when the station last transmitted', function (): void {
 it('does not report a reading as arriving in the future', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // The station syncs NTP once and then free-runs, so its clock can sit
-    // ahead of the server's.
+    // The station's clock can run ahead of the server's.
     Measurement::factory()->create(['timestamp' => now()->addMinutes(4)->getTimestamp()]);
 
     $this->get('/')
@@ -676,7 +639,6 @@ it('calls the station silent after three missed slots', function (): void {
     Measurement::factory()->create(['timestamp' => now()->subMinutes(20)->getTimestamp()]);
     Livewire::test(Dashboard::class)
         ->assertSee('Station live')
-        // The indicator breathes while the link holds.
         ->assertSee('animate-breathe', escape: false);
 
     Measurement::query()->delete();
@@ -710,8 +672,7 @@ it('lists the last three transmissions as the station sent them', function (): v
     foreach ($packets as $packet) {
         Measurement::factory()->for($sensor)->create([
             'timestamp' => now()->subMinutes($packet['ago'])->getTimestamp(),
-            // The batch was buffered on the device and landed five minutes ago,
-            // whatever each reading's own stamp says.
+            // Buffered on the device, landed five minutes ago.
             'created_at' => now()->subMinutes(5),
             'data' => (string) new MeasurementDataV1(
                 temperature: $packet['temperature'],
@@ -723,21 +684,18 @@ it('lists the last three transmissions as the station sent them', function (): v
 
     $this->get('/')
         ->assertOk()
-        // The protocol's own fixed point integers, as the endpoint received them.
+        // Fixed-point integers as received.
         ->assertSee('"temperature": <span class="text-amber-600">2134</span>', false)
         ->assertSee('5812')
         ->assertSee('97389')
         ->assertSee('2112')
         ->assertSee('2087')
-        // Converted alongside: 97 389 Pa read at 345 m reduces to 1013,5 hPa at
-        // sea level.
+        // 97 389 Pa at 345 m reduces to 1013,5 hPa.
         ->assertSee('1 013,5')
-        // The date is the arrival, in Prague time - 11:55 UTC is 12:55 there in
-        // March. The reading's own stamp is in the JSON beside it and is not
-        // repeated as a date.
+        // Arrival time, Prague: 11:55 UTC is 12:55 in March.
         ->assertSee('15. 3. 2026 12:55')
         ->assertDontSee('15. 3. 2026 11:50')
-        // A fourth packet, and the oldest of them, has scrolled off the tail.
+        // The oldest of four is off the tail.
         ->assertDontSee('1901');
 });
 
@@ -755,8 +713,7 @@ it('lists a V2 packet under its own keys', function (): void {
         ),
     ]);
 
-    // The tail prints the entry as it arrived, so a window's extremes and its
-    // sample count are listed beside the mean, each in its channel's colour.
+    // Extremes and sample count beside the mean, each in its channel's colour.
     $this->get('/')
         ->assertOk()
         ->assertSee('"temperature_min": <span class="text-amber-600">2101</span>', false)
@@ -768,8 +725,7 @@ it('lists a V2 packet under its own keys', function (): void {
 it('dates the tail by arrival while the readout dates the measurement', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Measured half an hour ago, delivered two minutes ago - the shape of a
-    // batch the station buffered while its link was down.
+    // Measured half an hour ago, delivered two minutes ago.
     Measurement::factory()->create([
         'timestamp' => now()->subMinutes(30)->getTimestamp(),
         'created_at' => now()->subMinutes(2),
@@ -777,10 +733,9 @@ it('dates the tail by arrival while the readout dates the measurement', function
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // The readout answers how long the station has been quiet, so it reads the
-    // measurement: 11:30 UTC is 12:30 in Prague.
+    // The readout reads the measurement: 11:30 UTC is 12:30 in Prague.
     expect(Str::before($html, 'data-chart-rows'))->toContain('15. 3. 2026 12:30')
-        // The tail answers when the row reached the server: 11:58 UTC, 12:58 there.
+        // The tail reads the arrival: 11:58 UTC, 12:58 there.
         ->and(Str::after($html, 'aria-label="Last transmissions"'))
         ->toContain('15. 3. 2026 12:58')
         ->not->toContain('15. 3. 2026 12:30');
@@ -791,15 +746,14 @@ it('draws temperature and humidity on one strip and pressure on another', functi
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // Two canvases, three headers: the shared strip reports each channel
-    // against its own unit above the one grid they are drawn on.
+    // Two canvases, three headers.
     expect(substr_count($html, 'data-canvas'))->toBe(2)
         ->and(substr_count($html, 'data-strip="th"'))->toBe(1)
         ->and(substr_count($html, 'data-strip="p"'))->toBe(1)
         ->and($html)->toContain('Temperature (°C)')
         ->toContain('Humidity (%)')
         ->toContain('Pressure, MSL (hPa)')
-        // The payload tail reads as a footnote to the charts, so it follows them.
+        // The tail follows the charts.
         ->and(Str::after($html, 'data-canvas'))->toContain('when they arrived')
         ->and(Str::before($html, 'data-canvas'))->not->toContain('when they arrived');
 });
@@ -809,10 +763,7 @@ it('puts the navigator above the strips it scrolls', function (): void {
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // It sets the window rather than reporting one, so it belongs with the
-    // range switcher: below the strips a drag would move a grid that had
-    // scrolled off the screen. Matched on the section label, because
-    // `data-navigator-rows` in the payload would otherwise be the first hit.
+    // Matched on the section label; `data-navigator-rows` would otherwise hit first.
     expect(Str::before($html, 'aria-label="Whole record"'))->toContain('Range')
         ->not->toContain('data-strip=')
         ->and(Str::after($html, 'aria-label="Whole record"'))->toContain('data-strip="th"');
@@ -826,27 +777,24 @@ it('labels the shared strip with each channel and its unit', function (): void {
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // The hero above also prints the current reading, so the assertion is
-    // pinned to the band between the chart payload and the strip's canvas.
+    // Pinned between the payload and the canvas; the hero prints the same figures.
     $headers = Str::before(Str::after($html, 'data-chart-rows'), 'data-strip="th"');
 
     expect($headers)->toContain('Temperature (°C)')
         ->toContain('Dew point (°C)')
         ->toContain('Humidity (%)')
-        // Labels only: the figures live on the canvas and in the hero.
+        // Labels only.
         ->not->toContain('21,50')
         ->not->toContain('48,00')
-        // Pressure is headed above its own strip, not this one.
+        // Pressure heads its own strip.
         ->not->toContain('Pressure, MSL');
 });
 
 it('draws the navigator for a record shorter than one thinning bucket', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Three hours of uploads, stamped when the station woke rather than on the
-    // slot - the drift is what a real ESP32 sends. A whole record this short
-    // holds no row at all near a six-hour boundary, and thinning by the phase
-    // of the epoch left the navigator with nothing to draw.
+    // Three hours of drifting stamps: no row lies near a six-hour boundary,
+    // and thinning by epoch phase left the navigator empty.
     $sensor = Sensor::factory()->create();
 
     foreach (range(1, 18) as $slot) {
@@ -864,8 +812,7 @@ it('thins the navigator to one point per bucket once the record is long', functi
     $data = (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389);
     $sensor = Sensor::factory()->create();
 
-    // Eleven days of ten-minute uploads, drifting off the slot as above. That
-    // is 44 six-hour buckets, and the navigator keeps the first row of each.
+    // Eleven days of drifting uploads: 44 six-hour buckets, first row of each.
     $rows = collect(range(1, 1584))->map(fn (int $slot): array => [
         'sensor_id' => $sensor->id,
         'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
@@ -887,8 +834,7 @@ it('keeps listing the newest transmissions while zoomed into the past', function
         'data' => (string) new MeasurementDataV1(temperature: 2134, humidity: 5812, pressure: 97389),
     ]);
 
-    // The tail reads across the whole table, so a window holding nothing still
-    // reports what the station last sent.
+    // The tail reads the whole table, not the window.
     Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subDays(3)->getTimestamp(), now()->subDays(2)->getTimestamp())
         ->assertSee('Nothing in this range')
@@ -927,8 +873,7 @@ it('marks station events on the charts in Czech local time', function (): void {
 
     $html = Livewire::test(Dashboard::class)->html();
 
-    // The stamp is shifted the same way as the readings, so the mark lands
-    // on the axis where the readings of that instant do.
+    // Shifted like the readings, so the mark lands where they do.
     expect(chartEvents($html))->toBe([
         [1784116800000, 'Radiation shield fitted', '#71717a'],
     ]);
@@ -1012,7 +957,6 @@ it('opens on the first registered sensor and switches on request', function (): 
 
     $component = Livewire::test(Dashboard::class)
         ->assertSet('sensor', 'first')
-        // Readouts, chart, status line and payload tail all read the first sensor.
         ->assertSee('21,50')
         ->assertDontSee('10,50')
         ->assertSee('15. 3. 2026 12:50')
@@ -1050,9 +994,7 @@ it('keeps another sensor\'s readings out of the averaging', function (): void {
     $shown = Sensor::factory()->create();
     $other = Sensor::factory()->create();
 
-    // The other station reads ten degrees colder in every bucket. Averaged
-    // across the whole table, the shown sensor's line would sit five degrees
-    // under what it measured.
+    // The other station is ten degrees colder; averaged together the line would sit five under.
     foreach (range(0, 3) as $bucket) {
         Measurement::factory()->for($other)->create([
             'timestamp' => $start->getTimestamp() + $bucket * 3600,
@@ -1088,7 +1030,6 @@ it('marks only the selected sensor\'s events', function (): void {
 
     expect(array_column(chartEvents($component->html()), 1))->toBe(['Radiation shield fitted']);
 
-    // Switching sensors swaps the marks along with the readings.
     $component->set('sensor', $other->slug);
 
     expect(array_column(chartEvents($component->html()), 1))->toBe(['Moved to the balcony']);
@@ -1131,7 +1072,7 @@ it('shows what the station last reported about itself', function (): void {
         ->assertSeeInOrder(['last reset', 'task watchdog'])
         ->assertSeeInOrder(['network', 'backup'])
         ->assertSeeInOrder(['rssi', '-67 dBm'])
-        // The page is public: which network, never which SSID or address.
+        // Public page: the network's role, never SSID or address.
         ->assertDontSee('home')
         ->assertDontSee('192.168.0.42')
         ->assertSeeInOrder(['heap free', '187 kB'])
@@ -1148,9 +1089,7 @@ it('shows no clock drift before the station has re-synced once', function (): vo
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
 
-    // A fresh boot: the boot sync steps from 1970, which is not a drift, so
-    // the firmware sends zeros until the next one. A firmware before 2.2
-    // sends nothing at all.
+    // Zeros after a fresh boot (the boot sync is not a drift); nothing at all before firmware 2.2.
     foreach ([
         ['clock_step_ms' => 0, 'clock_step_over_s' => 0, 'clock_step_max_ms' => 0, 'clock_synced_at' => now()->getTimestamp()],
         [],

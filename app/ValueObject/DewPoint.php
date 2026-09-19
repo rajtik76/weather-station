@@ -5,15 +5,8 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * The dew point of a station reading.
- *
- * The temperature the air would have to cool to before its moisture condensed,
- * derived from the measured temperature and relative humidity. It is a
- * temperature and never exceeds the measured one - the two meet at 100 %.
- *
- * Magnus formula with the Sonntag 1990 constants, which hold to a few
- * hundredths of a degree between -45 and 60 °C; the sensor's own accuracy is
- * an order of magnitude coarser than that.
+ * Magnus formula with the Sonntag 1990 constants; good to a few hundredths
+ * of a degree between -45 and 60 °C, well inside the sensor's own error.
  */
 final readonly class DewPoint
 {
@@ -26,11 +19,9 @@ final readonly class DewPoint
     private function __construct(public float $celsius) {}
 
     /**
-     * Null for a reading of 0 %: the logarithm of that is minus infinity, and
-     * the nearest finite answer, some -70 °C, is not a dew point either - it
-     * is what a BME280 reports when its humidity path has failed. A gap in
-     * the line says that; a point at -70 °C on the temperature's own axis
-     * would flatten every real reading in the window instead.
+     * Null at 0 %: log(0) is -inf, and 0 % is what a BME280 reports when its
+     * humidity path has failed. A gap says that; a point at -70 °C would
+     * flatten the whole chart.
      */
     public static function of(MeasurementData $data): ?self
     {

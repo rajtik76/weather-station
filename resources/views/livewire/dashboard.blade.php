@@ -1,12 +1,6 @@
-{{-- The station uploads every ten minutes, so a minute of latency is nothing
-     to a reader. Polling instead of broadcasting keeps a websocket server out
-     of the stack for one packet per ten minutes.
-
-     A zoomed window is a pair of fixed epochs, so a poll re-queries exactly
-     the readings already on screen and the payload attributes below come back
-     byte for byte identical - the charts are never redrawn under a reader who
-     is looking at the past. Only the navigator, which always spans the whole
-     record, takes the new readings. --}}
+{{-- Polling, not broadcasting: one packet per ten minutes does not need a
+     websocket. A zoomed window re-queries fixed epochs, so its payload comes
+     back identical and the charts are not redrawn under the reader. --}}
 <div
     wire:poll.60s
     class="min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
@@ -19,13 +13,12 @@
             <span
                 @class([
                     'size-1.5 shrink-0 rounded-full',
-                    // Breathing only while the link holds; a silent station sits still.
                     'bg-emerald-500 animate-breathe motion-reduce:animate-none' => ! $this->isSilent,
                     'bg-amber-500' => $this->isSilent,
                 ])
                 aria-hidden="true"
             ></span>
-            {{-- Colour alone carries the link state, so name it for screen readers. --}}
+            {{-- Colour alone carries the state; name it for screen readers. --}}
             <span class="sr-only">{{ $this->isSilent ? 'Station silent' : 'Station live' }}</span>
             @if ($this->lastMeasurement)
                 <span class="tracking-[0.25em] uppercase">Last measurement</span>
@@ -47,21 +40,15 @@
 
     {{-- ── Hero: title + giant readouts ───────────────────────────── --}}
     <header class="border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
-        {{-- One threshold rules the layout and the alignment together. With
-             `flex-wrap` the two disagreed: the row broke where the content
-             stopped fitting, around 1115px, while `lg:` turned the readouts
-             right-aligned at 1024px - so between the two they sat under the
-             hero and still hung off the right of their own block. Wrapping is
-             gone, so the readouts either stand beside the text or start under
-             it flush left, with nothing in between. --}}
+        {{-- One breakpoint for layout and alignment: with `flex-wrap` the
+             row broke at ~1115px while `lg:` right-aligned at 1024px, and
+             between the two the readouts hung off the right of their block. --}}
         <div class="flex flex-col gap-x-16 gap-y-10 min-[1120px]:flex-row min-[1120px]:items-start min-[1120px]:justify-between">
             <div>
                 <flux:heading level="1" class="font-display text-[clamp(3.5rem,12.5vw,11.5rem)]! leading-[0.78] font-extrabold! tracking-[-0.03em] uppercase">
                     Station<br>Log
                 </flux:heading>
-                {{-- Instrument Serif runs small and open beside the sans, so the
-                     standfirst is set a step larger to hold the same weight on
-                     the page. --}}
+                {{-- Instrument Serif runs small beside the sans; one step larger. --}}
                 <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
                     A BME280 on an ESP32 samples every thirty seconds and reports each ten minutes as a mean with its extremes.
                     Pressure is measured at 345 m and shown reduced to mean sea level.
@@ -79,8 +66,6 @@
                     <div>
                         <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase min-[1120px]:justify-end dark:text-zinc-400">
                             {{ $readout['label'] }}
-                            {{-- The trend carries the channel's own colour, so the
-                                 figure reads as belonging to the unit beside it. --}}
                             <span class="{{ $readout['accent'] }} flex items-center gap-2">
                                 <flux:icon
                                     :icon="$m['delta'] >= 0.05 ? 'arrow-trending-up' : ($m['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
@@ -103,9 +88,8 @@
     </header>
 
     {{-- ── Sensor ─────────────────────────────────────────────────── --}}
-    {{-- Everything from here down is one sensor's record, so it is named
-         first. The picker only appears once there is a second sensor to pick,
-         and it stands alone on the right, so its arrival shifts nothing. --}}
+    {{-- Everything below is one sensor's record. The picker appears with a
+         second sensor and stands alone on the right, so it shifts nothing. --}}
     <section
         aria-label="Sensor"
         class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
@@ -159,9 +143,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-            {{-- Always rendered, only disabled: appearing on the first zoom
-                 would widen this right-aligned group and shift what sits
-                 beside it out from under the pointer mid-click. --}}
+            {{-- Always rendered, only disabled, so the first zoom does not shift the row mid-click. --}}
             <flux:button
                 wire:click="resetZoom"
                 :disabled="! $this->isZoomed"
@@ -173,10 +155,7 @@
     </section>
 
     {{-- ── Navigator ──────────────────────────────────────────────── --}}
-    {{-- Above the strips, with the range switcher: it sets the window rather
-         than reporting one, and the two do the same job. Below the strips it
-         sat some 700 px under the first grid, so a drag moved a chart that was
-         off the screen. --}}
+    {{-- Above the strips: below them a drag moved a chart that was off screen. --}}
     <section
         aria-label="Whole record"
         class="border-b border-zinc-900/10 px-4 pb-3 sm:px-8 dark:border-white/10"
@@ -203,14 +182,8 @@
         </section>
     @endunless
 
-    {{-- Temperature and humidity share a strip: they move against each other,
-         and two value axes stay readable where three did not. Pressure keeps
-         its own - a 40 hPa spread would draw as a flat line beside them.
-
-         Each of the shared strip's lines can be switched off by its label,
-         all but the last one on. The dew point rides on the temperature axis,
-         since it is one, and is derived from the other two rather than
-         measured - so it starts off. --}}
+    {{-- Pressure has its own strip: a 40 hPa spread is a flat line beside
+         the others. The dew point is derived, so it starts off. --}}
     @php($strips = [
         [
             'key' => 'th',
@@ -232,8 +205,7 @@
         ],
     ])
 
-    {{-- The chart payload. station-charts.js watches these attributes, which is
-         how a new window reaches canvases that Livewire must not touch. --}}
+    {{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
     <div
         data-chart-rows="{{ json_encode($this->readings) }}"
         data-navigator-rows="{{ json_encode($this->overview) }}"
@@ -250,16 +222,10 @@
             aria-label="{{ $strip['label'] }} history"
             class="border-b border-zinc-900/10 dark:border-white/10"
         >
-            {{-- One label per channel, in a row: the dot carries the line's
-                 colour, which is what tells the two value axes apart. --}}
             <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
                 @foreach ($strip['channels'] as $channel)
                     @if (isset($channel['toggle']))
-                        {{-- The label doubles as the switch. Off, the whole
-                             label is greyed the way a disabled control is,
-                             dot included; on, it reads like its neighbours.
-                             The last one on is disabled instead, so the
-                             strip is never left blank. --}}
+                        {{-- The label is the switch; the last one on is disabled instead. --}}
                         @php($shown = $this->channels[$channel['key']] ?? false)
                         @php($last = $this->isLastChannel($channel['key']))
                         <button
@@ -295,8 +261,7 @@
                 @endforeach
             </div>
 
-            {{-- `wire:ignore` because ECharts owns everything below this point;
-                 a morph would tear the canvas out from under it. --}}
+            {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
             <div
                 wire:ignore
                 data-strip="{{ $strip['key'] }}"
@@ -329,17 +294,11 @@
                 <div
                     @class([
                         'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
-                        // The newest packet is the one the hero readouts are showing.
                         'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
                     ])
                 >
-                    {{-- The entry exactly as it arrived in `measurements`,
-                         under whichever keys its protocol version carries,
-                         pretty printed one field per line at every width. A
-                         V2 packet on one line outruns a desktop as well as a
-                         phone, and a scrollbar hides half of it behind a
-                         gesture. Each field takes its channel's colour by the
-                         key's first word. --}}
+                    {{-- The blob as stored, one field per line: a V2 packet on
+                         one line outruns a desktop. Coloured by the key's first word. --}}
                     <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
                         <span class="block text-zinc-400 dark:text-zinc-600">{</span>
                         <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
@@ -380,11 +339,7 @@
                 </p>
             </div>
 
-            {{-- The board's own account of itself. A stall reads here before
-                 the flash log on the board does: a heap that keeps sinking,
-                 uploads failing in a row, a watchdog as the reset reason. The
-                 clock rows only once the board has measured a drift: before
-                 the first re-sync there is nothing to say. --}}
+            {{-- Clock rows only once the board has measured a drift. --}}
             <dl class="grid grid-cols-2 gap-x-8 gap-y-3 px-4 pb-4 font-mono text-xs tabular-nums sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
                 @foreach ([
                     'firmware' => $report['firmware'],

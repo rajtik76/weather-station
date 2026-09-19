@@ -35,8 +35,7 @@ void windowAdd(window_t& w, const bme280_reading_t& r) {
   w.samples++;
 }
 
-// Rounded to nearest, so the mean lands between the extremes the server
-// checks it against even when the sum is negative.
+// Round to nearest so a negative mean still lands between the extremes.
 static int64_t meanOf(int64_t sum, uint16_t n) {
   return sum >= 0 ? (sum + n / 2) / n : -((-sum + n / 2) / n);
 }

@@ -10,11 +10,8 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Not wrapped in a transaction on purpose: when this stops to ask for
-     * events to be assigned by hand, the nullable column must stay behind for
-     * the operator to fill in. Postgres would otherwise roll it back with the
-     * exception, and SQLite never rolls DDL back at all - so the rerun path
-     * is the same on both.
+     * No transaction on purpose: when this stops to ask for events to be
+     * assigned by hand, the nullable column has to stay behind to fill in.
      */
     public $withinTransaction = false;
 
@@ -43,13 +40,9 @@ return new class extends Migration
     }
 
     /**
-     * Events written before they belonged to a sensor.
-     *
-     * An event carries nothing that names its sensor, so the only record it
-     * can be attached to unambiguously is one where a single sensor exists.
-     * With several, guessing would pin an event to the wrong chart, so the
-     * migration stops and asks for the assignment to be made by hand; on the
-     * rerun only rows still without a sensor count.
+     * Events written before they belonged to a sensor. Unambiguous only
+     * with a single sensor; with several the migration stops and asks for
+     * the assignment by hand, and the rerun counts only unassigned rows.
      */
     private function assignExistingEvents(): void
     {

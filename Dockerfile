@@ -1,5 +1,4 @@
-# Composer dependencies. This stage runs first because resources/css/app.css
-# imports Flux's stylesheet out of vendor/, so the asset build needs it.
+# Vendor first: app.css imports Flux's stylesheet out of vendor/.
 FROM php:8.4-cli-alpine AS vendor
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -22,8 +21,7 @@ FROM node:24-alpine AS assets
 
 WORKDIR /app
 
-# package.json's prepare script runs "vp config", which reads the vite config
-# and shells out to git, so both have to be in place before npm ci.
+# The prepare script runs "vp config", which reads vite.config.js and shells out to git.
 RUN apk add --no-cache git
 
 COPY package.json package-lock.json vite.config.js .node-version ./
@@ -34,8 +32,7 @@ COPY --from=vendor /app/vendor ./vendor
 COPY . .
 RUN npm run build
 
-# Runtime. Only the built application lands here - no composer, no npm, no
-# compilers. That is the whole point of the split above.
+# Runtime: no composer, npm or compilers.
 FROM php:8.4-fpm-alpine AS run
 
 RUN apk add --no-cache nginx supervisor libpq \
@@ -55,9 +52,8 @@ COPY . .
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
 
-# php-fpm runs as www-data and needs to write logs, caches and sessions. The
-# bootstrap caches are dropped so the entrypoint rebuilds them for this image
-# rather than inheriting whatever the build host had lying around.
+# www-data writes logs, caches and sessions. Bootstrap caches are dropped
+# so the entrypoint rebuilds them for this environment.
 RUN rm -f bootstrap/cache/*.php \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache

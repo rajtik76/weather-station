@@ -12,14 +12,8 @@ enum ChartRange: string
     case Month = 'month';
 
     /**
-     * The smallest preset that still covers a span.
-     *
-     * Zooming produces arbitrary windows, and the bucket width and label
-     * precision should follow the span actually on screen rather than the
-     * button that was last pressed. Everything below therefore keys off this.
-     *
-     * A month is the widest window the dashboard draws (Dashboard::MAX_SPAN_SECONDS),
-     * so nothing wider ever arrives here; it falls to the month regardless.
+     * The smallest preset that covers a span; bucket width and label
+     * precision key off it. Anything wider than a month falls to the month.
      */
     public static function forSpan(int $seconds): self
     {
@@ -32,7 +26,6 @@ enum ChartRange: string
         return self::Month;
     }
 
-    /** Nominal length, used to place a span and to seed the window. */
     public function durationSeconds(): int
     {
         return match ($this) {
@@ -44,15 +37,9 @@ enum ChartRange: string
     }
 
     /**
-     * Width of the buckets the window is averaged into, in seconds.
-     *
-     * Never finer than the station's own ten-minute cadence: the chart plots
-     * a bucket per slot whether or not a reading landed in it, so an hour is
-     * six points and a month is 720 rather than the 4,300 readings it holds.
-     * Zooming in re-queries and the buckets narrow on their own. An hour is
-     * as wide as they get - the strip is a thousand pixels across and a
-     * month of hourly means still shows each day's rise and fall, which is
-     * why the window stops at a month rather than widening the buckets.
+     * Bucket width in seconds. Never finer than the station's ten-minute
+     * cadence, never wider than an hour: a month of hourly means still
+     * shows each day's swing, which is why the window stops at a month.
      */
     public function bucketSeconds(): int
     {
@@ -73,7 +60,6 @@ enum ChartRange: string
         };
     }
 
-    /** How precisely to name the window being shown. A year needs no clock. */
     public function stampFormat(): string
     {
         return match ($this) {

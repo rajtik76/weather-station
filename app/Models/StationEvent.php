@@ -11,10 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Something done to one station that changed what it reads: a radiation
- * shield fitted, the sensor moved to the other side of the house. Drawn as a
- * vertical line on that sensor's charts so a step in the record has a reason
- * next to it.
+ * Something done to a station that changed what it reads, marked on its charts.
  *
  * @property int $sensor_id
  * @property int $occurred_at UTC epoch seconds, the cast unwraps the column

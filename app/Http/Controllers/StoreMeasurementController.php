@@ -18,7 +18,6 @@ class StoreMeasurementController extends Controller
     {
         $validated = $request->validated();
         $version = ProtocolVersion::from((int) $validated['protocol_version']);
-        // The first upload under a new name is what registers the sensor.
         $sensor = Sensor::query()->firstOrCreate(['name' => (string) $validated['sensor_name']]);
 
         $rows = array_map(
@@ -34,7 +33,7 @@ class StoreMeasurementController extends Controller
         $upserted = Measurement::upsert(
             values: $rows,
             uniqueBy: ['sensor_id', 'timestamp'],
-            // A sensor can resend the same timestamp on a newer protocol after a firmware upgrade.
+            // A window may be resent under a newer protocol after a firmware upgrade.
             update: ['data', 'protocol_version'],
         );
 
@@ -52,16 +51,7 @@ class StoreMeasurementController extends Controller
         return response()->json(['stored' => $upserted], JsonResponse::HTTP_CREATED);
     }
 
-    /**
-     * Tell the uptime monitor a batch arrived.
-     *
-     * The monitor is a push type with a one hour interval, so it reports a
-     * problem once an hour passes with no upload - the station reports every
-     * ten minutes, and silence means the device, its WiFi or this endpoint
-     * stopped working. Sent after the response, so a slow or unreachable
-     * monitor never delays the device, and swallowed on failure, because a
-     * missed heartbeat is not worth failing an upload that already stored.
-     */
+    /** After the response, so a slow monitor never delays the device; swallowed on failure. */
     private function pingHeartbeat(): void
     {
         $url = config('sensor.heartbeat_url');
