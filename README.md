@@ -19,8 +19,7 @@ Running at [weather.rajtik.com](https://weather.rajtik.com).
 
 ![The dashboard: the last three transmissions, a week of the three channels, and the station's approximate location](docs/dashboard.png)
 
-The screenshot is seeded sample data, not measurements - the live station has
-been reporting for days rather than the month the seeded record covers.
+The screenshot shows seeded sample data, not the live record.
 
 ## Accuracy
 
@@ -32,20 +31,44 @@ shows how far the samples inside a window spread. The shield went up in
 September 2026 and took some of it away, not enough.
 
 There is no fix coming. A properly ventilated site or an aspirated shield is
-beyond the means and the setting the station has, and the point of the project
-was the pipeline from sensor to chart, not a reference instrument. Overnight
-and under cloud the numbers are as good as a BME280 gets; on a sunny morning
-they are not the air temperature.
+more than a balcony allows, and the point of the project was the pipeline
+from sensor to chart, not a reference instrument. Overnight and under cloud
+the numbers are as good as a BME280 gets; on a sunny morning they are not the
+air temperature.
+
+## What it does
+
+A station is whatever uploads under a `sensor_name`. The first upload under a
+new name registers it in `sensors`; a description can be added by hand
+afterwards and is what the dashboard shows beside the name. More than one
+station can report to the same server, and the dashboard switches between
+them.
+
+The dashboard is one Livewire page. At the top the current readings of the
+chosen station, below them temperature, humidity and dew point over the last
+week by default, with the min-max band behind each line and a strip of the
+whole record to drag any window up to a month through; the bucket width
+follows the span on screen. Events entered by hand into `station_events` are
+marked on the charts. Under the charts the three newest windows as they were
+stored, the station's own report of how it was doing, and the site's
+approximate location - one place, set in the component, so a second station
+is shown on the first one's map. The window and the station are in the URL,
+so a view can be linked to.
 
 ## Layout
 
-| Path               | Contents                                                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`        | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md). |
-| `app/Http/`        | The ingest endpoint, its form request, and the bearer token middleware.                                                    |
-| `app/ValueObject/` | Per-version decoding of a measurement payload.                                                                             |
-| `app/Livewire/`    | The dashboard component, with its view in `resources/views/livewire/`.                                                     |
-| `.ai/rules/`       | Conventions that are not obvious from reading the code.                                                                    |
+| Path                | Contents                                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`         | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md). |
+| `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                    |
+| `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                            |
+| `app/ValueObject/`  | Per-version decoding of a measurement payload.                                                                             |
+| `app/Models/`       | Sensors, measurements, station reports and the hand-written events.                                                        |
+| `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                     |
+| `database/seeders/` | A month of two stations' weather, for a chart without a device on the desk.                                                |
+| `docs/`             | [How the readings are stored](docs/storage.md).                                                                            |
+| `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.      |
+| `.ai/rules/`        | Conventions that are not obvious from reading the code.                                                                    |
 
 ## API
 
@@ -57,34 +80,22 @@ Authorization: Bearer <token>
 ```
 
 Uploads are batches. The firmware buffers what it could not deliver and sends
-it with the next window, so a batch is often a retry: `(sensor_name, timestamp)`
-is unique and the write upserts, which makes a partially delivered batch safe
-to send again. One invalid entry rejects the whole batch, so a bad reading
-never wedges the ones queued behind it. Payload shape, units and ranges are in
-the firmware README.
+it with the next window, so a batch is often a retry: `(sensor, timestamp)` is
+unique and the write upserts, which makes a partially delivered batch safe to
+send again. One invalid entry rejects the whole batch, so a bad reading never
+wedges the ones queued behind it. Beside the measurements a batch may carry a
+`station` object with the board's state at the time of the upload; the server
+keeps it apart from the readings.
 
-Beside the measurements a batch may carry a `station` object - firmware
-version, reset reason, uptime, heap, network, how many windows wait on the
-board, how many uploads failed in a row and how far the clock had drifted
-by its last NTP re-sync. It goes into `station_reports`,
-one row per batch, and the dashboard shows the newest under the payload
-tail: the board's own account of how it was doing, readable after the fact
-when it has stopped answering. The board also serves the same over HTTP on
-the LAN; the firmware README has the paths.
-
-The protocol is versioned. `protocol_version` is a column of its own and never
-lives inside the stored blob; `ProtocolVersion` maps a version to the value
-object that validates and decodes it. A new firmware format is a new case and a
-new class, and rows written by older firmware stay readable. V1 was one reading
-every ten minutes; V2 is a ten-minute window of half-minute readings, sent as
-the mean under the V1 keys with the extremes and the sample count beside it.
-The dashboard averages both with one query - a V1 row is its own minimum and
-maximum - and draws the band between the extremes behind each line.
+Payload shape, units and ranges are in the
+[firmware README](firmware/README.md#protocol). How the versions differ, how
+a row is stored and what happens to old ones is in
+[`docs/storage.md`](docs/storage.md).
 
 ## Running it
 
-Needs PHP 8.4, Node 22 and Docker. Flux Pro is a paid package, so `auth.json`
-has to carry credentials for `composer.fluxui.dev`.
+Needs PHP 8.4, Node 24 and Docker. The dashboard uses the free Flux
+components only, so there is nothing to buy and no `auth.json` to fill in.
 
 ```
 docker compose up -d   # PostgreSQL 18 on 5432, with a second database for the tests
@@ -94,20 +105,20 @@ composer test
 composer review        # rector, phpstan, tests
 ```
 
+Two values in `.env` are the project's own. `SENSOR_API_TOKEN` is what the firmware sends as
+its bearer token; the endpoint denies everything while it is empty.
+`SENSOR_HEARTBEAT_URL` is optional: when set, the server requests it after
+storing a batch, which suits a push monitor that alerts once the pings stop.
+
 PostgreSQL everywhere, the same image as production: the dashboard averages
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
 back on. `MeasurementSeeder` fills the dashboard's window at the reporting
 interval, which is the fastest way to get something on the chart without a
 device on the desk.
 
-## Deployment
+## Deploying
 
-Coolify on a Hetzner VPS, nixpacks build pack, shared PostgreSQL. A push to
-`main` triggers the deploy webhook, and `php artisan migrate --force` runs
-after it. Commits that only touch `firmware/` are excluded from the watch
-paths and do not redeploy the site.
-
-Two Uptime Kuma monitors sit behind the badges. One polls the site. The other
-is a push monitor with a one hour interval that the ingest endpoint pings after
-storing a batch, so an hour of silence raises an alert - it catches a station
-that stopped reporting, which polling the site never would.
+The `Dockerfile` builds one image: assets on Node, dependencies on Composer,
+then nginx and PHP-FPM under supervisord on port 8080. The entrypoint caches
+config, routes and views at start, because the environment only exists at run
+time. It does not run migrations; do that as a step of your deploy.
