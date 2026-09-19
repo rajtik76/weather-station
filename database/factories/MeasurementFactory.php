@@ -30,7 +30,7 @@ class MeasurementFactory extends Factory
             'sensor_id' => Sensor::factory(),
             'timestamp' => $date->timestamp,
             'protocol_version' => ProtocolVersion::V1,
-            // The model has no data setter, the column takes the encoded blob.
+            // No data setter on the model; the column takes the encoded blob.
             'data' => (string) new MeasurementDataV1(
                 temperature: fake()->numberBetween(-4000, 8500),
                 humidity: fake()->numberBetween(0, 10000),
@@ -42,8 +42,7 @@ class MeasurementFactory extends Factory
     }
 
     /**
-     * A ten-minute window as the station reports it since protocol V2: a
-     * mean per channel with the extremes of the samples around it.
+     * A V2 window: a mean per channel with the extremes around it.
      */
     public function v2(): static
     {

@@ -29,8 +29,7 @@ use Livewire\Component;
 use UnexpectedValueException;
 
 /**
- * Livewire resolves `#[Computed]` methods as properties at runtime. Larastan
- * does not model that, so they are declared here to stay analysable.
+ * `#[Computed]` methods are declared as properties for Larastan.
  *
  * @property-read list<BucketRow> $readings
  * @property-read list<ReadingRow> $overview
@@ -55,11 +54,9 @@ use UnexpectedValueException;
  * @property-read Sensor|null $selectedSensor
  * @property-read bool $hasSensorChoice
  *
- * Chart rows are positional: the payload is JSON and a month runs to 720 of
- * them. A reading row is a stored record; a bucket row is a slot, and holds
- * nulls where the station missed it. A bucket row goes on to carry the
- * extremes of the samples inside it, temperature, humidity and pressure in
- * turn, each as a min-max pair.
+ * Chart rows are positional arrays to keep the JSON payload small. A bucket
+ * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
+ * with nulls for an empty slot; a reading row stops after the epoch.
  *
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
  * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
@@ -69,95 +66,56 @@ use UnexpectedValueException;
 #[Title('Station Log')]
 class Dashboard extends Component
 {
-    /** Measurements arrive from the ESP32 every 10 minutes. */
+    /** Reporting interval of the station. */
     private const int STEP_SECONDS = 600;
 
-    /**
-     * The station stands in Plzeň, so every label reads in Czech local time.
-     *
-     * Stored stamps are UTC epochs (the firmware sends `time(nullptr)`), and the
-     * app clock stays on UTC; only the presentation layer shifts.
-     */
+    /** Stored stamps are UTC; only the presentation shifts. */
     private const string DISPLAY_TIMEZONE = 'Europe/Prague';
 
-    /** Sensor location: Galerie Slovany, náměstí Generála Píky, Plzeň-Slovany. */
     private const float LATITUDE = 49.733242;
 
     private const float LONGITUDE = 13.399911;
 
-    /**
-     * Height of the sensor above sea level, in metres.
-     *
-     * The BME280 reads the pressure where it hangs, some 40 hPa below what a
-     * forecast quotes. Every figure on this page is reduced to sea level with
-     * this height so it can be compared against one; the stored reading stays
-     * as the station sent it. See SeaLevelPressure.
-     */
+    /** Station height for the sea-level reduction; the stored reading stays as sent. */
     private const float ALTITUDE_METRES = 345.0;
 
-    /** The map draws this radius as a circle, with nothing marking its centre. */
     private const int LOCATION_RADIUS_METRES = 800;
 
-    /** Two missed slots, and the station is down rather than merely late. */
     private const int SILENT_AFTER_SECONDS = 3 * self::STEP_SECONDS;
 
-    /** The navigator spans everything, so it is thinned to one point per bucket. */
+    /** Navigator thinning: one reading per bucket once the record is large. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
 
-    /** Under this the whole record is small enough to draw without thinning. */
     private const int OVERVIEW_UNTHINNED_ROWS = 1500;
 
-    /** Where the page opens, and where "reset" returns to. */
     private const ChartRange DEFAULT_WINDOW = ChartRange::Week;
 
-    /** Below this a zoom would frame fewer readings than make a line. */
+    /** Fewer points than this would not make a line. */
     private const int MIN_SPAN_SECONDS = 4 * self::STEP_SECONDS;
 
     /**
-     * The widest window the charts draw.
-     *
-     * A strip is about a thousand pixels across. A month of hourly means
-     * gives each day some thirty of them, enough to read its rise and fall;
-     * a year would give it three, which is noise, and averaging it into
-     * wider buckets flattens the very swing a weather chart is for. The
-     * navigator still spans the whole record for finding a month in it.
+     * A month. A strip is ~1000 px wide; hourly means over a month still
+     * show a day's swing, anything wider averages it away. The navigator
+     * spans the whole record regardless.
      */
     private const int MAX_SPAN_SECONDS = 2592000;
 
-    /** How many transmissions the payload tail lists. */
     private const int RECENT_TRANSMISSIONS = 3;
 
-    /**
-     * The zoomed window as UTC epoch seconds, or null to follow the preset.
-     *
-     * Held as real instants rather than as a count of preset-sized steps, so
-     * that dragging a selection can land anywhere rather than on a grid.
-     */
+    /** Zoomed window as UTC epochs, null to follow the default. Instants, not preset steps, so a drag can land anywhere. */
     #[Url]
     public ?int $from = null;
 
     #[Url]
     public ?int $to = null;
 
-    /**
-     * Which sensor the page reads, by slug, or null for the first registered.
-     *
-     * The slug rather than the id: it is the firmware's own name made safe
-     * for a URL, so the link reads `?sensor=sensor-001` and survives a
-     * reseed. Everything below the top bar - readouts, charts, events, the
-     * payload tail - is that one sensor's. A slug that matches nothing falls
-     * back the same way, so a stale link still opens on a station.
-     */
+    /** Sensor slug, null for the first registered. Slug rather than id so the link survives a reseed. */
     #[Url]
     public ?string $sensor = null;
 
     /**
-     * Which lines the shared strip draws, by channel key.
-     *
-     * The dew point starts off: it is derived rather than measured, and a
-     * third line is clutter for a reader who only came for the weather. See
-     * toggleChannel() for why the last one cannot be switched off - locked,
-     * so that guard cannot be walked around with `$wire.set()`.
+     * Which lines the shared strip draws. Locked so the last-channel guard
+     * in toggleChannel() cannot be bypassed with `$wire.set()`.
      *
      * @var array<string, bool>
      */
@@ -178,7 +136,6 @@ class Dashboard extends Component
         return view('livewire.dashboard');
     }
 
-    /** Called from the chart once a drag-selection settles. */
     public function zoomTo(int $from, int $to): void
     {
         $this->from = $from;
@@ -193,17 +150,13 @@ class Dashboard extends Component
         $this->to = null;
     }
 
-    /** The picker sends whatever slug the option carried; it may be gone by now. */
     public function updatedSensor(): void
     {
         $this->normaliseSensor();
     }
 
     /**
-     * Every sensor that ever uploaded, oldest registration first.
-     *
-     * That order is what makes the first one the default: the original
-     * station keeps the front page when a second one is added.
+     * Oldest registration first, so the original station stays the default.
      *
      * @return Collection<int, Sensor>
      */
@@ -213,27 +166,19 @@ class Dashboard extends Component
         return Sensor::query()->orderBy('id')->get();
     }
 
-    /** The sensor whose record the page shows; null only while none has uploaded. */
     #[Computed]
     public function selectedSensor(): ?Sensor
     {
         return $this->sensors->firstWhere('slug', $this->sensor) ?? $this->sensors->first();
     }
 
-    /** One sensor is nothing to choose between, so the picker waits for a second. */
     #[Computed]
     public function hasSensorChoice(): bool
     {
         return $this->sensors->count() >= 2;
     }
 
-    /**
-     * Switch one of the shared strip's lines on or off.
-     *
-     * The last line on stays on: an empty strip is a blank band with two
-     * axes, which reads as a failure rather than a choice. The template
-     * disables that switch as well; this is what holds when it does not.
-     */
+    /** The last line on stays on; the template disables that switch too, this holds when it does not. */
     public function toggleChannel(string $channel): void
     {
         if (! array_key_exists($channel, self::DEFAULT_CHANNELS)) {
@@ -249,7 +194,6 @@ class Dashboard extends Component
         $this->channels[$channel] = ! $on;
     }
 
-    /** Whether the channel is the only one still drawn - and so cannot be switched off. */
     public function isLastChannel(string $channel): bool
     {
         return ($this->channels[$channel] ?? false)
@@ -257,10 +201,7 @@ class Dashboard extends Component
     }
 
     /**
-     * Channel keys the chart must not draw, for the payload.
-     *
-     * Read against the defaults rather than the property as it arrived, so a
-     * key missing or added on the client side changes nothing.
+     * Read against the defaults, so a key missing or added client-side changes nothing.
      *
      * @return list<string>
      */
@@ -280,26 +221,9 @@ class Dashboard extends Component
     }
 
     /**
-     * The window averaged into buckets, oldest first, as compact rows.
-     *
-     * Arrays rather than keyed objects because this is the chart payload and
-     * a month runs to seven hundred rows. Each row is
-     * `[wall-clock ms, °C, %, hPa, dew point °C, bucket epoch seconds]`
-     * followed by the extremes of the samples in the bucket, `°C min, °C max,
-     * % min, % max, hPa min, hPa max` - the band the chart draws behind each
-     * mean.
-     *
-     * The bucket width follows the span on screen (ChartRange::bucketSeconds)
-     * and every bucket in the window is a row, whether a reading landed in it
-     * or not: an empty one carries nulls, which the chart draws as a hole in
-     * the line. That is what keeps the axis honest about an outage rather than
-     * joining the readings either side of it. A window with no readings at
-     * all is the empty list, not a row of holes.
-     *
-     * The first element is shifted to Czech local time and the chart is told
-     * to read it as UTC, which is what makes the axis and tooltip read local
-     * without depending on the viewer's own clock. It is therefore not a real
-     * instant - the sixth element is, and that is what a zoom sends back.
+     * The window as buckets, oldest first. Every slot is a row; an empty one
+     * carries nulls so an outage draws as a gap, not a line across it. A
+     * window with no readings at all is `[]`.
      *
      * @return list<BucketRow>
      */
@@ -318,16 +242,8 @@ class Dashboard extends Component
     }
 
     /**
-     * Every reading the station ever sent, thinned hard, for the navigator.
-     *
-     * The navigator exists to show where the window sits in the whole record,
-     * so it always spans everything regardless of the preset. One point per
-     * six hours is far below what its few pixels can resolve, which keeps this
-     * cheap even once the table runs to years.
-     *
-     * A record shorter than one bucket would thin to a single point, so below
-     * OVERVIEW_UNTHINNED_ROWS the whole thing is drawn as it stands. See
-     * firstPerBucket() for why the thinning groups rather than counts.
+     * The whole record for the navigator, thinned to one reading per six
+     * hours once it is large enough to need it.
      *
      * @return list<ReadingRow>
      */
@@ -348,10 +264,7 @@ class Dashboard extends Component
     }
 
     /**
-     * The window as the navigator's own axis reads it.
-     *
-     * Wall-clock milliseconds, matching the stamps in the payload, so the
-     * slider can be positioned without converting anything in the browser.
+     * The window in the navigator's own axis units (see wallClockMs).
      *
      * @return array{from: int, to: int}
      */
@@ -364,20 +277,13 @@ class Dashboard extends Component
         ];
     }
 
-    /** No rows in the window: the station was quiet, or has never reported. */
     #[Computed]
     public function hasReadings(): bool
     {
         return $this->readings !== [];
     }
 
-    /**
-     * How many readings the station stored inside the window.
-     *
-     * Counted in the table rather than off the payload: that is one row per
-     * slot, holes included, and would report a month the station slept
-     * through as seven hundred records.
-     */
+    /** Counted in the table, not off the payload, which has a row per slot whether filled or not. */
     #[Computed]
     public function recordCount(): int
     {
@@ -387,11 +293,7 @@ class Dashboard extends Component
     }
 
     /**
-     * The newest bucket on screen that holds a reading, as hero figures.
-     *
-     * The payload ends on the window's last slot, which is a hole whenever
-     * the station is a few minutes late, so the last row is not the last
-     * reading.
+     * The newest non-empty bucket on screen; the last row is usually a hole.
      *
      * @return DayRow|null
      */
@@ -417,8 +319,6 @@ class Dashboard extends Component
     }
 
     /**
-     * The window on screen, for the reader to see where they are.
-     *
      * @return array{from: string, to: string}
      */
     #[Computed]
@@ -433,21 +333,9 @@ class Dashboard extends Component
     }
 
     /**
-     * The trailing 24 hours, for the hero readouts.
-     *
-     * Queried separately rather than sliced off `readings`, so that zooming
-     * into an hour does not shrink what "now" and "24 h" mean - and so that a
-     * thinned long window does not silently stretch them either.
-     *
-     * Falls back to the newest plotted bucket when the station has been quiet
-     * for over a day, so the cards still show its last state - a mean over
-     * that bucket's slot on a window wider than a day, which is as close to
-     * the last reading as the payload gets.
-     *
-     * Each row carries the entry's extremes beside its value: on V2 those
-     * are the coldest and warmest sample of the window, on V1 the reading
-     * itself, so the day's minimum and maximum read what the sensor saw
-     * rather than what the means smoothed over.
+     * The trailing 24 hours for the readouts. Queried apart from `readings`
+     * so the zoom does not change what "24 h" means. Falls back to the newest
+     * plotted bucket when the station has been quiet for over a day.
      *
      * @return list<DayRow>
      */
@@ -500,20 +388,9 @@ class Dashboard extends Component
     }
 
     /**
-     * The newest transmissions, in the units the station sent them in.
-     *
-     * Read across the whole table rather than the window, so that zooming into
-     * last spring does not empty the tail. Each row keeps the entry's fixed
-     * point integers under the protocol's own keys - that is what the endpoint
-     * received and what the blob holds, whichever version sent it - with the
-     * converted figures alongside for the second column, where pressure is
-     * the reduced one the rest of the page shows.
-     *
-     * The date is `created_at`, when the row reached the server - the reading's
-     * own stamp is already printed in the JSON beside it, and repeating it as
-     * a formatted date would say the same thing twice. Arrival is the other
-     * half of the story: a buffered batch lands minutes or hours after it was
-     * measured, and this is the only place that shows the gap.
+     * The newest rows across the whole table, not the window. The date is
+     * `created_at`: the reading's own stamp is in the JSON beside it, and a
+     * buffered batch arrives long after it was measured.
      *
      * @return list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}>
      */
@@ -526,8 +403,7 @@ class Dashboard extends Component
                 ->limit(self::RECENT_TRANSMISSIONS)
                 ->get()
                 ->map(function (Measurement $measurement): array {
-                    // Rows written before the column existed fall back to the
-                    // station's own stamp rather than dropping out of the tail.
+                    // Rows written before the column existed.
                     $receivedAt = $this->localise(
                         $measurement->created_at?->getTimestamp() ?? $measurement->timestamp
                     );
@@ -547,21 +423,8 @@ class Dashboard extends Component
     }
 
     /**
-     * The board's last word about itself: what the newest upload from the
-     * selected sensor carried in its `station` object, or null when the
-     * firmware has not reported yet.
-     *
-     * The date is arrival, like the payload tail's - the report describes the
-     * board at the moment it uploaded, so the two are the same instant.
-     *
-     * The SSID and the address stay in the record and off the page: the page
-     * is public, and which network the station is on is said by its role.
-     *
-     * The clock rows are the drift the board measured at its last SNTP
-     * re-sync: how far the clock had to be stepped and over how long it got
-     * there. Null until the firmware has re-synced once since boot - the boot
-     * sync steps from 1970 and says nothing about the crystal - and for a
-     * firmware that does not measure it.
+     * The newest `station` object of the selected sensor. SSID and IP stay
+     * off the page: it is public.
      *
      * @return array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null
      */
@@ -598,8 +461,8 @@ class Dashboard extends Component
     }
 
     /**
-     * The clock rows of the station block, or nulls when the report has no
-     * measured drift to show.
+     * Nulls until the board has re-synced once since boot: the boot sync steps
+     * from 1970 and says nothing about the crystal.
      *
      * @param  array<string, mixed>  $data
      * @return array{clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null}
@@ -620,7 +483,7 @@ class Dashboard extends Component
         ];
     }
 
-    /** A clock correction with its sign: "+812 ms", "-1 204 ms". A zero is "0 ms". */
+    /** "+812 ms", "-1 204 ms", "0 ms". */
     private function signedMilliseconds(int $milliseconds): string
     {
         $sign = match (true) {
@@ -633,8 +496,6 @@ class Dashboard extends Component
     }
 
     /**
-     * Centre and radius of the area shown on the location map.
-     *
      * @return array{lat: float, lng: float, radius: int}
      */
     #[Computed]
@@ -647,7 +508,6 @@ class Dashboard extends Component
         ];
     }
 
-    /** Copyright year, read off the station's own clock rather than UTC. */
     #[Computed]
     public function currentYear(): int
     {
@@ -655,16 +515,9 @@ class Dashboard extends Component
     }
 
     /**
-     * When the station last measured anything, across the whole table rather
-     * than the window - zooming in must not make the station look silent.
-     *
-     * The station's own stamp, not the row's `created_at`: a lost link buffers
-     * readings on the device and delivers them late, so the arrival of the
-     * newest row says nothing about how long ago the station last read its
-     * sensor. That is the question this answers, and the indicator beside it.
-     *
-     * This is a real instant, unlike the stamps in the chart payload, so it is
-     * the only date here that may be measured against now().
+     * Across the whole table, not the window. The station's own stamp, not
+     * `created_at`: a buffered batch arrives late and says nothing about when
+     * the sensor was last read.
      */
     #[Computed]
     public function lastMeasurement(): ?CarbonInterface
@@ -690,7 +543,6 @@ class Dashboard extends Component
             : $this->ago($this->lastMeasurement);
     }
 
-    /** Nothing for three slots running: treat the station as off the air. */
     #[Computed]
     public function isSilent(): bool
     {
@@ -699,10 +551,7 @@ class Dashboard extends Component
     }
 
     /**
-     * The selected sensor's readings, and nothing else's.
-     *
-     * With no sensor at all the id is null and the comparison matches no row,
-     * which is the empty page the template already draws.
+     * With no sensor the id is null and nothing matches, which is the empty page.
      *
      * @return Builder<Measurement>
      */
@@ -711,13 +560,11 @@ class Dashboard extends Component
         return Measurement::query()->where('sensor_id', $this->selectedSensor?->id);
     }
 
-    /** Oldest instant on screen, as a real UTC epoch. */
     private function windowFrom(): int
     {
         return $this->from ?? now()->getTimestamp() - self::DEFAULT_WINDOW->durationSeconds();
     }
 
-    /** Newest instant on screen, as a real UTC epoch. */
     private function windowTo(): int
     {
         return $this->to ?? now()->getTimestamp();
@@ -729,14 +576,9 @@ class Dashboard extends Component
     }
 
     /**
-     * Every event ever done to the selected sensor, for the charts to mark.
-     *
-     * Not bounded to the window: there are a handful of these over the life of
-     * the station, and a mark outside the axis simply is not drawn. Each entry
-     * is `[wall-clock ms, title, colour]`, the stamp shifted the same way as
-     * the readings so the mark lands on the axis where the readings do. The
-     * colour is passed through as entered, null included - the chart owns the
-     * fallback, since it owns the palette.
+     * `[wall-clock ms, title, colour]` per event, all of them: there are a
+     * handful and a mark outside the axis is not drawn. Colour null means the
+     * chart picks.
      *
      * @return list<array{0: int, 1: string, 2: ?string}>
      */
@@ -757,14 +599,7 @@ class Dashboard extends Component
         );
     }
 
-    /**
-     * Pin the property to the sensor actually shown.
-     *
-     * The picker is bound to the property, so it must hold a real slug even
-     * when the page opened without one - a native select given nothing it
-     * knows shows a blank. Livewire keeps the initial value out of the query
-     * string, so the default stays a clean URL.
-     */
+    /** The picker is bound to the property, so it must hold a real slug or the select shows blank. */
     private function normaliseSensor(): void
     {
         unset($this->selectedSensor);
@@ -773,12 +608,8 @@ class Dashboard extends Component
     }
 
     /**
-     * Both ends arrive from the query string, where anything can be typed, and
-     * from a drag that may have been a stray click. Keep them ordered, wide
-     * enough to draw, no wider than a month, and out of the future.
-     *
-     * Too wide is clipped from the front: the newer end is the one a reader
-     * dragged to, or typed, on purpose.
+     * Ordered, at least MIN_SPAN, at most MAX_SPAN, not in the future. Too
+     * wide is clipped from the front: the newer end is the one chosen.
      */
     private function normaliseWindow(): void
     {
@@ -797,14 +628,7 @@ class Dashboard extends Component
         $this->from = max(0, $this->to - self::MAX_SPAN_SECONDS, min($this->from, $this->to - self::MIN_SPAN_SECONDS));
     }
 
-    /**
-     * Relative wording, which is what tells you at a glance if it is late.
-     *
-     * A reading can be stamped slightly ahead of the server: the station syncs
-     * NTP once and its clock then free-runs on the RTC oscillator through
-     * every deep sleep, which drifts. "4 minutes from now" reads as a broken
-     * page, so anything not yet past is reported as having just landed.
-     */
+    /** The station's clock drifts and may stamp ahead of the server; "4 minutes from now" reads as broken. */
     private function ago(CarbonInterface $moment): string
     {
         return $moment->getTimestamp() > now()->getTimestamp()
@@ -812,13 +636,12 @@ class Dashboard extends Component
             : $moment->diffForHumans();
     }
 
-    /** The same instant, read off the station's clock instead of UTC. */
     private function localise(int $timestamp): CarbonInterface
     {
         return Date::createFromTimestamp($timestamp, self::DISPLAY_TIMEZONE);
     }
 
-    /** Seconds as the largest two units that fit: "3 d 4 h", "4 h 12 min", "12 min 5 s". */
+    /** "3 d 4 h", "4 h 12 min", "12 min 5 s". */
     private function duration(int $seconds): string
     {
         $days = intdiv($seconds, 86_400);
@@ -833,16 +656,10 @@ class Dashboard extends Component
     }
 
     /**
-     * A UTC epoch as milliseconds of Czech wall-clock time.
-     *
-     * The offset is folded into the value and the chart is set to read its
-     * time axis as UTC, so ticks and tooltips print Czech local time whatever
-     * clock the viewer's machine is on, and ticks still land on local
-     * midnight rather than an hour off it.
-     *
-     * The result is a wall-clock reading, not an instant: it must never be
-     * measured against now() or converted a second time. Rows carry the real
-     * epoch alongside for anything that needs one.
+     * Epoch as milliseconds of local wall-clock time. The chart reads its
+     * axis as UTC, so this is what makes ticks and tooltips print local time
+     * whatever the viewer's clock. Not an instant: never compare with now()
+     * or convert again. Rows carry the real epoch beside it.
      */
     private function wallClockMs(int $timestamp): int
     {
@@ -850,17 +667,9 @@ class Dashboard extends Component
     }
 
     /**
-     * Keep the first reading of every bucket and drop the rest.
-     *
-     * The navigator's thinning, and only the navigator's: it exists to show
-     * where the window sits, so a real reading per bucket is enough and the
-     * averaging the strips do (see buckets()) would be work for a few pixels.
-     *
-     * Grouping, not `timestamp % bucket < STEP_SECONDS`: the station stamps an
-     * upload when it wakes rather than on the slot, so its stamps sit minutes
-     * off every multiple of the step and a phase window only lands on a row
-     * while that drift stays small. Grouping asks for the bucket's own first
-     * row instead, whatever time it carries.
+     * First reading of every bucket. Grouping, not `timestamp % bucket <
+     * STEP`: the station's stamps sit minutes off the slot and drift, so a
+     * phase test would miss rows.
      *
      * @param  Builder<Measurement>  $query
      * @return Builder<Measurement>
@@ -868,8 +677,7 @@ class Dashboard extends Component
     private function firstPerBucket(Builder $query, int $bucketSeconds): Builder
     {
         return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds): void {
-            // Scoped to the sensor as well: another station's first row of a
-            // bucket is an earlier stamp this one never sent.
+            // Scoped to the sensor, or another station's earlier stamp wins the bucket.
             $bucket->selectRaw('MIN(timestamp)')
                 ->from('measurements')
                 ->where('sensor_id', $this->selectedSensor?->id)
@@ -878,22 +686,13 @@ class Dashboard extends Component
     }
 
     /**
-     * Every bucket between two instants, each averaged over its readings.
+     * PostgreSQL only: `generate_series` lays out every slot and a left join
+     * averages the readings onto it, so a missed slot is a row of nulls.
+     * Buckets divide the epoch, not the local day, so DST never moves them.
      *
-     * Done in SQL, and PostgreSQL's SQL: `generate_series` lays out one slot
-     * per bucket across the window and the readings are averaged onto it with
-     * a left join, so a slot the station missed comes back as a row of nulls
-     * rather than not at all. The buckets divide the epoch, not the local
-     * day, which is why they never move with daylight saving.
-     *
-     * The blob is read with the protocol keys directly. Aggregating cannot go
-     * through ProtocolVersion::hydrate() row by row, so a later protocol that
-     * renames a field has to teach this query about it as well. The mean is
-     * read under the V1 keys, which V2 keeps for its window mean; the
-     * extremes fall back to the value itself where an entry has none (V1),
-     * which is the same statement the value objects make - a single reading
-     * is its own minimum and maximum. The bucket's band is therefore the
-     * spread of every sample inside it, whichever version stored them.
+     * The blob is read by protocol key, not through ProtocolVersion::hydrate(),
+     * so a protocol that renames a field has to change this query too. The
+     * extremes fall back to the value where an entry has none (V1).
      *
      * @return SupportCollection<int, Bucket>
      */
@@ -905,8 +704,7 @@ class Dashboard extends Component
         $readings = DB::table('measurements')
             ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
             ->where('sensor_id', $this->selectedSensor?->id)
-            // The whole of the first and last buckets, so an edge bucket is
-            // the same average whichever instant inside it the window opened on.
+            // Whole edge buckets, so their average does not depend on where the window opened.
             ->whereBetween('timestamp', [$first, $last + $step - 1])
             ->groupByRaw('1');
 
@@ -930,13 +728,10 @@ class Dashboard extends Component
     }
 
     /**
-     * A chart row for one bucket, or a row of holes for an empty one.
-     *
-     * The averages are turned back into a measurement in the protocol's own
-     * units, so the pressure reduction and the dew point run through the same
-     * code as a single reading. The pressure extremes are reduced with the
-     * bucket's mean temperature: the reduction needs one, and the sample that
-     * read the lowest pressure did not record its own.
+     * The averages go back into a measurement in protocol units so reduction
+     * and dew point run through the same code as a single reading. Pressure
+     * extremes are reduced with the bucket's mean temperature; the sample
+     * that read them kept none of its own.
      *
      * @param  Bucket  $bucket
      * @return BucketRow
@@ -971,13 +766,7 @@ class Dashboard extends Component
         ];
     }
 
-    /**
-     * The same entry with another pressure, for reducing an extreme.
-     *
-     * SeaLevelPressure reads the temperature off the entry it is given, and
-     * the extremes were read by samples that kept no temperature of their
-     * own - the entry's is the nearest thing to it.
-     */
+    /** The same entry with another pressure, for reducing an extreme. */
     private function withPressure(MeasurementData $data, int $pressure): MeasurementData
     {
         return new MeasurementDataV1(
@@ -987,39 +776,19 @@ class Dashboard extends Component
         );
     }
 
-    /**
-     * Station pressure reduced to sea level, in hPa, as everything here shows it.
-     *
-     * Two decimals is the sensor's own resolution - it reports whole pascals -
-     * and the chart needs all of it. A day of weather moves the line by a
-     * couple of hPa, the strip's axis scales to whatever it finds, so rounding
-     * to tenths drew the curve as a staircase a fifteenth of the strip high.
-     * The readouts and the payload tail print a tenth of what this returns.
-     */
+    /** Two decimals: whole pascals, the sensor's resolution. Tenths drew the pressure line as a staircase. */
     private function seaLevelHpa(MeasurementData $data): float
     {
         return SeaLevelPressure::reduce($data, self::ALTITUDE_METRES)->hectopascals(2);
     }
 
-    /**
-     * Dew point in °C, at the resolution the temperature beside it is shown.
-     *
-     * Null where there is none (see DewPoint::of), which the chart draws as a
-     * gap in the line.
-     */
+    /** Null where there is none (see DewPoint::of); the chart draws a gap. */
     private function dewPointCelsius(MeasurementData $data): ?float
     {
         return DewPoint::of($data)?->celsius(2);
     }
 
     /**
-     * Chart rows for a set of measurements, oldest first.
-     *
-     * Columns hold the raw protocol units (see ProtocolVersion::V1):
-     * temperature and humidity in hundredths, pressure in pascals. The chart
-     * wants °C, % and hPa reduced to sea level, plus the dew point in °C,
-     * which the station does not send and is derived here.
-     *
      * @param  Collection<int, Measurement>  $measurements
      * @return list<ReadingRow>
      */
@@ -1040,11 +809,8 @@ class Dashboard extends Component
     }
 
     /**
-     * Hero readout figures for one metric.
-     *
-     * The day's minimum and maximum come off the entries' extremes, not their
-     * values: a V2 entry is a ten-minute mean, and the coldest sample of the
-     * night sits below the coldest mean.
+     * Day min and max come off the entries' extremes, not their means: the
+     * coldest sample sits below the coldest ten-minute mean.
      *
      * @return array{now: float, delta: float, dayMin: float, dayMax: float}
      */
@@ -1062,7 +828,7 @@ class Dashboard extends Component
 
         return [
             'now' => $now,
-            // vs. one hour ago, or the oldest point we have if the window is shorter
+            // Against one hour ago (six slots), or the oldest point if the day is shorter.
             'delta' => $now - (float) $day[max(0, count($day) - 7)],
             'dayMin' => min($lows),
             'dayMax' => max($highs),

@@ -5,17 +5,9 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * A station reading reduced to mean sea level.
- *
- * The BME280 reports the pressure where it actually hangs, and at 345 m that
- * is some 40 hPa below what a forecast or a neighbouring station quotes. Every
- * published figure is reduced, so the numbers can be compared against anything
- * else; the record itself keeps what the sensor measured.
- *
- * Hypsometric formula with the station's own temperature rather than the
- * standard atmosphere's fixed 15 °C. A frost or a heatwave moves the column's
- * mean temperature by tens of kelvin, which is a few hPa at this height - the
- * sensor already measures it, so there is no reason to assume it.
+ * Station pressure reduced to mean sea level. Hypsometric formula with the
+ * measured temperature rather than the standard atmosphere's 15 °C: a frost
+ * or a heatwave is a few hPa at this height.
  */
 final readonly class SeaLevelPressure
 {
@@ -37,9 +29,7 @@ final readonly class SeaLevelPressure
      */
     public static function reduce(MeasurementData $data, float $altitudeMetres): self
     {
-        // Mean temperature of the imagined air column between the sensor and
-        // sea level: the measured value plus half the standard lapse over the
-        // height, which is the column's midpoint.
+        // Mean column temperature: measured plus half the standard lapse over the height.
         $columnMeanKelvin = $data->temperature / 100
             + self::ZERO_CELSIUS
             + self::LAPSE_RATE * $altitudeMetres / 2;

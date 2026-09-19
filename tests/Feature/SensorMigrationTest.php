@@ -84,8 +84,7 @@ it('refuses to guess which sensor an event belongs to, and finishes once told', 
     expect(fn () => Artisan::call('migrate'))
         ->toThrow(RuntimeException::class, 'set station_events.sensor_id by hand');
 
-    // The column is left behind for exactly this, and the rerun picks up
-    // where it stopped rather than tripping over its own column.
+    // The rerun picks up where it stopped instead of tripping over its own column.
     $south = DB::table('sensors')->where('name', 'bme280-south')->value('id');
     DB::table('station_events')->update(['sensor_id' => $south]);
 
@@ -100,8 +99,7 @@ it('puts the names back on the readings when rolled back', function (): void {
     oldMeasurements(['bme280-north', 'bme280-south']);
     Artisan::call('migrate');
 
-    // Everything the migrate above ran is one batch, so this rolls back the
-    // sensor migrations whatever has been added since.
+    // One batch, so this rolls back the sensor migrations whatever came after.
     Artisan::call('migrate:rollback');
 
     expect(Schema::hasTable('sensors'))->toBeFalse()

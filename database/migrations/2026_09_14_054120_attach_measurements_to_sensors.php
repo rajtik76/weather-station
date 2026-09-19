@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('sensor_id')->nullable()->after('id')->constrained()->restrictOnDelete();
         });
 
-        // The sensors table was filled from these very names, so every row finds its sensor.
+        // sensors was seeded from these names, so every row matches.
         DB::table('measurements')->update([
             'sensor_id' => DB::raw('(SELECT id FROM sensors WHERE sensors.name = measurements.sensor_name)'),
         ]);

@@ -14,16 +14,15 @@ return new class extends Migration
     {
         Schema::create('sensors', function (Blueprint $table): void {
             $table->id();
-            // The identifier the firmware sends as `sensor_name`, so the same width.
+            // Same width as `sensor_name` in the payload.
             $table->string('name', 50)->unique();
-            // The name as it can appear in a URL; see Sensor::uniqueSlug().
+            // See Sensor::uniqueSlug().
             $table->string('slug', 60)->unique();
             $table->text('description')->nullable();
             $table->timestamps();
         });
 
-        // Every sensor that ever uploaded is already named in the record, so
-        // the table opens with exactly those rather than empty.
+        // Seed from the names already in the record.
         $names = DB::table('measurements')
             ->distinct()
             ->orderBy('sensor_name')
@@ -45,8 +44,8 @@ return new class extends Migration
     }
 
     /**
-     * The same rule as Sensor::uniqueSlug(), kept here so the migration does
-     * not depend on the model as it stands in some later commit.
+     * Same rule as Sensor::uniqueSlug(), copied so the migration does not
+     * depend on a later model.
      *
      * @param  list<string>  $taken
      */

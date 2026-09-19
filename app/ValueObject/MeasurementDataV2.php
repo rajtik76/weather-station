@@ -8,12 +8,8 @@ use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
 /**
- * Protocol V2: a ten-minute window of readings per entry.
- *
- * The station samples every thirty seconds and sends the window's mean per
- * channel under the V1 keys, with the extremes and the sample count beside
- * them. Keeping the V1 keys for the mean is what lets the dashboard's SQL
- * aggregate both versions with one expression.
+ * Protocol V2: a ten-minute window per entry. The mean keeps the V1 keys so
+ * the dashboard's SQL aggregates both versions with one expression.
  */
 final readonly class MeasurementDataV2 implements MeasurementData
 {
@@ -57,10 +53,8 @@ final readonly class MeasurementDataV2 implements MeasurementData
     }
 
     /**
-     * The extremes are bounded by the mean, not only by the channel's range:
-     * the firmware computes all three from the same samples, so a window
-     * whose minimum is above its mean is a firmware fault and not a reading.
-     * The wildcard is replaced with the entry's own index by the validator.
+     * A minimum above the mean is a firmware fault, not a reading. The
+     * validator replaces the wildcard with the entry's own index.
      */
     public static function validationRules(): array
     {

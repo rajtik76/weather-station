@@ -5,10 +5,8 @@
 
 #include <ArduinoJson.h>
 
-// What the station knows about itself. Goes out two ways: to the HTTP
-// server on the LAN, whole, and to the API alongside every batch, so the
-// record shows what the board was doing when the readings were taken and
-// a stall can be read back from the server after the board recovered.
+// Served whole on the LAN; a subset rides with every batch so a stall can
+// be read back from the server afterwards.
 typedef struct {
   const char* firmware;       // FIRMWARE_VERSION
   const char* reset_reason;   // why the board last booted
@@ -35,7 +33,7 @@ typedef struct {
   uint32_t last_upload_ok_at; // epoch of the last 2xx, 0 never
 } station_status_t;
 
-// The subset that rides with every batch. The rest is only for the LAN.
+// The subset that rides with every batch.
 static void stationStatusToJson(const station_status_t& s, JsonObject out) {
   out["firmware"] = s.firmware;
   out["reset_reason"] = s.reset_reason;

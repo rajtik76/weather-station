@@ -27,7 +27,7 @@ class StoreMeasurementRequest extends FormRequest
             'sensor_name' => ['required', 'string', 'min:3', 'max:50'],
             'protocol_version' => ['required', Rule::enum(ProtocolVersion::class)],
             'measurements' => ['required', 'array', 'min:1', 'max:500'],
-            // Bounded by the unsignedInteger column, so an out-of-range value is a 422 and not a database error.
+            // Bounded by the unsignedInteger column: a 422, not a database error.
             'measurements.*.timestamp' => ['required', 'integer', 'date_format:U', 'min:1', 'max:4294967295'],
             ...$this->protocolSpecificRules(),
             ...$this->stationRules(),
@@ -35,9 +35,8 @@ class StoreMeasurementRequest extends FormRequest
     }
 
     /**
-     * The `station` object with only the fields the rules name: `validated()`
-     * hands the object back as sent, extra keys included, because the object
-     * itself is under a rule.
+     * Only the fields the rules name: `validated()` returns the object as
+     * sent, extra keys included, because the object itself is under a rule.
      *
      * @return array<string, mixed>|null
      */
@@ -58,11 +57,9 @@ class StoreMeasurementRequest extends FormRequest
     }
 
     /**
-     * The board's own state, sent beside the readings. Optional as a whole -
-     * a batch without it is still a batch - but once present every field
-     * has to be there, so a firmware that reports is held to the shape the
-     * dashboard reads. The fields a later firmware added are the exception:
-     * the station in the field keeps uploading through a server upgrade.
+     * Optional as a whole, complete once present. Fields a later firmware
+     * added are the exception, so a station in the field keeps uploading
+     * through a server upgrade.
      *
      * @return array<string, array<int, string>>
      */
@@ -75,7 +72,7 @@ class StoreMeasurementRequest extends FormRequest
             'station.uptime' => ['required_with:station', 'integer', 'min:0'],
             'station.heap_free' => ['required_with:station', 'integer', 'min:0'],
             'station.heap_min' => ['required_with:station', 'integer', 'min:0'],
-            // Empty while the station is offline, which it never is when a batch arrives - but the firmware sends what it has.
+            // Nullable: the firmware sends what it has.
             'station.ssid' => ['present_with:station', 'nullable', 'string', 'max:32'],
             'station.ip' => ['present_with:station', 'nullable', 'string', 'max:15'],
             'station.rssi' => ['required_with:station', 'integer', 'min:-120', 'max:0'],
@@ -83,9 +80,7 @@ class StoreMeasurementRequest extends FormRequest
             'station.wifi_switches' => ['required_with:station', 'integer', 'min:0'],
             'station.buffered' => ['required_with:station', 'integer', 'min:0'],
             'station.upload_failures' => ['required_with:station', 'integer', 'min:0'],
-            // The clock's drift, measured at each SNTP re-sync. Optional as a set: a firmware before 2.2 does not
-            // send it, and the one that does sends zeros until its first re-sync after boot. One of them makes the
-            // other three required, so the dashboard never reads a half-reported set.
+            // Optional as a set (added in firmware 2.2), all four or none.
             'station.clock_step_ms' => ['required_with:station.clock_step_over_s,station.clock_step_max_ms,station.clock_synced_at', 'integer'],
             'station.clock_step_over_s' => ['required_with:station.clock_step_ms,station.clock_step_max_ms,station.clock_synced_at', 'integer', 'min:0'],
             'station.clock_step_max_ms' => ['required_with:station.clock_step_ms,station.clock_step_over_s,station.clock_synced_at', 'integer'],
@@ -100,7 +95,7 @@ class StoreMeasurementRequest extends FormRequest
     {
         $version = $this->enum('protocol_version', ProtocolVersion::class);
 
-        // Unknown version, let the protocol_version rule report it instead of demanding fields for a version nobody claimed.
+        // Unknown version: let the protocol_version rule report it.
         if ($version === null) {
             return [];
         }

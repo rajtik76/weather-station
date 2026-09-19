@@ -26,7 +26,7 @@ enum ProtocolVersion: int
     }
 
     /**
-     * Rules for a single measurement item. Timestamp is shared by all versions and lives in the request.
+     * Rules for one measurement; the timestamp is shared and lives in the request.
      *
      * @return array<string, array<int, string>>
      */

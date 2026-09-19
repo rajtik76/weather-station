@@ -6,9 +6,8 @@
 
 #include "station_log.h"
 
-// The file is a header and then the entries, raw. Bump the version whenever
-// bme280_window_t changes shape, so a file left by an older firmware is
-// thrown away rather than read as garbage.
+// Header then raw entries. Bump the version whenever bme280_window_t
+// changes shape, so an older file is discarded rather than read as garbage.
 #define WINDOW_BUFFER_FILE_MAGIC   0x574E4457UL  // "WNDW"
 #define WINDOW_BUFFER_FILE_VERSION 1
 
@@ -23,14 +22,11 @@ static uint16_t count = 0;
 
 #define WINDOW_BUFFER_SCRATCH WINDOW_BUFFER_FILE ".tmp"
 
-// Written whole, into a scratch file that then replaces the old one, so a
-// power cut in the middle of a write leaves the previous copy intact. The
-// rename is tried over the old file first - LittleFS replaces the target in
-// one step - and only if the port refuses that is the old file removed
-// first, which opens a moment with neither; windowBufferLoad() covers it by
-// falling back to the scratch file. A day of windows is under four
-// kilobytes, and a rewrite every ten minutes is nothing to a wear-levelled
-// flash.
+// Written whole into a scratch file that then replaces the old one, so a
+// power cut mid-write leaves the previous copy. Rename over the target
+// first (LittleFS does it in one step); only if the port refuses is the
+// old file removed first, and windowBufferLoad() falls back to the scratch
+// file for that gap.
 static void persist() {
   const char* scratch = WINDOW_BUFFER_SCRATCH;
 
@@ -66,7 +62,7 @@ static void persist() {
   }
 }
 
-// Reads one file into the entries. False when it is missing or not ours.
+// False when the file is missing or not ours.
 static bool loadFrom(const char* path) {
   File f = LittleFS.open(path, "r");
   if (!f) {
@@ -102,8 +98,7 @@ uint16_t windowBufferLoad() {
     return 0;
   }
 
-  // A complete scratch file with no real one beside it is a write that got
-  // as far as the remove and no further; it is the newest state there is.
+  // A scratch file with no real one beside it is a write that stopped after the remove.
   if (!loadFrom(WINDOW_BUFFER_FILE) && loadFrom(WINDOW_BUFFER_SCRATCH)) {
     logInfo("window buffer: recovered from the scratch file");
     persist();

@@ -12,15 +12,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
- * One physical station: a board with its BME280, wherever it hangs.
- *
- * The name is the identifier the firmware sends with every upload, and the
- * first upload under a new name creates the row. The description is written
- * by hand afterwards and is what the dashboard shows beside the name.
- *
- * The slug is the name as a URL can carry it - the firmware may call itself
- * anything within 50 characters - and it is what `?sensor=` holds. Derived
- * once, on creation, so a link keeps working.
+ * One station. `name` is what the firmware sends; the first upload under a
+ * new name creates the row. `slug` is derived once, on creation, so a
+ * `?sensor=` link keeps working.
  *
  * @property int $id
  * @property string $name
@@ -40,13 +34,7 @@ class Sensor extends Model
         });
     }
 
-    /**
-     * A slug no other sensor has.
-     *
-     * Two names can slug alike ("Sensor 1" and "sensor-1"), and a name of
-     * nothing but symbols slugs to an empty string, so the second gets a
-     * counter and the empty one a word.
-     */
+    /** Two names can slug alike, and a name of symbols only slugs to ''. */
     public static function uniqueSlug(string $name): string
     {
         $base = Str::slug($name) ?: 'sensor';

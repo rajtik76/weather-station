@@ -1,5 +1,4 @@
-// Pulled in piece by piece: the whole ECharts bundle is ~400 kB gzipped, and
-// the station draws lines on a grid and nothing else.
+// Piecemeal imports: the full ECharts bundle is ~400 kB gzipped.
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import {
@@ -22,38 +21,45 @@ echarts.use([
 ]);
 
 /**
- * The channel charts.
- *
- * One ECharts instance per strip, joined into a group so that the crosshair
- * and the zoom track together. A strip may carry more than one channel, but
- * every tooltip reads all of them, so hovering anywhere reports the whole
- * station at that instant.
- *
- * Dragging across a chart selects a window; releasing hands the two real
- * timestamps back to Livewire, which re-queries at a resolution that suits the
- * new span. Zooming is therefore a server round trip rather than a rescale of
- * what is already loaded - which is what makes zooming into a month of hourly
- * means come back as the ten-minute slots they averaged over.
+ * One ECharts instance per strip, connected so crosshair and zoom track
+ * together. A zoom is a server round trip: the selected epochs go to
+ * Livewire, which re-queries at the bucket width the new span needs.
  */
 
 const GROUP = "station";
 
-/** Long enough to be a drag rather than a slipped click. */
 const DRAG_SLOP_PX = 6;
 
 /**
- * `axis` names the channel whose value axis this one is read against; a
- * channel that names itself gets an axis of its own. The dew point is a
- * temperature, so it shares the temperature's.
- *
- * `band` names the columns holding the lowest and highest sample behind the
- * channel's mean; the strip draws them as a tint behind the line. The dew
- * point is derived from the means and has no samples of its own.
+ * `axis`: the channel whose value axis this one shares (dew point reads the
+ * temperature's). `band`: row columns with the min and max sample behind the
+ * mean; the dew point is derived and has none.
  */
 const CHANNELS = [
-    { key: "t", label: "Temperature", unit: "°C", decimals: 2, axis: "t", band: ["tMin", "tMax"] },
-    { key: "h", label: "Humidity", unit: "%", decimals: 2, axis: "h", band: ["hMin", "hMax"] },
-    { key: "d", label: "Dew point", unit: "°C", decimals: 2, axis: "t", dashed: true },
+    {
+        key: "t",
+        label: "Temperature",
+        unit: "°C",
+        decimals: 2,
+        axis: "t",
+        band: ["tMin", "tMax"],
+    },
+    {
+        key: "h",
+        label: "Humidity",
+        unit: "%",
+        decimals: 2,
+        axis: "h",
+        band: ["hMin", "hMax"],
+    },
+    {
+        key: "d",
+        label: "Dew point",
+        unit: "°C",
+        decimals: 2,
+        axis: "t",
+        dashed: true,
+    },
     {
         key: "p",
         label: "Pressure, MSL",
@@ -66,38 +72,18 @@ const CHANNELS = [
 
 const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
 
-/**
- * Channels the reader has switched off. The server says which through the
- * payload, so the state survives a poll; until the first payload is read,
- * nothing is hidden.
- */
+/** Hidden channels, as the server's payload states them so the choice survives a poll. */
 let hidden = new Set();
 
 const isShown = (channel) => !hidden.has(channel.key);
 
-/**
- * How the channels are distributed over the canvases.
- *
- * Temperature and humidity sit together because they run against each other -
- * the pair is the reading, not two of them. Pressure spans some 40 hPa around
- * 1013, so on a shared axis it is a flat line and on its own axis it would be
- * a third one; it keeps its own strip instead.
- */
+/** Pressure has its own strip: on a shared axis its 40 hPa range is a flat line. */
 const STRIPS = [
     { key: "th", channels: ["t", "h", "d"] },
     { key: "p", channels: ["p"] },
 ];
 
-/**
- * Tick labels per time unit.
- *
- * Left to itself ECharts prints a bare day number, which reads as a quantity
- * rather than a date - "10" tells you nothing about which month it sits in.
- * Naming a format for every unit keeps the axis legible however far it is
- * zoomed. Every one of them is numeric on purpose: month names would be the
- * only words on the axis, and would have to be pinned to a language the rest
- * of the page never states.
- */
+/** Tick labels per unit. ECharts' default prints a bare day number; all numeric to stay language-neutral. */
 const TIME_LABELS = {
     year: "{yyyy}",
     month: "{M}/{yyyy}",
@@ -110,11 +96,8 @@ const TIME_LABELS = {
 };
 
 /**
- * Row layout from the server: wall-clock ms, °C, %, hPa at sea level, dew
- * point °C, epoch seconds - the bucket's slot on the strips, the reading's
- * own stamp on the navigator. A slot the station missed holds nulls. Strip
- * rows go on with the extremes of the samples in the slot, a min-max pair
- * per channel; navigator rows stop at the epoch.
+ * Row layout from the server: wall-clock ms, °C, %, hPa, dew point, epoch,
+ * then a min-max pair per channel on strip rows only. A missed slot is nulls.
  */
 const COLUMN = {
     time: 0,
@@ -131,41 +114,28 @@ const COLUMN = {
     pMax: 11,
 };
 
-/** How strongly the band behind a line is tinted, on either ground. */
 const BAND_OPACITY = 0.16;
 
-/** Event layout from the server: wall-clock ms, title, CSS colour or null. */
+/** Event row: wall-clock ms, title, CSS colour or null. */
 const EVENT = { time: 0, title: 1, colour: 2 };
 
-/**
- * An event entered without a colour. Neutral on purpose: it must read as a
- * mark on the record, not as a fourth channel, and the same mid-grey holds up
- * on both the light and the dark ground.
- */
+/** Fallback event colour; a mid-grey that works on both grounds. */
 const EVENT_COLOUR = "#a1a1aa";
 
-/**
- * Plot-area margins, shared by every canvas.
- *
- * The strips are connected and stack under one navigator, so their time axes
- * have to start and end on the same pixel. The right-hand margin is the width
- * a second value axis needs, and the pressure strip - which has no such axis -
- * keeps it empty rather than letting its axis run wider than the one above.
- */
+/** Shared by every canvas so the stacked time axes line up pixel for pixel; the right margin is a second value axis's width. */
 const GRID_SIDES = { left: 64, right: 64 };
 
 const charts = new Map();
 
 let rows = [];
 
-/** Things done to the station, each drawn as a vertical line across every strip. */
 let events = [];
 
 function isDark() {
     return document.documentElement.classList.contains("dark");
 }
 
-/** Two palettes rather than CSS variables: ECharts paints onto a canvas. */
+/** Two palettes, not CSS variables: ECharts paints onto a canvas. */
 function palette() {
     return isDark()
         ? {
@@ -189,8 +159,7 @@ function palette() {
 const LINE_COLOUR = {
     t: { light: "#d97706", dark: "#f59e0b" },
     h: { light: "#0891b2", dark: "#22d3ee" },
-    // Pink, not green: against the amber the green read as a second shade
-    // of it on the light ground.
+    // Pink: green read as a shade of the amber on the light ground.
     d: { light: "#db2777", dark: "#f472b6" },
     p: { light: "#7c3aed", dark: "#a78bfa" },
 };
@@ -199,7 +168,6 @@ function colourFor(key) {
     return LINE_COLOUR[key][isDark() ? "dark" : "light"];
 }
 
-/** A point between two hex colours, 0 being the first and 1 the second. */
 function mixColours(from, to, ratio) {
     const channel = (hex, offset) => parseInt(hex.slice(offset, offset + 2), 16);
     const blend = (offset) =>
@@ -211,14 +179,9 @@ function mixColours(from, to, ratio) {
 }
 
 /**
- * How a value axis's labels are coloured.
- *
- * An axis read by one line takes that line's colour. Read by two, the labels
- * run from the first line's colour at the top to the second's at the bottom,
- * so the axis says both lines are read against it - the dew point never
- * exceeds the temperature, so its colour belongs at the bottom. The gradient
- * is spread over the readings' own range, since ECharts hands a label its
- * value but not its place on the axis.
+ * One line: its colour. Two lines: a gradient from the first's colour at the
+ * top to the second's at the bottom, spread over the data range because
+ * ECharts hands a label its value, not its position.
  */
 function axisLabelStyle(axis, channels) {
     const readers = channels.filter((entry) => entry.axis === axis.key);
@@ -264,15 +227,11 @@ function formatNumber(value, decimals) {
     return numberFormats.get(decimals).format(value);
 }
 
-/** A channel's value with its unit; a hole in the record reads as one. */
 function formatValue(value, channel) {
     return value === null ? "n/a" : `${formatNumber(value, channel.decimals)} ${channel.unit}`;
 }
 
-/**
- * Wall-clock stamps are tagged UTC on purpose (see wallClockMs() on the
- * component), so every formatter here must read them as UTC too.
- */
+/** Stamps are wall-clock ms tagged UTC (see Dashboard::wallClockMs), so formatters read them as UTC. */
 const stampFormat = new Intl.DateTimeFormat("cs-CZ", {
     day: "numeric",
     month: "numeric",
@@ -281,7 +240,6 @@ const stampFormat = new Intl.DateTimeFormat("cs-CZ", {
     timeZone: "UTC",
 });
 
-/** The row nearest an axis value. */
 function nearestRow(list, time) {
     if (list.length === 0) {
         return null;
@@ -312,13 +270,7 @@ function rowAt(time) {
     return nearestRow(rows, time);
 }
 
-/**
- * A wall-clock millisecond back to the real epoch the server understands.
- *
- * The offset is not a constant - it is an hour in winter and two in summer -
- * so it is read off the nearest row, which carries both readings of the same
- * instant. That keeps a window dragged across a DST change honest.
- */
+/** Wall-clock ms back to a real epoch. The offset changes with DST, so it is read off the nearest row, which carries both. */
 function epochFromWallMs(list, milliseconds) {
     const row = nearestRow(list, milliseconds);
 
@@ -346,7 +298,6 @@ function tooltipHtml(params) {
     return readingsHtml(row);
 }
 
-/** One row of the record: its stamp, then every channel's value. */
 function readingsHtml(row) {
     const colours = palette();
     const heading =
@@ -373,13 +324,7 @@ function readingsHtml(row) {
     return heading + lines;
 }
 
-/**
- * The lowest and highest sample behind a mean, under it in the tooltip.
- *
- * Only where the two differ: a V1 reading is its own extreme on every
- * channel, and the navigator's rows carry none, and neither has a spread
- * worth a line.
- */
+/** Min and max under the mean, only where they differ (V1 rows and navigator rows have no spread). */
 function spreadHtml(row, channel) {
     const [low, high] = spreadOf(row, channel);
 
@@ -395,7 +340,6 @@ function spreadHtml(row, channel) {
     );
 }
 
-/** A channel's min-max pair off a row, or nulls where it carries none. */
 function spreadOf(row, channel) {
     if (!channel.band) {
         return [null, null];
@@ -404,15 +348,12 @@ function spreadOf(row, channel) {
     return channel.band.map((column) => row[COLUMN[column]] ?? null);
 }
 
-/** Whether a strip prints the event titles; only the top one does. */
 function labelsEvents(strip) {
     return strip === STRIPS[0] && events.length > 0;
 }
 
-/** Room above the plot for the event titles, when there are any to print. */
 const EVENT_LABEL_ROOM = 30;
 
-/** Event stamps carry the year: a shield fitted two summers ago is still marked. */
 const eventStampFormat = new Intl.DateTimeFormat("cs-CZ", {
     day: "numeric",
     month: "numeric",
@@ -422,7 +363,7 @@ const eventStampFormat = new Intl.DateTimeFormat("cs-CZ", {
     timeZone: "UTC",
 });
 
-/** Titles are typed in by hand and land in innerHTML; keep them text. */
+/** Titles are hand-typed and land in innerHTML. */
 function escapeHtml(text) {
     const node = document.createElement("span");
     node.textContent = text;
@@ -430,13 +371,7 @@ function escapeHtml(text) {
     return node.innerHTML;
 }
 
-/**
- * The spacing between the rows on screen, to tell a gap from a step.
- *
- * The bucket width sets it per window - ten minutes on a day, an hour on a
- * month - so it is read off the rows rather than assumed. The median, so that
- * one outage in an otherwise regular record does not widen it.
- */
+/** Median spacing between rows, to tell a gap from a step. Read off the rows because the bucket width varies with the window. */
 let step = 0;
 
 function typicalStep(list) {
@@ -455,7 +390,6 @@ function typicalStep(list) {
     return gaps[gaps.length >> 1];
 }
 
-/** Whether the record has a reading at that instant, or only a hole there. */
 function hasReadingAt(time) {
     const row = rowAt(time);
 
@@ -463,21 +397,15 @@ function hasReadingAt(time) {
 }
 
 /**
- * The event line under the pointer, if any: `{ name, time, colour }`.
- *
- * Module-wide on purpose. The line has no tooltip of its own - an item tooltip
- * on a connected chart broadcasts its data index, and the other strip reads
- * that as one of its readings and jumps there. Instead the axis tooltip, which
- * the strips already share, reads this and adds the title, so hovering a line
- * on either strip keeps both tooltips in step.
+ * The event line under the pointer. Event lines have no tooltip of their
+ * own: an item tooltip on a connected chart broadcasts its data index and the
+ * other strip jumps to that reading. The shared axis tooltip reads this instead.
  */
 let hovered = null;
 
 function trackEventHover(chart) {
-    // `mousemove` rather than `mouseover`: zrender delivers an element's own
-    // mousemove before the global one the axis pointer listens to, whereas
-    // mouseover comes after - the first tooltip on a line would miss the
-    // title and keep missing it until the pointer moved again.
+    // mousemove, not mouseover: zrender fires mouseover after the axis
+    // pointer's global handler, so the first tooltip would miss the title.
     chart.on("mousemove", (params) => {
         if (params.componentType === "markLine") {
             hovered = {
@@ -495,13 +423,7 @@ function trackEventHover(chart) {
     });
 }
 
-/**
- * Where the line crosses readings, the tooltip is the readings' own with the
- * title set above it - the pointer is on the record as much as on the line,
- * and the values must not vanish because a line runs through them. Only over
- * a hole in the record does the event stand alone, with its date, since there
- * is no reading's stamp to give one.
- */
+/** Over readings: their tooltip with the title above. Over a hole: the event alone, with its date. */
 function eventTooltipHtml(event) {
     const colours = palette();
     const row = hasReadingAt(event.time);
@@ -525,14 +447,8 @@ function eventTooltipHtml(event) {
 }
 
 /**
- * The station's events as vertical lines.
- *
- * The line runs down every strip so the eye can carry it from one channel to
- * the next, but the title is printed once, on the top strip - the same words
- * twice under each other say nothing more. It sits at the line's `end`, above
- * the plot: every `inside*` position lays the text along the line, which on
- * a vertical one means reading sideways. No tooltip of its own - see
- * `hovered` for why the axis tooltip carries the title instead.
+ * Event lines on every strip, title on the top one only. Label at `end`:
+ * every `inside*` position lays the text along the line, sideways.
  */
 function eventMarks(strip) {
     return {
@@ -551,18 +467,11 @@ function eventMarks(strip) {
     };
 }
 
-/**
- * The colour as stored, if the browser agrees it is one.
- *
- * The column takes any string, and the value ends up both in a canvas style
- * and inside the tooltip's markup; anything that is not a colour falls back
- * to the neutral one rather than reaching either.
- */
+/** The column takes any string and the value lands in a canvas style and in markup; only a real colour gets through. */
 function eventColour(value) {
     return typeof value === "string" && CSS.supports("color", value) ? value : EVENT_COLOUR;
 }
 
-/** One dashed vertical line per event, in its own colour. */
 function eventLines() {
     return events.map((event) => {
         const colour = eventColour(event[EVENT.colour]);
@@ -570,8 +479,7 @@ function eventLines() {
         return {
             name: event[EVENT.title],
             xAxis: event[EVENT.time],
-            // A dash pattern rather than "dashed": ECharts scales that one with
-            // the width, and at 2 px the gaps grew wider than the dashes.
+            // Explicit pattern: "dashed" scales with the width and at 2 px the gaps outgrew the dashes.
             lineStyle: { color: colour, type: [4, 3], width: 2, opacity: 0.9 },
             label: { color: colour },
         };
@@ -581,11 +489,8 @@ function eventLines() {
 function optionFor(strip) {
     const colours = palette();
     const channels = strip.channels.map(channelFor).filter(isShown);
-    // One axis per distinct `axis` among the lines actually drawn - so the
-    // temperature's axis stands even when only the dew point reads it - in
-    // the strip's declared order, not the order of what happens to be on:
-    // the temperature axis keeps the left whichever of its lines is drawn,
-    // and humidity moves there only when it is the only line left.
+    // One axis per distinct `axis` among the drawn lines, in declared order,
+    // so the temperature axis keeps the left whichever of its lines is on.
     const wanted = new Set(channels.map((entry) => entry.axis));
     const axes = [...new Set(strip.channels.map((key) => channelFor(key).axis))]
         .filter((key) => wanted.has(key))
@@ -593,8 +498,7 @@ function optionFor(strip) {
 
     return {
         animation: false,
-        // Stamps carry the station's local offset already; reading them as UTC
-        // is what keeps the axis on Czech time for every viewer.
+        // Stamps already carry the local offset; UTC keeps the axis on station time for every viewer.
         useUTC: true,
         grid: {
             ...GRID_SIDES,
@@ -621,21 +525,18 @@ function optionFor(strip) {
             },
             splitLine: { show: true, lineStyle: { color: colours.grid } },
         },
-        // The axis labels carry their series' colour: with two units on one
-        // grid, that is what says which line is read against which side.
         yAxis: axes.map((entry, index) => ({
             type: "value",
             scale: true,
             position: index === 0 ? "left" : "right",
             axisLabel: { fontSize: 10, ...axisLabelStyle(entry, channels) },
-            // Only the first axis rules the grid - a second set of lines at
-            // another scale would cross it at arbitrary heights.
+            // Grid lines from the first axis only.
             splitLine: {
                 show: index === 0,
                 lineStyle: { color: colours.grid },
             },
         })),
-        // The bands go first so every line is drawn over every tint.
+        // Bands first, lines over them.
         series: [
             ...channels.flatMap((entry) =>
                 bandSeries(
@@ -648,7 +549,7 @@ function optionFor(strip) {
                 name: entry.label,
                 yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
                 showSymbol: false,
-                // A derived line is dashed, so it is not mistaken for a reading.
+                // Derived line, dashed.
                 lineStyle: {
                     width: 1.5,
                     color: colourFor(entry.key),
@@ -656,7 +557,6 @@ function optionFor(strip) {
                 },
                 itemStyle: { color: colourFor(entry.key) },
                 data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
-                // One set of lines per canvas is enough; they belong to no series.
                 markLine: index === 0 ? eventMarks(strip) : undefined,
             })),
         ],
@@ -664,14 +564,9 @@ function optionFor(strip) {
 }
 
 /**
- * The tint between a channel's lowest and highest sample, behind its line.
- *
- * ECharts has no band series, so it is two stacked lines: an invisible one
- * along the minimum and, stacked on it, the spread up to the maximum with
- * its area filled. A slot the station missed is null on both and leaves the
- * same hole the line does. The pair is silent - the tooltip reads the
- * extremes off the row itself - and neither takes part in the axis pointer's
- * snapping.
+ * ECharts has no band series: an invisible line along the minimum and the
+ * spread stacked on it with its area filled. Both silent; the tooltip reads
+ * the extremes off the row.
  */
 function bandSeries(channel, yAxisIndex) {
     if (!channel.band) {
@@ -686,8 +581,7 @@ function bandSeries(channel, yAxisIndex) {
     const shared = {
         type: "line",
         stack: `band-${channel.key}`,
-        // The default only stacks values of one sign, and a winter minimum
-        // is below zero while the spread on top of it never is.
+        // Default stacking only stacks one sign; a winter minimum is negative, the spread is not.
         stackStrategy: "all",
         yAxisIndex,
         silent: true,
@@ -716,10 +610,8 @@ let overview = [];
 
 let overviewChart = null;
 
-/** True while the slider is being positioned from the server's answer. */
 let settingWindow = false;
 
-/** The window the server last gave us, to recognise an echo of it. */
 let applied = { from: null, to: null };
 
 function navigatorOption(from, to) {
@@ -728,21 +620,15 @@ function navigatorOption(from, to) {
     return {
         animation: false,
         useUTC: true,
-        // The slider draws its own shadow of the data, so the plot area adds
-        // nothing but the room the axis labels need beneath it.
         grid: { ...GRID_SIDES, top: 4, height: 44 },
-        // Two axes over the same record. A slider narrows the axis it drives
-        // to the window, so labels and marks drawn against that axis would
-        // read the window while the shadow above them spans everything. The
-        // driven axis is therefore hidden, and a second one - pinned to the
-        // record's ends, which is what the shadow spans - carries the labels
-        // and the event lines.
+        // Two x axes: the slider narrows the one it drives to the window, so
+        // that one is hidden and a second, pinned to the record's ends like
+        // the shadow, carries the labels and the event lines.
         xAxis: [
             { type: "time", show: false },
             {
                 type: "time",
-                // Explicit: a second x axis is placed opposite the first by
-                // default, which would put this one along the top.
+                // A second x axis defaults to the opposite side.
                 position: "bottom",
                 min: "dataMin",
                 max: "dataMax",
@@ -788,7 +674,6 @@ function navigatorOption(from, to) {
             },
         ],
         series: [
-            // What the slider shadows.
             {
                 type: "line",
                 xAxisIndex: 0,
@@ -796,11 +681,7 @@ function navigatorOption(from, to) {
                 lineStyle: { width: 0 },
                 data: overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
             },
-            // The same rows again, unzoomed, so the labelled axis spans exactly
-            // what the shadow does, and the event lines land on the record
-            // where they fall. Bare lines: the slider sits on top and takes
-            // the pointer, and at this height a title would collide with the
-            // axis.
+            // The same rows on the unzoomed axis, so labels and event lines span what the shadow does.
             {
                 type: "line",
                 xAxisIndex: 1,
@@ -823,14 +704,14 @@ function bindNavigator(component) {
     let pending = null;
 
     overviewChart.on("datazoom", () => {
-        // Ignore the echo of positioning the slider ourselves.
+        // Echo of our own positioning.
         if (settingWindow) {
             return;
         }
 
         clearTimeout(pending);
 
-        // Dragging fires continuously; only the resting place is worth a query.
+        // Only the resting place is worth a query.
         pending = setTimeout(() => {
             const zoom = overviewChart.getOption().dataZoom?.[0];
 
@@ -845,8 +726,7 @@ function bindNavigator(component) {
                 return;
             }
 
-            // Slider positions round; a drag that lands back where it started
-            // must not bounce a request off the server.
+            // Landed where it started.
             const unchanged =
                 applied.from !== null &&
                 Math.abs(from - applied.from) < 60 &&
@@ -886,21 +766,13 @@ function mountNavigator(payload, component) {
 
     settingWindow = true;
     overviewChart.setOption(navigatorOption(from, to), { notMerge: true });
-    // The event can arrive after setOption returns, so the guard is lifted a
-    // tick later rather than on the next line.
+    // The event can arrive after setOption returns.
     setTimeout(() => {
         settingWindow = false;
     }, 0);
 }
 
-/**
- * Let the page keep the wheel.
- *
- * ZRender binds its own wheel listener to the canvas, which swallowed the
- * scroll whenever the pointer crossed a chart. Stopping the event here in the
- * capture phase means it never reaches that listener, while the browser's
- * default - scrolling the page - is left untouched.
- */
+/** ZRender's wheel listener swallows page scroll over a chart; stop it in capture, keep the browser default. */
 function blockWheel(element) {
     element.addEventListener("wheel", (event) => event.stopPropagation(), {
         capture: true,
@@ -908,7 +780,6 @@ function blockWheel(element) {
     });
 }
 
-/** Map a pixel column back to the real epoch the server understands. */
 function epochAt(chart, clientX) {
     const box = chart.getDom().getBoundingClientRect();
     const time = chart.convertFromPixel({ xAxisIndex: 0 }, clientX - box.left);
@@ -984,10 +855,8 @@ function bindZoom(chart, element, component) {
 
 let mounting = false;
 
-/** The channel payload currently on the canvases, to recognise an unchanged one. */
 let painted = null;
 
-/** The channels, the events and the switches together: any changing means a repaint. */
 function paintKey(payload) {
     return (
         payload.dataset.chartRows +
@@ -1049,18 +918,14 @@ function render(payload, force) {
 
     mountNavigator(payload, component);
 
-    // A poll that brought nothing new to this window - most of them, since the
-    // station uploads every ten minutes and a zoomed window never moves - must
-    // not repaint the channels underneath a reader's pointer. The navigator
-    // above has already taken whatever arrived.
+    // Most polls change nothing in this window; do not repaint under the pointer.
     if (!force && paintKey(payload) === painted) {
         return;
     }
 
     painted = paintKey(payload);
 
-    // The lines are about to be rebuilt; whatever was under the pointer is
-    // gone, and no mouseout will say so.
+    // No mouseout comes for a line that is rebuilt.
     hovered = null;
 
     document.querySelectorAll("[data-strip]").forEach((element) => {
@@ -1104,17 +969,10 @@ function resize() {
 }
 
 /**
- * Livewire rewrites the payload attributes on every window change.
- *
- * The navigator's rows are watched as well as the channels': a reader zoomed
- * into the past holds a window of fixed epochs, so a poll leaves the channel
- * payload identical while the navigator - which always spans the whole record
- * - grows a point. Watching only the channels would leave the record ending
- * wherever the page was opened.
- *
- * Attributes only - never childList. ECharts appends its tooltip to the body
- * and repaints on `setOption`, so an observer watching for added nodes would
- * be re-triggered by the very mount it just ran, and the page would lock up.
+ * Livewire rewrites the payload attributes on every poll. The navigator's
+ * are watched too: a zoomed window's channel payload never changes while
+ * the record keeps growing. Attributes only, never childList: ECharts
+ * appends to the body on setOption and the observer would loop.
  */
 function watchPayload() {
     new MutationObserver(() => mount()).observe(document.body, {
@@ -1129,14 +987,13 @@ function watchPayload() {
     });
 }
 
-/** Flux toggles `.dark` on the root element; the canvas has to be repainted. */
+/** Flux toggles `.dark` on the root; a canvas has to be repainted. */
 function watchTheme() {
     let dark = isDark();
 
     new MutationObserver(() => {
         if (dark !== isDark()) {
             dark = isDark();
-            // The rows have not changed, only the palette they are drawn in.
             mount(true);
         }
     }).observe(document.documentElement, {
@@ -1151,6 +1008,5 @@ document.addEventListener("DOMContentLoaded", () => {
     watchTheme();
 });
 
-// A navigation hands over fresh canvases, so nothing that was painted survives.
 document.addEventListener("livewire:navigated", () => mount(true));
 window.addEventListener("resize", resize);

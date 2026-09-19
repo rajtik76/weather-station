@@ -1,5 +1,4 @@
-# Local PostgreSQL, the same major and image as the shared cluster the app
-# runs against in production. Nothing else: the app itself is served by Herd.
+# Local PostgreSQL, same image as production. The app itself runs under Herd.
 services:
     pgsql:
         image: postgres:18-alpine
@@ -10,10 +9,9 @@ services:
             POSTGRES_USER: "${DB_USERNAME:-weather_station}"
             POSTGRES_PASSWORD: "${DB_PASSWORD:-secret}"
         volumes:
-            # PostgreSQL 18 moved the cluster under /var/lib/postgresql/<major>,
-            # so the volume mounts the parent rather than the old .../data.
+            # PostgreSQL 18 keeps the cluster under /var/lib/postgresql/<major>.
             - pgsql:/var/lib/postgresql
-            # Runs once, on an empty volume: creates the database the tests use.
+            # Runs once on an empty volume: creates the test database.
             - ./docker/pgsql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
         healthcheck:
             test:

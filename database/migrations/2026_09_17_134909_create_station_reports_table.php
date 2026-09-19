@@ -13,8 +13,7 @@ return new class extends Migration
         Schema::create('station_reports', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('sensor_id')->constrained()->restrictOnDelete();
-            // The `station` object of an upload, as it arrived. Kept as a
-            // blob because the firmware decides what it reports.
+            // The `station` object as it arrived; the firmware decides what it reports.
             $table->jsonb('data');
             $table->timestamps();
 
