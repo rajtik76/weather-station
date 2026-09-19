@@ -120,7 +120,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs weathe
 
 Once a build with OTA runs on the board, the next one goes over the LAN:
 the board listens on port 3232, announces itself over mDNS, and the IDE
-lists `weather-station at 192.168.0.200` under _Port_ next to the serial
+lists `weather-station` with its address under _Port_ next to the serial
 ones. From the terminal:
 
 ```
@@ -194,13 +194,8 @@ taken. One entry per ten-minute window.
 }
 ```
 
-| Field                         | Unit             | Range           |
-| ----------------------------- | ---------------- | --------------- |
-| `timestamp`                   | UTC Unix seconds | 1 .. 4294967295 |
-| `temperature`, `_min`, `_max` | 0.01 °C          | -4000 .. 8500   |
-| `humidity`, `_min`, `_max`    | 0.01 %           | 0 .. 10000      |
-| `pressure`, `_min`, `_max`    | Pa               | 30000 .. 110000 |
-| `samples`                     | readings         | 1 .. 65535      |
+Units, ranges and what the server answers are in
+[`docs/api.md`](../docs/api.md).
 
 Beside `measurements` goes a `station` object with the state of the board
 at the time of the upload - see _Looking at the station_ for the fields.
@@ -222,8 +217,7 @@ Pressure is station pressure - what the sensor reads where it hangs, not
 reduced. The server reduces it to sea level for display
 (`App\ValueObject\SeaLevelPressure`, height in `Dashboard::ALTITUDE_METRES`),
 so the record keeps the measurement and a corrected height does not mean
-rewriting it. The GPS field in `bn357_types.h` is there to supply that height
-once a later version carries it.
+rewriting it.
 
 ## Notes
 

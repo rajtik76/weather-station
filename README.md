@@ -17,10 +17,6 @@ BME280 --I2C--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
-![The dashboard: the last three transmissions, a week of the three channels, and the station's approximate location](docs/dashboard.png)
-
-The screenshot shows seeded sample data, not the live record.
-
 ## Accuracy
 
 This is a hobby station, and the readings should be read as such. The sensor
@@ -66,7 +62,7 @@ so a view can be linked to.
 | `app/Models/`       | Sensors, measurements, station reports and the hand-written events.                                                        |
 | `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                     |
 | `database/seeders/` | A month of two stations' weather, for a chart without a device on the desk.                                                |
-| `docs/`             | [How the readings are stored](docs/storage.md).                                                                            |
+| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands.                                               |
 | `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.      |
 | `.ai/rules/`        | Conventions that are not obvious from reading the code.                                                                    |
 
@@ -87,10 +83,9 @@ wedges the ones queued behind it. Beside the measurements a batch may carry a
 `station` object with the board's state at the time of the upload; the server
 keeps it apart from the readings.
 
-Payload shape, units and ranges are in the
-[firmware README](firmware/README.md#protocol). How the versions differ, how
-a row is stored and what happens to old ones is in
-[`docs/storage.md`](docs/storage.md).
+The full contract - fields, ranges, responses - and what becomes of a batch
+once it is stored are in [`docs/api.md`](docs/api.md); the firmware's side
+of the payload in the [firmware README](firmware/README.md#protocol).
 
 ## Running it
 
@@ -100,19 +95,21 @@ components only, so there is nothing to buy and no `auth.json` to fill in.
 ```
 docker compose up -d   # PostgreSQL 18 on 5432, with a second database for the tests
 composer setup         # install, .env, app key, migrate, build assets
+php artisan migrate:fresh --seed   # a month of sample data; wipes the local database
 composer dev           # server, queue worker, logs, vite
 composer test
 composer review        # rector, phpstan, tests
 ```
 
-Two values in `.env` are the project's own. `SENSOR_API_TOKEN` is what the firmware sends as
-its bearer token; the endpoint denies everything while it is empty.
+Two values in `.env` are the project's own. `SENSOR_API_TOKEN` is what the
+firmware sends as its bearer token; the endpoint denies everything while it
+is empty.
 `SENSOR_HEARTBEAT_URL` is optional: when set, the server requests it after
 storing a batch, which suits a push monitor that alerts once the pings stop.
 
 PostgreSQL everywhere, the same image as production: the dashboard averages
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
-back on. `MeasurementSeeder` fills the dashboard's window at the reporting
+back on. `MeasurementSeeder` writes a month of two stations at the reporting
 interval, which is the fastest way to get something on the chart without a
 device on the desk.
 
