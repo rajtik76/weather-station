@@ -42,7 +42,8 @@ ten minutes, so the limit only ever bites a retry loop gone wrong.
         }
     ],
     "station": {
-        "firmware": "2.2.0",
+        "firmware": "2.3.0",
+        "board": "ESP32C3_DEV",
         "reset_reason": "power on",
         "uptime": 86400,
         "heap_free": 183000,
@@ -99,17 +100,42 @@ are dropped before storing.
 | Field                                                                             | Type                    |
 | --------------------------------------------------------------------------------- | ----------------------- |
 | `firmware`                                                                        | string, up to 32        |
+| `board`                                                                           | string, up to 40        |
 | `reset_reason`                                                                    | string, up to 40        |
 | `uptime`, `heap_free`, `heap_min`, `wifi_switches`, `buffered`, `upload_failures` | integer, 0 or more      |
 | `ssid`, `ip`                                                                      | string or null          |
 | `rssi`                                                                            | integer, -120 .. 0      |
 | `wifi_network`                                                                    | `0` primary, `1` backup |
 
-The clock drift set - `clock_step_ms`, `clock_step_over_s`,
-`clock_step_max_ms`, `clock_synced_at` - is the one exception: added in
-firmware 2.2, it may be left out as a whole so an older build keeps
-uploading, but all four or none. A half-reported set is refused rather than
-shown.
+Two exceptions, so an older build keeps uploading through a server
+upgrade. The clock drift set - `clock_step_ms`, `clock_step_over_s`,
+`clock_step_max_ms`, `clock_synced_at` - was added in firmware 2.2 and may
+be left out as a whole, but all four or none; a half-reported set is
+refused rather than shown. `board`, the IDE's board selection
+(`ARDUINO_BOARD`: `ESP32C3_DEV`, `DFROBOT_FIREBEETLE_2_ESP32C6`,
+`ESP32_DEV`), was added in firmware 2.3 and may be left out.
+
+### Firmware and server versions
+
+The firmware is tagged `fw/v<version>` on the commit it was built from and
+its history is [`firmware/CHANGELOG.md`](../firmware/CHANGELOG.md); the app
+is tagged `v<version>`. What each side introduced, and the first release of
+the other side that understands it:
+
+| Payload                                           | Firmware from | Server from |
+| ------------------------------------------------- | ------------- | ----------- |
+| `protocol_version` 1                              | 1.0.0         | v1.0.0      |
+| `protocol_version` 2, windows with extremes       | 2.0.0         | v2.0.0      |
+| `station` object                                  | 2.1.0         | v2.1.0      |
+| `station.clock_step_*`, `station.clock_synced_at` | 2.2.0         | v2.2.0      |
+| `station.board`                                   | 2.3.0         | unreleased  |
+
+A server older than the row refuses a V2 batch (unknown `protocol_version`)
+and ignores a `station` object it does not know; it refuses nothing else
+from a newer firmware, because every later field is optional. A firmware
+older than the row simply does not send the field, and the dashboard leaves
+the row out. The board itself never appears in the payload before 2.3;
+for those rows the changelog is the only record of the hardware.
 
 ## Response
 

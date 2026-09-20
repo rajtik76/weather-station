@@ -53,17 +53,17 @@ so a view can be linked to.
 
 ## Layout
 
-| Path                | Contents                                                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`         | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md). |
-| `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                    |
-| `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                            |
-| `app/ValueObject/`  | Per-version decoding of a measurement payload.                                                                             |
-| `app/Models/`       | Sensors, measurements, station reports and the hand-written events.                                                        |
-| `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                     |
-| `database/seeders/` | A month of two stations' weather, for a chart without a device on the desk.                                                |
-| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands.                                               |
-| `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.      |
+| Path                | Contents                                                                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`         | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md); each build that went on a board, with its hardware and the server release it needs, in [`firmware/CHANGELOG.md`](firmware/CHANGELOG.md). |
+| `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                                                                                                                                                             |
+| `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                                                                                                                                                                     |
+| `app/ValueObject/`  | Per-version decoding of a measurement payload.                                                                                                                                                                                                                      |
+| `app/Models/`       | Sensors, measurements, station reports and the hand-written events.                                                                                                                                                                                                 |
+| `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                                                                                                                                                              |
+| `database/seeders/` | A month of two stations' weather, for a chart without a device on the desk.                                                                                                                                                                                         |
+| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands.                                                                                                                                                                                        |
+| `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.                                                                                                                                               |
 
 ## API
 

@@ -110,11 +110,24 @@ and a second provider is what a backup is for. Once on the backup it tries
 the primary again every hour, with an empty buffer, so the try costs no
 data. Leave `BACKUP_WIFI_SSID` empty to run on one network.
 
-To build from the terminal, the IDE's own `arduino-cli` does it:
+To build from the terminal, `arduino-cli` (Homebrew, or the one bundled
+with the IDE) shares the IDE's cores and libraries:
 
 ```
 arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs weather_station
 ```
+
+### Versions
+
+`FIRMWARE_VERSION` in `weather_station.ino` is bumped with every build that
+goes on a board - a fix is a patch, a feature a minor, a new board or
+protocol a major - and the commit it was built from is tagged
+`fw/v<version>`, apart from the app's own `v<version>` tags. The board
+reports the number with every upload, so the dashboard and the
+`station_reports` table say what is running; the tag says what that is.
+[`CHANGELOG.md`](CHANGELOG.md) keeps the history with the board, protocol
+and the server release each build needs; which server release understands
+which field is in [`docs/api.md`](../docs/api.md#firmware-and-server-versions).
 
 ## Updating over the air
 
@@ -153,7 +166,9 @@ it is on, or by the IP the router hands it.
 | `/log/flash` | The log on the flash: everything but readings, survives a restart |
 
 `/status` and the `station` object in every upload carry the same things:
-firmware version, why the board last booted, uptime, free heap and the
+firmware version and board (`ARDUINO_BOARD`, the IDE's board selection, so
+the record shows which hardware sent what after a swap), why the board
+last booted, uptime, free heap and the
 lowest it has been, SSID, IP and RSSI, which network the station is on and
 how many times it switched, how many windows wait in the buffer, how many
 uploads failed in a row, and the clock's drift - `clock_step_ms`, the
