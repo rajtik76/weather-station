@@ -34,3 +34,6 @@ firmware/secrets.h
 
 *.swp
 *.swo
+
+# Python venv for schemdraw (circuit schematics in docs/)
+/.venv
