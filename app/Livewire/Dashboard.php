@@ -40,7 +40,7 @@ use UnexpectedValueException;
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
  * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
- * @property-read array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
+ * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
  * @property-read CarbonInterface|null $lastMeasurement
  * @property-read string|null $measuredAt
@@ -426,7 +426,7 @@ class Dashboard extends Component
      * The newest `station` object of the selected sensor. SSID and IP stay
      * off the page: it is public.
      *
-     * @return array{firmware: string, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null
+     * @return array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null
      */
     #[Computed]
     public function stationReport(): ?array
@@ -445,6 +445,8 @@ class Dashboard extends Component
 
         return [
             'firmware' => (string) $data['firmware'],
+            // Null before firmware 2.3, which is when the board began reporting it.
+            'board' => isset($data['board']) ? (string) $data['board'] : null,
             'resetReason' => (string) $data['reset_reason'],
             'uptime' => $this->duration((int) $data['uptime']),
             'network' => (int) $data['wifi_network'] === 0 ? 'primary' : 'backup',

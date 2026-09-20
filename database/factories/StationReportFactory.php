@@ -25,7 +25,8 @@ class StationReportFactory extends Factory
         return [
             'sensor_id' => Sensor::factory(),
             'data' => [
-                'firmware' => '2.2.0',
+                'firmware' => '2.3.0',
+                'board' => 'ESP32C3_DEV',
                 'reset_reason' => fake()->randomElement(['power on', 'software restart', 'task watchdog']),
                 'uptime' => fake()->numberBetween(60, 864_000),
                 'heap_free' => fake()->numberBetween($heapMin, 220_000),

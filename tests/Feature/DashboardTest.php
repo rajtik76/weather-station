@@ -1042,7 +1042,8 @@ it('shows what the station last reported about itself', function (): void {
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     StationReport::factory()->for($sensor)->create([
         'data' => [
-            'firmware' => '2.1.0',
+            'firmware' => '2.3.0',
+            'board' => 'ESP32C3_DEV',
             'reset_reason' => 'task watchdog',
             'uptime' => 3 * 86_400 + 4 * 3_600 + 12 * 60,
             'heap_free' => 187 * 1024,
@@ -1067,7 +1068,8 @@ it('shows what the station last reported about itself', function (): void {
         ->assertSee('Station · as reported with the last upload')
         // 12:00 UTC is 14:00 in Prague in September.
         ->assertSee('17. 9. 2026 14:00')
-        ->assertSeeInOrder(['firmware', '2.1.0'])
+        ->assertSeeInOrder(['firmware', '2.3.0'])
+        ->assertSeeInOrder(['board', 'ESP32C3_DEV'])
         ->assertSeeInOrder(['uptime', '3 d 4 h'])
         ->assertSeeInOrder(['last reset', 'task watchdog'])
         ->assertSeeInOrder(['network', 'backup'])
@@ -1105,6 +1107,20 @@ it('shows no clock drift before the station has re-synced once', function (): vo
             ->assertDontSee('clock drift')
             ->assertDontSee('clock synced');
     }
+});
+
+it('shows no board before firmware 2.3 reported one', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    $data = StationReport::factory()->raw()['data'];
+    unset($data['board']);
+    StationReport::factory()->for($sensor)->create(['data' => $data]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Station · as reported')
+        // The word is all over the page ("dashboard"); the label is what must be missing.
+        ->assertDontSee('>board</dt>', false);
 });
 
 it('shows no station block before the firmware has reported', function (): void {

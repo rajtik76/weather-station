@@ -339,10 +339,11 @@
                 </p>
             </div>
 
-            {{-- Clock rows only once the board has measured a drift. --}}
+            {{-- Board only from firmware 2.3, clock rows only once the board has measured a drift. --}}
             <dl class="grid grid-cols-2 gap-x-8 gap-y-3 px-4 pb-4 font-mono text-xs tabular-nums sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
                 @foreach ([
                     'firmware' => $report['firmware'],
+                    ...($report['board'] === null ? [] : ['board' => $report['board']]),
                     'uptime' => $report['uptime'],
                     'last reset' => $report['resetReason'],
                     'network' => $report['network'],

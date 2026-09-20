@@ -9,6 +9,7 @@
 // be read back from the server afterwards.
 typedef struct {
   const char* firmware;       // FIRMWARE_VERSION
+  const char* board;          // FIRMWARE_BOARD, the IDE's board selection
   const char* reset_reason;   // why the board last booted
   uint32_t uptime_s;
   uint32_t heap_free;         // bytes
@@ -36,6 +37,7 @@ typedef struct {
 // The subset that rides with every batch.
 static void stationStatusToJson(const station_status_t& s, JsonObject out) {
   out["firmware"] = s.firmware;
+  out["board"] = s.board;
   out["reset_reason"] = s.reset_reason;
   out["uptime"] = s.uptime_s;
   out["heap_free"] = s.heap_free;

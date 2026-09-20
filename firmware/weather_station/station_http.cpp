@@ -36,7 +36,7 @@ static void sendSummary() {
 
   char body[1024];
   snprintf(body, sizeof(body),
-           "weather station %s\n"
+           "weather station %s on %s\n"
            "\n"
            "uptime          %lu s\n"
            "reset reason    %s\n"
@@ -52,7 +52,7 @@ static void sendSummary() {
            "failed in a row %u\n"
            "\n"
            "/status  /log  /log/flash\n",
-           s.firmware,
+           s.firmware, s.board,
            (unsigned long)s.uptime_s,
            s.reset_reason,
            s.clock_set ? "set" : "NOT SET", synced,

@@ -318,6 +318,18 @@ describe('station report', function (): void {
             ->assertJsonValidationErrors(['station.wifi_network' => 'The station.wifi network field must not be greater than 1.']);
     });
 
+    // Firmware before 2.3 does not say which board it runs on.
+    it('does not demand the board', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['firmware' => '2.2.0']])
+            ->assertJsonMissingValidationErrors(['station.board']);
+    });
+
+    it('bounds the board name', function (): void {
+        postJson('/api/v1/measurement', ['station' => ['board' => str_repeat('X', 41)]])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['station.board' => 'The station.board field must not be greater than 40 characters.']);
+    });
+
     // Firmware before 2.2 sends no clock fields.
     it('does not demand the clock drift', function (): void {
         postJson('/api/v1/measurement', ['station' => ['firmware' => '2.1.0']])

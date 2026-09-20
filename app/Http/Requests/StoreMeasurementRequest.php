@@ -68,6 +68,8 @@ class StoreMeasurementRequest extends FormRequest
         return [
             'station' => ['sometimes', 'array'],
             'station.firmware' => ['required_with:station', 'string', 'max:32'],
+            // Optional (added in firmware 2.3): the IDE's board selection.
+            'station.board' => ['sometimes', 'string', 'max:40'],
             'station.reset_reason' => ['required_with:station', 'string', 'max:40'],
             'station.uptime' => ['required_with:station', 'integer', 'min:0'],
             'station.heap_free' => ['required_with:station', 'integer', 'min:0'],

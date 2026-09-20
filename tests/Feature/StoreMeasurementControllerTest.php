@@ -183,7 +183,8 @@ it('registers a sensor on its first upload and reuses it afterwards', function (
 function stationReport(): array
 {
     return [
-        'firmware' => '2.2.0',
+        'firmware' => '2.3.0',
+        'board' => 'ESP32C3_DEV',
         'reset_reason' => 'task watchdog',
         'uptime' => 4212,
         'heap_free' => 187_000,

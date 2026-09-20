@@ -23,8 +23,17 @@
 #include "window.h"
 #include "window_buffer.h"
 
-// Sent with every batch; bump it with each build.
-#define FIRMWARE_VERSION "2.2.0"
+// Sent with every batch; bump it with each build that goes on a board, and
+// tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
+#define FIRMWARE_VERSION "2.3.0"
+
+// The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
+// DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
+// server can tell which hardware sent what after a board swap.
+#ifndef ARDUINO_BOARD
+#define ARDUINO_BOARD "unknown"
+#endif
+#define FIRMWARE_BOARD ARDUINO_BOARD
 
 // ESP32-C3-DevKitM-1 hardware I2C: SDA GPIO8, SCL GPIO9.
 #define BME280_SDA_PIN SDA
@@ -95,6 +104,7 @@ static const char* resetReasonName(esp_reset_reason_t reason) {
 // by whoever changes it.
 static void refreshStatus() {
   status.firmware = FIRMWARE_VERSION;
+  status.board = FIRMWARE_BOARD;
   status.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);  // 64-bit, no wrap at 49 days
   status.heap_free = ESP.getFreeHeap();
   status.heap_min = ESP.getMinFreeHeap();
@@ -676,8 +686,8 @@ void setup() {
 
   stationFsBegin();
   status.reset_reason = resetReasonName(esp_reset_reason());
-  logInfo("weather station %s, protocol %d, reset reason: %s",
-          FIRMWARE_VERSION, TRANSMISSION_VERSION, status.reset_reason);
+  logInfo("weather station %s on %s, protocol %d, reset reason: %s",
+          FIRMWARE_VERSION, FIRMWARE_BOARD, TRANSMISSION_VERSION, status.reset_reason);
 
   uint16_t restored = windowBufferLoad();
   if (restored > 0) {
