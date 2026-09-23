@@ -14,7 +14,7 @@ before.
 
 ## 3.0.0 - 2026-09-23
 
-Board ESP32_DEV · Protocol 3 · Server v3.0.0
+Board ESP32_DEV · Protocol 3 · Server v3.0.1
 
 - New board: ESP32-WROOM-32 (`esp32:esp32:esp32`, _ESP32 Dev Module_),
   still `min_spiffs`. The C3's shared-LED workaround is gone.

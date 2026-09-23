@@ -160,7 +160,7 @@ the other side that understands it:
 | `station` object                                  | 2.1.0         | v2.1.0      |
 | `station.clock_step_*`, `station.clock_synced_at` | 2.2.0         | v2.2.0      |
 | `station.board`                                   | 2.3.0         | v3.0.0      |
-| `protocol_version` 3, `noise` per window          | 3.0.0         | v3.0.0      |
+| `protocol_version` 3, `noise` per window          | 3.0.0         | v3.0.1      |
 
 A server older than the row refuses a V2 or V3 batch (unknown
 `protocol_version`) and ignores a `station` object or `noise` object it does
