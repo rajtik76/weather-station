@@ -335,5 +335,4 @@ half and reads low; the 25 - 40 Hz bands get one bin each.
 `weather_station` is the station. `sensors_check` is diagnostics for the
 whole set: I2C scan, then one line every two seconds with the BMP280, the
 SHT41 and the INMP441's level, retrying a sensor that is missing so a fixed
-joint shows up without a reset. `bme280_check` is for the BME280 boards
-before 3.0.
+joint shows up without a reset.
