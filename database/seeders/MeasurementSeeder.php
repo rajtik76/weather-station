@@ -10,6 +10,8 @@ use App\Models\Sensor;
 use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
+use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\NoiseWindow;
 use Illuminate\Database\Seeder;
 
 class MeasurementSeeder extends Seeder
@@ -21,9 +23,9 @@ class MeasurementSeeder extends Seeder
     /**
      * Two stations on the same month: the second is warmer, drier, starts
      * mid-month and is V2 throughout, the first switches to V2 on
-     * `v2FromDay` as the real one did.
+     * `v2FromDay` and to V3 with noise on `v3FromDay` as the real one did.
      *
-     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, sunSpikes: bool}>
+     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, v3FromDay: ?int, sunSpikes: bool, firmware: string, board: ?string}>
      */
     private const array SENSORS = [
         [
@@ -33,7 +35,10 @@ class MeasurementSeeder extends Seeder
             'drierBy' => 0.0,
             'skipDays' => 0,
             'v2FromDay' => 21,
+            'v3FromDay' => 28,
             'sunSpikes' => false,
+            'firmware' => '3.0.2',
+            'board' => 'ESP32_DEV',
         ],
         [
             'name' => 'sensor-002',
@@ -42,9 +47,25 @@ class MeasurementSeeder extends Seeder
             'drierBy' => 6.0,
             'skipDays' => 12,
             'v2FromDay' => 12,
+            'v3FromDay' => null,
             'sunSpikes' => true,
+            'firmware' => '2.1.0',
+            'board' => null,
         ],
     ];
+
+    /**
+     * LAeq per local hour in dB: a quiet night, the morning and afternoon
+     * rush on a street a block away, and the evening winding down.
+     */
+    private const array NOISE_BY_HOUR = [42, 41, 40, 40, 41, 44, 50, 56, 58, 57, 56, 56, 57, 56, 56, 57, 58, 59, 57, 54, 51, 48, 46, 44];
+
+    /**
+     * Each third-octave band against the LAeq, in 0.01 dB, 25 Hz to 8 kHz:
+     * the mean of the real station's first V3 windows. Unweighted bands, so
+     * the low end sits above the A-weighted total.
+     */
+    private const array BAND_OFFSETS = [935, 775, 556, 718, 315, -173, -304, -655, -1038, -980, -1169, -1245, -1157, -1053, -1187, -1013, -814, -709, -810, -1287, -1793, -2166, -2428, -2582, -2632, -3279];
 
     /**
      * Real hourly observations for Plzen-Slovany (Open-Meteo, 345 m), 744
@@ -90,16 +111,23 @@ class MeasurementSeeder extends Seeder
                 $p = (int) round($pressure * 100);
 
                 $slot = $start + $i * self::STEP_SECONDS;
-                $v2 = $i >= $station['v2FromDay'] * 24 * $perHour;
+                $version = match (true) {
+                    $station['v3FromDay'] !== null && $i >= $station['v3FromDay'] * 24 * $perHour => ProtocolVersion::V3,
+                    $i >= $station['v2FromDay'] * 24 * $perHour => ProtocolVersion::V2,
+                    default => ProtocolVersion::V1,
+                };
+                $window = fn (): MeasurementDataV2 => $this->window($t, $h, $p, $station['sunSpikes'] && $this->inAfternoonSun($slot));
 
                 $rows[] = [
                     'sensor_id' => $sensor->id,
-                    'protocol_version' => ($v2 ? ProtocolVersion::V2 : ProtocolVersion::V1)->value,
+                    'protocol_version' => $version->value,
                     // Stamped by the last reading, half a minute short of the slot's end.
-                    'timestamp' => $v2 ? $slot + self::STEP_SECONDS - 30 : $slot,
-                    'data' => (string) ($v2
-                        ? $this->window($t, $h, $p, $station['sunSpikes'] && $this->inAfternoonSun($slot))
-                        : new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p)),
+                    'timestamp' => $version === ProtocolVersion::V1 ? $slot : $slot + self::STEP_SECONDS - 30,
+                    'data' => (string) match ($version) {
+                        ProtocolVersion::V1 => new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p),
+                        ProtocolVersion::V2 => $window(),
+                        ProtocolVersion::V3 => $this->withNoise($window(), $this->noise($slot)),
+                    },
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
@@ -112,8 +140,9 @@ class MeasurementSeeder extends Seeder
             // A report for the last upload, so the station block has something to show.
             StationReport::query()->create([
                 'sensor_id' => $sensor->id,
-                'data' => [
-                    'firmware' => '2.1.0',
+                'data' => array_filter([
+                    'firmware' => $station['firmware'],
+                    'board' => $station['board'],
                     'reset_reason' => 'power on',
                     'uptime' => ($count - $station['skipDays'] * 24 * $perHour) * self::STEP_SECONDS,
                     'heap_free' => 186_000 - mt_rand(0, 8_000),
@@ -125,7 +154,7 @@ class MeasurementSeeder extends Seeder
                     'wifi_switches' => 0,
                     'buffered' => 0,
                     'upload_failures' => 0,
-                ],
+                ], fn (int|string|null $value): bool => $value !== null),
             ]);
         }
     }
@@ -153,12 +182,58 @@ class MeasurementSeeder extends Seeder
         );
     }
 
+    /**
+     * A V3 window's noise around the hour's level. One window in twelve
+     * holds a loud event - a truck, a siren - that lifts the mean a little
+     * and the maximum a lot. A window cut short by its upload heard a few
+     * seconds less than ten minutes.
+     */
+    private function noise(int $slot): NoiseWindow
+    {
+        $isLoud = mt_rand(0, 11) === 0;
+        $laeq = self::NOISE_BY_HOUR[$this->localHour($slot)] * 100 + mt_rand(-150, 150) + ($isLoud ? mt_rand(200, 600) : 0);
+
+        return new NoiseWindow(
+            seconds: mt_rand(0, 3) === 0 ? mt_rand(570, 599) : self::STEP_SECONDS,
+            laeq: $laeq,
+            lamax: $laeq + mt_rand(600, 1400) + ($isLoud ? mt_rand(1000, 2500) : 0),
+            la10: $laeq + mt_rand(150, 350),
+            la90: $laeq - mt_rand(450, 900),
+            bands: array_map(
+                fn (int $offset): int => max(0, $laeq + $offset + mt_rand(-150, 150)),
+                self::BAND_OFFSETS,
+            ),
+        );
+    }
+
+    private function withNoise(MeasurementDataV2 $window, NoiseWindow $noise): MeasurementDataV3
+    {
+        return new MeasurementDataV3(
+            temperature: $window->temperature,
+            humidity: $window->humidity,
+            pressure: $window->pressure,
+            temperatureMin: $window->temperatureMin,
+            temperatureMax: $window->temperatureMax,
+            humidityMin: $window->humidityMin,
+            humidityMax: $window->humidityMax,
+            pressureMin: $window->pressureMin,
+            pressureMax: $window->pressureMax,
+            samples: $window->samples,
+            noise: $noise,
+        );
+    }
+
     /** Hours of direct sun on the balcony. */
     private function inAfternoonSun(int $slot): bool
     {
-        $hour = (int) now()->setTimestamp($slot)->setTimezone('Europe/Prague')->format('G');
+        $hour = $this->localHour($slot);
 
         return $hour >= 12 && $hour < 17;
+    }
+
+    private function localHour(int $slot): int
+    {
+        return (int) now()->setTimestamp($slot)->setTimezone('Europe/Prague')->format('G');
     }
 
     /**
