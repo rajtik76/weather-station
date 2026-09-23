@@ -38,6 +38,41 @@ function bucketRows(string $html): array
 }
 
 /**
+ * The window's noise payload, only the buckets that hold noise, keyed by their epoch.
+ *
+ * @return array<int, list<int|float|null>>
+ */
+function noiseBuckets(string $html): array
+{
+    preg_match('/data-noise-rows="([^"]*)"/', $html, $matches);
+
+    $filled = [];
+
+    foreach (json_decode(html_entity_decode($matches[1] ?? '') ?: '[]', true) as $row) {
+        if ($row[2] !== null) {
+            $filled[$row[1]] = $row;
+        }
+    }
+
+    return $filled;
+}
+
+/**
+ * A V3 window with noise, every band at the same level.
+ */
+function noisyWindow(int $laeq, int $la10, int $la90, int $lamax, int $band, int $seconds = 600): MeasurementDataV3
+{
+    return new MeasurementDataV3(
+        temperature: 2150, humidity: 4800, pressure: 97389,
+        temperatureMin: 2100, temperatureMax: 2200,
+        humidityMin: 4700, humidityMax: 4900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+        noise: new NoiseWindow(seconds: $seconds, laeq: $laeq, lamax: $lamax, la10: $la10, la90: $la90, bands: array_fill(0, 26, $band)),
+    );
+}
+
+/**
  * Only the buckets a reading landed in, keyed by their epoch.
  *
  * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
@@ -471,6 +506,62 @@ it('lists a V3 packet with its noise object', function (): void {
         ->assertOk()
         ->assertSee('"noise"', false)
         ->assertSee('"laeq":5562', true);
+});
+
+it('draws no noise strips over a window without noise', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v2()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    expect(noiseBuckets($html))->toBe([])
+        ->and($html)->not->toContain('Noise spectrum history');
+});
+
+it('averages the noise in a bucket as energy', function (): void {
+    $start = Date::parse('2026-03-15 10:00:00', 'UTC');
+    $this->travelTo($start->copy()->addHours(2));
+
+    $sensor = Sensor::factory()->create();
+
+    // Two windows in one half-hour bucket of the week view.
+    foreach ([[5000, 5500, 4500, 6000, 3000], [6000, 6500, 5500, 7000, 4000]] as $slot => [$laeq, $la10, $la90, $lamax, $band]) {
+        Measurement::factory()->for($sensor)->v3()->create([
+            'timestamp' => $start->getTimestamp() + $slot * 600,
+            'data' => (string) noisyWindow($laeq, $la10, $la90, $lamax, $band),
+        ]);
+    }
+
+    $html = Livewire::test(Dashboard::class)->html();
+    $row = noiseBuckets($html)[$start->getTimestamp()];
+
+    // 50 and 60 dB are 57.4 together; the percentiles only average, LAmax takes the louder.
+    expect(array_slice($row, 2, 4))->toEqual([57.4, 60.0, 50.0, 70.0])
+        ->and(array_values(array_unique(array_slice($row, 6))))->toEqual([37.4])
+        ->and(count($row))->toBe(6 + 26)
+        ->and($html)->toContain('Noise spectrum history');
+});
+
+it('weights the noise in a bucket by the seconds each window heard', function (): void {
+    $start = Date::parse('2026-03-15 10:00:00', 'UTC');
+    $this->travelTo($start->copy()->addHours(2));
+
+    $sensor = Sensor::factory()->create();
+
+    // A full window at 50 dB, and half a minute after a boot at 80 dB.
+    foreach ([[5000, 5500, 4500, 6000, 3000, 600], [8000, 8500, 7500, 9000, 6000, 30]] as $slot => [$laeq, $la10, $la90, $lamax, $band, $seconds]) {
+        Measurement::factory()->for($sensor)->v3()->create([
+            'timestamp' => $start->getTimestamp() + $slot * 600,
+            'data' => (string) noisyWindow($laeq, $la10, $la90, $lamax, $band, $seconds),
+        ]);
+    }
+
+    $row = noiseBuckets(Livewire::test(Dashboard::class)->html())[$start->getTimestamp()];
+
+    // Not 77.0: the loud half minute is a twentieth of what the bucket heard.
+    expect(array_slice($row, 2, 4))->toEqual([66.9, 56.4, 46.4, 90.0])
+        ->and(array_values(array_unique(array_slice($row, 6))))->toEqual([46.9]);
 });
 
 it('bands a V1 reading on itself', function (): void {

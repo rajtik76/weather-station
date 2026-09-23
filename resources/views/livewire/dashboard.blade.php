@@ -211,6 +211,7 @@
         data-navigator-rows="{{ json_encode($this->overview) }}"
         data-chart-events="{{ json_encode($this->stationEvents) }}"
         data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
+        data-noise-rows="{{ json_encode($this->noise) }}"
         data-window-from="{{ $this->windowMs['from'] }}"
         data-window-to="{{ $this->windowMs['to'] }}"
         data-chart-component="{{ $this->getId() }}"
@@ -277,6 +278,73 @@
             </div>
         </section>
     @endforeach
+
+    {{-- ── Noise ──────────────────────────────────────────────────── --}}
+    {{-- Protocol 3 only: a window of older rows has no noise, and no strips. --}}
+    @if ($this->noise !== [])
+        @php($noiseStrips = [
+            [
+                'key' => 'noise',
+                'label' => 'Noise',
+                'height' => 'h-48 sm:h-56',
+                'legend' => [
+                    ['label' => 'LAeq', 'accent' => 'bg-emerald-600 dark:bg-emerald-400'],
+                    ['label' => 'LA90 to LA10', 'accent' => 'bg-emerald-600/25 dark:bg-emerald-400/25'],
+                    ['label' => 'LAmax', 'accent' => 'bg-emerald-600/60 dark:bg-emerald-400/60'],
+                ],
+                'unit' => 'dB(A)',
+            ],
+            [
+                'key' => 'spectrum',
+                'label' => 'Noise spectrum',
+                'height' => 'h-72 sm:h-80',
+                'legend' => [],
+                'unit' => 'dB, third octaves 25 Hz to 8 kHz',
+            ],
+        ])
+
+        @foreach ($noiseStrips as $strip)
+            <section
+                aria-label="{{ $strip['label'] }} history"
+                class="border-b border-zinc-900/10 dark:border-white/10"
+            >
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
+                    <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                        {{ $strip['label'] }} ({{ $strip['unit'] }})
+                    </p>
+                    @foreach ($strip['legend'] as $entry)
+                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                            <span class="{{ $entry['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
+                            {{ $entry['label'] }}
+                        </p>
+                    @endforeach
+                    @if ($strip['key'] === 'spectrum')
+                        {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
+                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                            <span data-spectrum-low wire:ignore></span>
+                            <span data-spectrum-scale wire:ignore class="h-1.5 w-24 rounded-full" aria-hidden="true"></span>
+                            <span data-spectrum-high wire:ignore></span>
+                        </p>
+                    @endif
+                </div>
+
+                {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
+                <div
+                    wire:ignore
+                    data-strip="{{ $strip['key'] }}"
+                    class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
+                >
+                    <div data-canvas class="absolute inset-0"></div>
+                    <div
+                        data-zoom-band
+                        hidden
+                        aria-hidden="true"
+                        class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
+                    ></div>
+                </div>
+            </section>
+        @endforeach
+    @endif
 
     {{-- ── Payload tail ───────────────────────────────────────────── --}}
     @if ($this->recentTransmissions !== [])

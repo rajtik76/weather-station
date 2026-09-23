@@ -12,6 +12,7 @@ use App\Models\StationReport;
 use App\ValueObject\DewPoint;
 use App\ValueObject\MeasurementData;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\NoiseWindow;
 use App\ValueObject\SeaLevelPressure;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
@@ -32,13 +33,14 @@ use UnexpectedValueException;
  * `#[Computed]` methods are declared as properties for Larastan.
  *
  * @property-read list<BucketRow> $readings
+ * @property-read list<NoiseRow> $noise
  * @property-read list<ReadingRow> $overview
  * @property-read array{from: int, to: int} $windowMs
  * @property-read bool $hasReadings
  * @property-read int $recordCount
  * @property-read list<DayRow> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
- * @property-read list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
+ * @property-read list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
@@ -61,6 +63,10 @@ use UnexpectedValueException;
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
  * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
  * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float}
+ * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
+ * nulls for a slot without noise.
+ * @phpstan-type NoiseRow list<int|float|null>
+ * @phpstan-type NoiseBucket object{bucket: int, laeq: ?string, la10: ?string, la90: ?string, lamax: ?string, bands: ?string}
  * @phpstan-type Bucket object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string, t_min: ?string, t_max: ?string, h_min: ?string, h_max: ?string, p_min: ?string, p_max: ?string}
  */
 #[Title('Station Log')]
@@ -101,6 +107,9 @@ class Dashboard extends Component
     private const int MAX_SPAN_SECONDS = 2592000;
 
     private const int RECENT_TRANSMISSIONS = 3;
+
+    /** How long a window's microphone listened; the weight of its noise levels. */
+    private const string NOISE_SECONDS = "(data->'noise'->>'seconds')::float8";
 
     /** Zoomed window as UTC epochs, null to follow the default. Instants, not preset steps, so a drag can land anywhere. */
     #[Url]
@@ -239,6 +248,32 @@ class Dashboard extends Component
         }
 
         return array_values($buckets->map(fn (object $bucket): array => $this->plotBucket($bucket))->all());
+    }
+
+    /**
+     * Protocol 3's noise over the same buckets as the readings. A window
+     * that holds no noise at all (older rows, a dead microphone) is `[]`,
+     * and the noise strips do not render.
+     *
+     * @return list<NoiseRow>
+     */
+    #[Computed]
+    public function noise(): array
+    {
+        $hasNoise = $this->measurements()
+            ->whereBetween('timestamp', [$this->windowFrom(), $this->windowTo()])
+            ->whereRaw("data->'noise' IS NOT NULL")
+            ->exists();
+
+        if (! $hasNoise) {
+            return [];
+        }
+
+        $step = ChartRange::forSpan($this->spanSeconds())->bucketSeconds();
+
+        $buckets = $this->noiseBuckets($step, $this->windowFrom(), $this->windowTo());
+
+        return array_values($buckets->map(fn (object $bucket): array => $this->plotNoise($bucket))->all());
     }
 
     /**
@@ -700,15 +735,7 @@ class Dashboard extends Component
      */
     private function buckets(int $step, int $from, int $to): SupportCollection
     {
-        $first = intdiv($from, $step) * $step;
-        $last = intdiv($to, $step) * $step;
-
-        $readings = DB::table('measurements')
-            ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
-            ->where('sensor_id', $this->selectedSensor?->id)
-            // Whole edge buckets, so their average does not depend on where the window opened.
-            ->whereBetween('timestamp', [$first, $last + $step - 1])
-            ->groupByRaw('1');
+        $readings = $this->bucketed($step, $from, $to);
 
         foreach (['t' => 'temperature', 'h' => 'humidity', 'p' => 'pressure'] as $column => $field) {
             $readings
@@ -718,15 +745,45 @@ class Dashboard extends Component
         }
 
         /** @var SupportCollection<int, Bucket> $buckets */
-        $buckets = DB::query()
-            ->fromRaw('generate_series(?::int, ?::int, ?::int) AS slot (bucket)', [$first, $last, $step])
+        $buckets = $this->slots($step, $from, $to)
             ->leftJoinSub($readings, 'reading', 'reading.bucket', '=', 'slot.bucket')
-            ->select('slot.bucket')
             ->addSelect(['t_avg', 'h_avg', 'p_avg', 't_min', 't_max', 'h_min', 'h_max', 'p_min', 'p_max'])
-            ->orderBy('slot.bucket')
             ->get();
 
         return $buckets;
+    }
+
+    /**
+     * Every slot of the window, holes included, to left-join averages onto.
+     * Buckets divide the epoch, not the local day, so DST never moves them.
+     */
+    private function slots(int $step, int $from, int $to): QueryBuilder
+    {
+        return DB::query()
+            ->fromRaw('generate_series(?::int, ?::int, ?::int) AS slot (bucket)', [
+                intdiv($from, $step) * $step,
+                intdiv($to, $step) * $step,
+                $step,
+            ])
+            ->select('slot.bucket')
+            ->orderBy('slot.bucket');
+    }
+
+    /**
+     * The selected sensor's rows over whole edge buckets - so an edge
+     * bucket's average does not depend on where the window opened - grouped
+     * by bucket.
+     *
+     * @param  literal-string  $source
+     */
+    private function bucketed(int $step, int $from, int $to, string $source = 'measurements'): QueryBuilder
+    {
+        return DB::query()
+            ->fromRaw($source)
+            ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
+            ->where('sensor_id', $this->selectedSensor?->id)
+            ->whereBetween('timestamp', [intdiv($from, $step) * $step, intdiv($to, $step) * $step + $step - 1])
+            ->groupByRaw('1');
     }
 
     /**
@@ -765,6 +822,105 @@ class Dashboard extends Component
             round((float) $bucket->h_max / 100, 2),
             $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_min)),
             $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_max)),
+        ];
+    }
+
+    /**
+     * Same slots as buckets(). Levels are in hundredths of a dB, so a
+     * level's power is 10^(v / 1000) and back is 1000 log10. They average
+     * as energy, weighted by the seconds each window heard: 50 and 60 dB
+     * are 57.4 together, not 55, and the half minute after a boot does not
+     * count as a whole window. LA10 and LA90 do not combine across windows,
+     * so a bucket wider than one window carries their time-weighted mean in
+     * dB - exact at ten minutes, an approximation above it.
+     *
+     * The bands come out of the jsonb array one row per entry and band
+     * (`WITH ORDINALITY` keeps their order), are averaged per bucket and
+     * band, and go back into one array per bucket in band order.
+     *
+     * @return SupportCollection<int, NoiseBucket>
+     */
+    private function noiseBuckets(int $step, int $from, int $to): SupportCollection
+    {
+        $levels = $this->bucketed($step, $from, $to)
+            ->selectRaw($this->energyMean("data->'noise'->>'laeq'").' AS laeq')
+            ->selectRaw($this->timeMean("data->'noise'->>'la10'").' AS la10')
+            ->selectRaw($this->timeMean("data->'noise'->>'la90'").' AS la90')
+            ->selectRaw("MAX((data->'noise'->>'lamax')::int) AS lamax")
+            ->whereRaw("data->'noise' IS NOT NULL");
+
+        $perBand = $this->bucketed($step, $from, $to, "measurements, jsonb_array_elements_text(measurements.data->'noise'->'bands') WITH ORDINALITY AS band (level, position)")
+            ->selectRaw('position')
+            ->selectRaw($this->energyMean('level').' AS level')
+            ->groupByRaw('2');
+
+        $bands = DB::query()
+            ->fromSub($perBand, 'band')
+            ->select('bucket')
+            ->selectRaw('json_agg(level ORDER BY position) AS bands')
+            ->groupBy('bucket');
+
+        /** @var SupportCollection<int, NoiseBucket> $buckets */
+        $buckets = $this->slots($step, $from, $to)
+            ->leftJoinSub($levels, 'level', 'level.bucket', '=', 'slot.bucket')
+            ->leftJoinSub($bands, 'band', 'band.bucket', '=', 'slot.bucket')
+            ->addSelect(['laeq', 'la10', 'la90', 'lamax', 'bands'])
+            ->get();
+
+        return $buckets;
+    }
+
+    /**
+     * Energy mean of a level in hundredths of a dB, weighted by the seconds
+     * each window heard.
+     *
+     * @param  literal-string  $level
+     * @return literal-string
+     */
+    private function energyMean(string $level): string
+    {
+        return '1000 * LOG(SUM('.self::NOISE_SECONDS.' * POWER(10, ('.$level.')::float8 / 1000)) / SUM('.self::NOISE_SECONDS.'))';
+    }
+
+    /**
+     * Time-weighted mean of a level in dB, for the percentiles.
+     *
+     * @param  literal-string  $level
+     * @return literal-string
+     */
+    private function timeMean(string $level): string
+    {
+        return 'SUM('.self::NOISE_SECONDS.' * ('.$level.')::float8) / SUM('.self::NOISE_SECONDS.')';
+    }
+
+    /**
+     * Tenths of a dB: the band spread is tens of dB, and the payload is 26
+     * numbers a slot.
+     *
+     * @param  NoiseBucket  $bucket
+     * @return NoiseRow
+     */
+    private function plotNoise(object $bucket): array
+    {
+        $time = $this->wallClockMs($bucket->bucket);
+
+        if ($bucket->laeq === null || $bucket->bands === null) {
+            return [$time, $bucket->bucket, ...array_fill(0, 4 + NoiseWindow::BANDS_COUNT, null)];
+        }
+
+        $decibels = fn (float|int|string|null $value): ?float => $value === null ? null : round((float) $value / 100, 1);
+
+        /** @var list<float|int|null> $bands */
+        $bands = json_decode($bucket->bands, true, flags: JSON_THROW_ON_ERROR);
+
+        return [
+            $time,
+            $bucket->bucket,
+            $decibels($bucket->laeq),
+            $decibels($bucket->la10),
+            $decibels($bucket->la90),
+            $decibels($bucket->lamax),
+            ...array_map($decibels, $bands),
         ];
     }
 
