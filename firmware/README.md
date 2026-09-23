@@ -327,6 +327,17 @@ stuck low or high - is counted as silent and left out, so a dead
 microphone sends windows without `noise` rather than windows of silence;
 the window's log line says which.
 
+The task's ~40 kB of buffers are what TLS needs. Before every upload the
+task finishes its frame and parks, the buffers go back to the heap, and
+after the upload they are allocated again - with them held, mbedTLS could
+not allocate and the upload failed or hung until the watchdog. The window
+being filled misses those seconds, which is why `seconds` often reads a
+little under 600. A resume that finds no memory leaves the task parked and
+is retried every minute from the loop (`NOISE_RETRY_MS`), not only at the
+next upload. A microphone that does not start at boot - no memory, no I2S,
+no task - gives its buffers back at once, and the station runs without
+noise until the next restart.
+
 Nyquist is 8 kHz, so the 8 kHz band (7.1 - 8.9 kHz) sees only its lower
 half and reads low; the 25 - 40 Hz bands get one bin each.
 

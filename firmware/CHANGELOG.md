@@ -10,7 +10,8 @@ understands which field is tabled in [`docs/api.md`](../docs/api.md#firmware-and
 Versions before 2.1.0 carried no `FIRMWARE_VERSION`; those numbers were
 assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 2.2.0 shipped without a bump, so a board on them reports the number
-before.
+before. 2.3.0 is the one exception to the rule above: it never went on a
+board and has no tag, and its changes first shipped with 3.0.0.
 
 ## 3.0.2 - 2026-09-23
 
@@ -39,6 +40,7 @@ Board ESP32_DEV · Protocol 3 · Server v3.0.1
 
 - New board: ESP32-WROOM-32 (`esp32:esp32:esp32`, _ESP32 Dev Module_),
   still `min_spiffs`. The C3's shared-LED workaround is gone.
+- First build on a board with 2.3.0's `board` in the station report.
 - New sensors. `temperature` and `humidity` come from an SHT41 in the
   radiation shield outside, `pressure` from a BMP280 on the base board
   indoors. The BME280 is retired; before 3.0 all three fields came from it.
