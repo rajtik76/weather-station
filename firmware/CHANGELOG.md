@@ -12,6 +12,15 @@ assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 2.2.0 shipped without a bump, so a board on them reports the number
 before.
 
+## 3.0.2 - 2026-09-23
+
+Board ESP32_DEV · Protocol 3 · Server v3.0.1
+
+- A microphone that fails to start gives its buffers back at once; before,
+  the ~40 kB stayed allocated and every upload ran short of heap.
+- A resume that found no memory is retried every minute from the loop, not
+  only at the next upload.
+
 ## 3.0.1 - 2026-09-23
 
 Board ESP32_DEV · Protocol 3 · Server v3.0.1

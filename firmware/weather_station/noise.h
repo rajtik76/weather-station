@@ -59,4 +59,9 @@ noise_stats_t noiseStats();
 void noisePause();
 void noiseResume();
 
+// A resume that found no memory leaves the task parked; the loop calls this
+// every NOISE_RETRY_MS so the microphone comes back without waiting for the
+// next upload.
+#define NOISE_RETRY_MS 60000
+
 #endif

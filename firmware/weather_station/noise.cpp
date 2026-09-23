@@ -360,12 +360,17 @@ bool noiseBegin() {
   resetAccumulator(0);
 
   i2s.setPins(NOISE_SCK_PIN, NOISE_WS_PIN, -1, NOISE_SD_PIN);
+  // Without the task nothing would ever give the buffers back for TLS.
   if (!i2s.begin(I2S_MODE_STD, NOISE_SAMPLE_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
+    releaseBuffers();
     logInfo("noise: I2S did not start, running without the microphone");
     return false;
   }
 
   if (xTaskCreatePinnedToCore(noiseTask, "noise", NOISE_TASK_STACK, nullptr, NOISE_TASK_PRIORITY, &task, NOISE_TASK_CORE) != pdPASS) {
+    task = nullptr;
+    i2s.end();
+    releaseBuffers();
     logInfo("noise: task did not start, running without the microphone");
     return false;
   }
@@ -426,8 +431,10 @@ void noisePause() {
 }
 
 // The slot being filled goes on; it misses the seconds of the pause.
+// Only a parked task is woken: a notification to a running one would be
+// banked and make its next pause return at once.
 void noiseResume() {
-  if (task == nullptr) {
+  if (task == nullptr || !pauseRequested) {
     return;
   }
 
@@ -440,5 +447,10 @@ void noiseResume() {
 
   stats.running = true;
   pauseRequested = false;
-  xTaskNotifyGive(task);
+
+  // A task that never parked (noisePause() gave up on it) is still running
+  // and must not get a notification it would bank.
+  if (paused) {
+    xTaskNotifyGive(task);
+  }
 }

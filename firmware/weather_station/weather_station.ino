@@ -27,7 +27,7 @@
 
 // Sent with every batch; bump it with each build that goes on a board, and
 // tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
-#define FIRMWARE_VERSION "3.0.1"
+#define FIRMWARE_VERSION "3.0.2"
 
 // The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
 // DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
@@ -804,6 +804,12 @@ void loop() {
 
       windowAdd(window, reading);
     }
+  }
+
+  static uint32_t lastNoiseRetryMs = 0;
+  if (millis() - lastNoiseRetryMs >= NOISE_RETRY_MS) {
+    lastNoiseRetryMs = millis();
+    noiseResume();
   }
 
   if (online && windowBufferCount() > 0 &&
