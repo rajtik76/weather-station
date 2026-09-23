@@ -278,7 +278,10 @@ class Dashboard extends Component
 
     /**
      * The whole record for the navigator, thinned to one reading per six
-     * hours once it is large enough to need it.
+     * hours once it is large enough to need it. The newest reading always
+     * stays: the slider's axis ends on the last row, and without it the
+     * right handle stops at the first reading of the newest bucket, up to
+     * six hours short of now.
      *
      * @return list<ReadingRow>
      */
@@ -291,7 +294,10 @@ class Dashboard extends Component
             $this->measurements()
                 ->when(
                     $total >= self::OVERVIEW_UNTHINNED_ROWS,
-                    fn (Builder $query): Builder => $this->firstPerBucket($query, self::OVERVIEW_BUCKET_SECONDS)
+                    fn (Builder $query): Builder => $query->where(
+                        fn (Builder $kept): Builder => $this->firstPerBucket($kept, self::OVERVIEW_BUCKET_SECONDS)
+                            ->orWhere('timestamp', $this->lastMeasurement?->getTimestamp())
+                    )
                 )
                 ->orderBy('timestamp')
                 ->get()
