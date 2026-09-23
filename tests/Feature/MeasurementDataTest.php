@@ -6,9 +6,29 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
+use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\NoiseWindow;
 
 use function Pest\Laravel\freezeTime;
 use function Pest\Laravel\postJson;
+
+/**
+ * A noise object the firmware would send, one field overridden.
+ *
+ * @param  array<string, int|list<int>>  $overrides
+ * @return array<string, int|list<int>>
+ */
+function noiseWindow(array $overrides = []): array
+{
+    return array_merge([
+        'seconds' => 600,
+        'laeq' => 4312,
+        'lamax' => 6120,
+        'la10' => 4705,
+        'la90' => 3890,
+        'bands' => array_fill(0, NoiseWindow::BANDS_COUNT, 2000),
+    ], $overrides);
+}
 
 it('reads stored measurement data back as a versioned value object', function (): void {
     freezeTime();
@@ -59,6 +79,93 @@ it('reads a stored V2 window back with its extremes and sample count', function 
     ))
         ->and($measurement->data->protocolVersion)->toBe(ProtocolVersion::V2)
         ->and($measurement->protocol_version)->toBe(ProtocolVersion::V2);
+});
+
+it('reads a stored V3 window back with its noise object', function (): void {
+    freezeTime();
+
+    postJson('api/v1/measurement', [
+        'protocol_version' => ProtocolVersion::V3->value,
+        'sensor_name' => 'test-sensor',
+        'measurements' => [
+            [
+                'timestamp' => now()->timestamp,
+                'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                'samples' => 20,
+                'noise' => noiseWindow(),
+            ],
+        ],
+    ])->assertCreated();
+
+    $measurement = Measurement::query()->sole();
+
+    expect($measurement->data)->toEqual(new MeasurementDataV3(
+        temperature: 2134, humidity: 5812, pressure: 97389,
+        temperatureMin: 2101, temperatureMax: 2177,
+        humidityMin: 5700, humidityMax: 5900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+        noise: new NoiseWindow(
+            seconds: 600, laeq: 4312, lamax: 6120, la10: 4705, la90: 3890,
+            bands: array_fill(0, NoiseWindow::BANDS_COUNT, 2000),
+        ),
+    ))
+        ->and($measurement->data->protocolVersion)->toBe(ProtocolVersion::V3)
+        ->and($measurement->protocol_version)->toBe(ProtocolVersion::V3);
+});
+
+it('reads a stored V3 window without a noise object', function (): void {
+    freezeTime();
+
+    postJson('api/v1/measurement', [
+        'protocol_version' => ProtocolVersion::V3->value,
+        'sensor_name' => 'test-sensor',
+        'measurements' => [
+            [
+                'timestamp' => now()->timestamp,
+                'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                'samples' => 20,
+            ],
+        ],
+    ])->assertCreated();
+
+    $measurement = Measurement::query()->sole();
+
+    expect($measurement->data)->toEqual(new MeasurementDataV3(
+        temperature: 2134, humidity: 5812, pressure: 97389,
+        temperatureMin: 2101, temperatureMax: 2177,
+        humidityMin: 5700, humidityMax: 5900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+    ))
+        ->and($measurement->data->jsonSerialize())->not->toHaveKey('noise');
+});
+
+it('reads a V3 factory window', function (): void {
+    $data = Measurement::factory()->v3()->create()->refresh()->data;
+
+    expect($data)->toBeInstanceOf(MeasurementDataV3::class)
+        ->and($data->jsonSerialize())->not->toHaveKey('noise');
+});
+
+it('rejects a stored V3 blob with a noise object missing one of its fields', function (): void {
+    $measurement = Measurement::factory()->v3()->create([
+        'data' => json_encode([
+            'temperature' => 2134, 'humidity' => 5812, 'pressure' => 97389,
+            'temperature_min' => 2101, 'temperature_max' => 2177,
+            'humidity_min' => 5700, 'humidity_max' => 5900,
+            'pressure_min' => 97380, 'pressure_max' => 97395,
+            'samples' => 20,
+            'noise' => ['laeq' => 4312, 'lamax' => 6120, 'la10' => 4705, 'la90' => 3890, 'bands' => array_fill(0, NoiseWindow::BANDS_COUNT, 2000)],
+        ]),
+    ]);
+
+    expect(fn () => $measurement->refresh()->data)
+        ->toThrow(UnexpectedValueException::class, 'Missing or invalid field [noise.seconds] for protocol version 3.');
 });
 
 it('treats a V1 reading as its own extreme with one sample', function (): void {
@@ -114,5 +221,8 @@ it('resolves the value object class from the protocol version', function (): voi
         ->toBe(['temperature', 'humidity', 'pressure'])
         ->and(ProtocolVersion::V2->dataClass())->toBe(MeasurementDataV2::class)
         ->and(array_keys(ProtocolVersion::V2->validationRules()))
-        ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples']);
+        ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples'])
+        ->and(ProtocolVersion::V3->dataClass())->toBe(MeasurementDataV3::class)
+        ->and(array_keys(ProtocolVersion::V3->validationRules()))
+        ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples', 'noise', 'noise.seconds', 'noise.laeq', 'noise.lamax', 'noise.la10', 'noise.la90', 'noise.bands', 'noise.bands.*']);
 });

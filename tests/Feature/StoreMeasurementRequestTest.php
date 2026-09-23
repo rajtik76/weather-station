@@ -277,6 +277,103 @@ describe('protocol V2', function (): void {
     });
 });
 
+describe('protocol V3', function (): void {
+    /**
+     * A window the firmware would send under V3, one field overridden.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    function v3Window(array $overrides = []): array
+    {
+        return [
+            'sensor_name' => 'test-sensor',
+            'protocol_version' => ProtocolVersion::V3->value,
+            'measurements' => [
+                array_merge([
+                    'timestamp' => 1788332955,
+                    'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                    'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                    'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                    'samples' => 20,
+                ], $overrides),
+            ],
+        ];
+    }
+
+    /**
+     * A noise object the firmware would send, one field overridden.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    function noiseOverride(array $overrides = []): array
+    {
+        return array_merge([
+            'seconds' => 600,
+            'laeq' => 4312,
+            'lamax' => 6120,
+            'la10' => 4705,
+            'la90' => 3890,
+            'bands' => array_fill(0, 26, 2000),
+        ], $overrides);
+    }
+
+    it('accepts a window without a noise object', function (): void {
+        postJson('/api/v1/measurement', v3Window())->assertStatus(201);
+    });
+
+    it('accepts a window with a noise object', function (): void {
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride()]))->assertStatus(201);
+    });
+
+    it('rejects a band list of the wrong length', function (): void {
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride(['bands' => array_fill(0, 25, 2000)])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.noise.bands' => 'The measurements.0.noise.bands field must contain 26 items.']);
+    });
+
+    it('rejects bands keyed by name instead of listed in order', function (): void {
+        $bands = array_combine(array_map(fn (int $i): string => "band{$i}", range(0, 25)), array_fill(0, 26, 2000));
+
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride(['bands' => $bands])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.noise.bands' => 'The measurements.0.noise.bands field must be a list.']);
+    });
+
+    it('rejects a band outside its range', function (): void {
+        $bands = array_fill(0, 26, 2000);
+        $bands[0] = 15001;
+
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride(['bands' => $bands])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.noise.bands.0' => 'The measurements.0.noise.bands.0 field must not be greater than 15000.']);
+    });
+
+    it('rejects la90 above la10', function (): void {
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride(['la90' => 4706])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.noise.la90' => 'The measurements.0.noise.la90 field must be less than or equal to 4705.']);
+    });
+
+    it('rejects laeq above lamax', function (): void {
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride(['laeq' => 6121])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.noise.laeq' => 'The measurements.0.noise.laeq field must be less than or equal to 6120.']);
+    });
+
+    it('demands every noise field once the object is present', function (string $field): void {
+        postJson('/api/v1/measurement', v3Window(['noise' => noiseOverride([$field => null])]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(["measurements.0.noise.{$field}" => "The measurements.0.noise.{$field} field is required when measurements.0.noise is present."]);
+    })->with(['seconds', 'laeq', 'lamax', 'la10', 'la90', 'bands']);
+
+    it('does not ask a V2 packet for noise', function (): void {
+        postJson('/api/v1/measurement', v2Window())
+            ->assertJsonMissingValidationErrors(['measurements.0.noise']);
+    });
+});
+
 describe('station report', function (): void {
     it('is optional as a whole', function (): void {
         postJson('/api/v1/measurement', ['protocol_version' => ProtocolVersion::V1->value])

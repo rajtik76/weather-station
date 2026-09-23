@@ -48,7 +48,9 @@ interface MeasurementData extends JsonSerializable, Stringable
     public static function validationRules(): array;
 
     /**
-     * @return array<string, int>
+     * Widened for V3's nested "noise" object, which mixes scalar levels with a "bands" list.
+     *
+     * @return array<string, int|array<string, int|list<int>>>
      */
     public function jsonSerialize(): array;
 }

@@ -63,11 +63,11 @@ ten minutes, so the limit only ever bites a retry loop gone wrong.
 }
 ```
 
-| Field              | Rule                                                            |
-| ------------------ | --------------------------------------------------------------- |
-| `sensor_name`      | string, 3 to 50 characters. Registers the station on first use. |
-| `protocol_version` | `1` or `2`. Decides which fields each measurement must carry.   |
-| `measurements`     | 1 to 500 entries.                                               |
+| Field              | Rule                                                               |
+| ------------------ | ------------------------------------------------------------------ |
+| `sensor_name`      | string, 3 to 50 characters. Registers the station on first use.    |
+| `protocol_version` | `1`, `2` or `3`. Decides which fields each measurement must carry. |
+| `measurements`     | 1 to 500 entries.                                                  |
 
 Every measurement carries a `timestamp`: UTC Unix seconds, 1 to 4294967295.
 The remaining fields depend on the version. All values are integers, in
@@ -88,7 +88,38 @@ half-minute readings: the bare field is the mean over the window, `_min` and
 `_max` its extremes, `samples` how many readings went in. A `_min` above the
 mean or a `_max` below it fails validation. The mean keeps the V1 key on
 purpose - the dashboard averages both versions with one SQL expression, and
-a V1 row stands in as its own minimum and maximum.
+a V1 row stands in as its own minimum and maximum. **V3** is a V2 window
+with an optional `noise` object added to each measurement.
+
+### The `noise` object
+
+Present only when the microphone produced data for that ten-minute window;
+a V3 measurement without it is still valid. Optional as a whole, once
+present every field below is required.
+
+```json
+"noise": {
+    "seconds": 600,
+    "laeq": 4312,
+    "lamax": 6120,
+    "la10": 4705,
+    "la90": 3890,
+    "bands": [2210, 2345, 2098, 1876, 1654, 1432, 1298, 1187, 1065, 987, 912, 856, 798, 745, 698, 654, 612, 578, 542, 498, 456, 412, 378, 342, 298, 254]
+}
+```
+
+| Field     | Type                                                             | Range                       |
+| --------- | ---------------------------------------------------------------- | --------------------------- |
+| `seconds` | integer, one-second levels in the window                         | 1 .. 600                    |
+| `laeq`    | integer, hundredths of dB(A), energy mean over the window        | 0 .. 15000, `laeq <= lamax` |
+| `lamax`   | integer, hundredths of dB(A), loudest one-second Leq             | 0 .. 15000                  |
+| `la10`    | integer, hundredths of dB(A), level exceeded 10 % of the seconds | 0 .. 15000, `la10 <= lamax` |
+| `la90`    | integer, hundredths of dB(A), level exceeded 90 % of the seconds | 0 .. 15000, `la90 <= la10`  |
+| `bands`   | 26 integers, hundredths of dB, unweighted (Z)                    | each 0 .. 15000             |
+
+`bands` is the third-octave spectrum, in order, for the nominal centre
+frequencies 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000 Hz.
 
 ### The `station` object
 
@@ -128,11 +159,13 @@ the other side that understands it:
 | `protocol_version` 2, windows with extremes       | 2.0.0         | v2.0.0      |
 | `station` object                                  | 2.1.0         | v2.1.0      |
 | `station.clock_step_*`, `station.clock_synced_at` | 2.2.0         | v2.2.0      |
-| `station.board`                                   | 2.3.0         | unreleased  |
+| `station.board`                                   | 2.3.0         | v3.0.0      |
+| `protocol_version` 3, `noise` per window          | 3.0.0         | v3.0.0      |
 
-A server older than the row refuses a V2 batch (unknown `protocol_version`)
-and ignores a `station` object it does not know; it refuses nothing else
-from a newer firmware, because every later field is optional. A firmware
+A server older than the row refuses a V2 or V3 batch (unknown
+`protocol_version`) and ignores a `station` object or `noise` object it does
+not know; it refuses nothing else from a newer firmware, because every
+later field is optional. A firmware
 older than the row simply does not send the field, and the dashboard leaves
 the row out. The board itself never appears in the payload before 2.3;
 for those rows the changelog is the only record of the hardware.

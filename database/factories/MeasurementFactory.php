@@ -9,6 +9,7 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
+use App\ValueObject\MeasurementDataV3;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -54,6 +55,35 @@ class MeasurementFactory extends Factory
             return [
                 'protocol_version' => ProtocolVersion::V2,
                 'data' => (string) new MeasurementDataV2(
+                    temperature: $temperature,
+                    humidity: $humidity,
+                    pressure: $pressure,
+                    temperatureMin: $temperature - fake()->numberBetween(0, 200),
+                    temperatureMax: $temperature + fake()->numberBetween(0, 200),
+                    humidityMin: $humidity - fake()->numberBetween(0, 200),
+                    humidityMax: $humidity + fake()->numberBetween(0, 200),
+                    pressureMin: $pressure - fake()->numberBetween(0, 200),
+                    pressureMax: $pressure + fake()->numberBetween(0, 200),
+                    samples: fake()->numberBetween(1, 20),
+                ),
+            ];
+        });
+    }
+
+    /**
+     * A V3 window, same shape as V2. No "noise" object: firmware sends one
+     * only when the microphone produced data for that ten minutes.
+     */
+    public function v3(): static
+    {
+        return $this->state(function (): array {
+            $temperature = fake()->numberBetween(-3800, 8300);
+            $humidity = fake()->numberBetween(200, 9800);
+            $pressure = fake()->numberBetween(30200, 109800);
+
+            return [
+                'protocol_version' => ProtocolVersion::V3,
+                'data' => (string) new MeasurementDataV3(
                     temperature: $temperature,
                     humidity: $humidity,
                     pressure: $pressure,
