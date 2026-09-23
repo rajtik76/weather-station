@@ -16,7 +16,7 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
 
   JsonArray measurements = doc["measurements"].to<JsonArray>();
   for (uint8_t i = 0; i < tx.data_count; i++) {
-    const bme280_window_t& w = tx.data[i];
+    const station_window_t& w = tx.data[i];
     JsonObject entry = measurements.add<JsonObject>();
 
     // The mean keeps the V1 name so the server aggregates both versions alike.
@@ -31,6 +31,22 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
     entry["pressure_min"] = w.pressure_min;
     entry["pressure_max"] = w.pressure_max;
     entry["samples"] = w.samples;
+
+    // Left out when the microphone gave nothing for the window; the server
+    // takes the entry without it.
+    if (w.noise.seconds > 0) {
+      JsonObject noise = entry["noise"].to<JsonObject>();
+      noise["seconds"] = w.noise.seconds;
+      noise["laeq"] = w.noise.laeq;
+      noise["lamax"] = w.noise.lamax;
+      noise["la10"] = w.noise.la10;
+      noise["la90"] = w.noise.la90;
+
+      JsonArray bands = noise["bands"].to<JsonArray>();
+      for (uint8_t b = 0; b < NOISE_BAND_COUNT; b++) {
+        bands.add(w.noise.bands[b]);
+      }
+    }
   }
 
   stationStatusToJson(status, doc["station"].to<JsonObject>());

@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "bme280_types.h"
+#include "reading_types.h"
 
 // A window is an epoch slot WINDOW_SECONDS wide, so it lines up with the
 // dashboard's buckets and a reboot only shortens the one it falls in.
@@ -26,9 +26,9 @@ uint32_t windowSlotOf(uint32_t timestamp);
 void windowBegin(window_t& w, uint32_t slot);
 
 // The reading must belong to the window's slot.
-void windowAdd(window_t& w, const bme280_reading_t& reading);
+void windowAdd(window_t& w, const station_reading_t& reading);
 
 // False when the window holds nothing.
-bool windowClose(const window_t& w, bme280_window_t& out);
+bool windowClose(const window_t& w, station_window_t& out);
 
 #endif

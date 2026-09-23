@@ -12,9 +12,25 @@ assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 2.2.0 shipped without a bump, so a board on them reports the number
 before.
 
-## Unreleased
+## 3.0.0 - 2026-09-23
 
-Board ESP32C3_DEV · Protocol 2 · Server unreleased
+Board ESP32_DEV · Protocol 3 · Server v3.0.0
+
+- New board: ESP32-WROOM-32 (`esp32:esp32:esp32`, _ESP32 Dev Module_),
+  still `min_spiffs`. The C3's shared-LED workaround is gone.
+- New sensors. `temperature` and `humidity` come from an SHT41 in the
+  radiation shield outside, `pressure` from a BMP280 on the base board
+  indoors. The BME280 is retired; before 3.0 all three fields came from it.
+- Noise from an INMP441 in the shield, over I2S: per window `laeq`,
+  `lamax`, `la10`, `la90` in 0.01 dB(A) and 26 third-octave bands 25 Hz -
+  8 kHz, sent as a `noise` object beside the V2 fields (protocol 3). A task
+  on core 0 does the FFT; the loop keeps core 1.
+- The window buffer file changed shape (version 2); a buffer left by an
+  older build is dropped at boot. Payload buffer 16 kB.
+
+## 2.3.0 - unreleased
+
+Board ESP32C3_DEV · Protocol 2 · Server v3.0.0
 
 - `board` in the station report and on the LAN status page: the IDE's
   board selection (`ARDUINO_BOARD`), so the record shows which hardware

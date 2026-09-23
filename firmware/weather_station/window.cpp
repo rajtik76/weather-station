@@ -1,5 +1,7 @@
 #include "window.h"
 
+#include <string.h>
+
 uint32_t windowSlotOf(uint32_t timestamp) {
   return timestamp / WINDOW_SECONDS;
 }
@@ -14,7 +16,7 @@ void windowBegin(window_t& w, uint32_t slot) {
   w.p_min = w.p_max = 0;
 }
 
-void windowAdd(window_t& w, const bme280_reading_t& r) {
+void windowAdd(window_t& w, const station_reading_t& r) {
   if (w.samples == 0) {
     w.t_min = w.t_max = r.temperature;
     w.h_min = w.h_max = r.humidity;
@@ -40,7 +42,7 @@ static int64_t meanOf(int64_t sum, uint16_t n) {
   return sum >= 0 ? (sum + n / 2) / n : -((-sum + n / 2) / n);
 }
 
-bool windowClose(const window_t& w, bme280_window_t& out) {
+bool windowClose(const window_t& w, station_window_t& out) {
   if (w.samples == 0) return false;
 
   out.timestamp = w.last;
@@ -54,6 +56,9 @@ bool windowClose(const window_t& w, bme280_window_t& out) {
   out.pressure_min = w.p_min;
   out.pressure_max = w.p_max;
   out.samples = w.samples;
+
+  // The microphone runs on its own clock; the caller fills this in.
+  memset(&out.noise, 0, sizeof(out.noise));
 
   return true;
 }

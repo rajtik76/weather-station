@@ -17,7 +17,7 @@
 uint16_t windowBufferLoad();
 
 // False if the oldest had to go to make room.
-bool windowBufferAdd(const bme280_window_t& window);
+bool windowBufferAdd(const station_window_t& window);
 
 uint16_t windowBufferCount();
 

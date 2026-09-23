@@ -6,10 +6,11 @@
 
 #include "station_log.h"
 
-// Header then raw entries. Bump the version whenever bme280_window_t
+// Header then raw entries. Bump the version whenever station_window_t
 // changes shape, so an older file is discarded rather than read as garbage.
+// 2: noise per window (firmware 3.0).
 #define WINDOW_BUFFER_FILE_MAGIC   0x574E4457UL  // "WNDW"
-#define WINDOW_BUFFER_FILE_VERSION 1
+#define WINDOW_BUFFER_FILE_VERSION 2
 
 typedef struct {
   uint32_t magic;
@@ -17,7 +18,7 @@ typedef struct {
   uint16_t count;
 } window_buffer_header_t;
 
-static bme280_window_t entries[WINDOW_BUFFER_CAPACITY];
+static station_window_t entries[WINDOW_BUFFER_CAPACITY];
 static uint16_t count = 0;
 
 #define WINDOW_BUFFER_SCRATCH WINDOW_BUFFER_FILE ".tmp"
@@ -47,7 +48,7 @@ static void persist() {
   };
 
   bool ok = f.write((const uint8_t*)&header, sizeof(header)) == sizeof(header)
-         && f.write((const uint8_t*)entries, sizeof(bme280_window_t) * count) == sizeof(bme280_window_t) * count;
+         && f.write((const uint8_t*)entries, sizeof(station_window_t) * count) == sizeof(station_window_t) * count;
   f.close();
 
   if (!ok) {
@@ -76,7 +77,7 @@ static bool loadFrom(const char* path) {
          && header.count <= WINDOW_BUFFER_CAPACITY;
 
   if (ok) {
-    size_t bytes = sizeof(bme280_window_t) * header.count;
+    size_t bytes = sizeof(station_window_t) * header.count;
     ok = f.read((uint8_t*)entries, bytes) == bytes;
   }
   f.close();
@@ -108,11 +109,11 @@ uint16_t windowBufferLoad() {
   return count;
 }
 
-bool windowBufferAdd(const bme280_window_t& window) {
+bool windowBufferAdd(const station_window_t& window) {
   bool dropped = false;
 
   if (count >= WINDOW_BUFFER_CAPACITY) {
-    memmove(&entries[0], &entries[1], sizeof(bme280_window_t) * (count - 1));
+    memmove(&entries[0], &entries[1], sizeof(station_window_t) * (count - 1));
     count--;
     dropped = true;
   }
@@ -134,14 +135,14 @@ void windowBufferToTransmission(transmission_t& tx, const char* device) {
   tx.device[sizeof(tx.device) - 1] = '\0';
 
   tx.data_count = count < TRANSMISSION_MAX_ENTRIES ? (uint8_t)count : TRANSMISSION_MAX_ENTRIES;
-  memcpy(tx.data, entries, sizeof(bme280_window_t) * tx.data_count);
+  memcpy(tx.data, entries, sizeof(station_window_t) * tx.data_count);
 }
 
 void windowBufferDrop(uint8_t n) {
   if (n >= count) {
     count = 0;
   } else {
-    memmove(&entries[0], &entries[n], sizeof(bme280_window_t) * (count - n));
+    memmove(&entries[0], &entries[n], sizeof(station_window_t) * (count - n));
     count -= n;
   }
 

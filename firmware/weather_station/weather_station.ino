@@ -11,11 +11,13 @@
 #include <esp_task_wdt.h>
 
 #include <Wire.h>
-#include <Adafruit_BME280.h>
+#include <Adafruit_BMP280.h>
+#include <Adafruit_SHT4x.h>
 
 #include <secrets.h>
 
 #include "ca_certs.h"
+#include "noise.h"
 #include "station_http.h"
 #include "station_log.h"
 #include "station_status.h"
@@ -25,7 +27,7 @@
 
 // Sent with every batch; bump it with each build that goes on a board, and
 // tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
-#define FIRMWARE_VERSION "2.3.0"
+#define FIRMWARE_VERSION "3.0.0"
 
 // The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
 // DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
@@ -35,23 +37,19 @@
 #endif
 #define FIRMWARE_BOARD ARDUINO_BOARD
 
-// ESP32-C3-DevKitM-1 hardware I2C: SDA GPIO8, SCL GPIO9.
-#define BME280_SDA_PIN SDA
-#define BME280_SCL_PIN SCL
-
-// The DevKitM-1's WS2812 LED shares GPIO8 with SDA and latches I2C traffic
-// as colour data. With this on, the LED is blanked after every transfer.
-// Set to 0 once the LED is cut off the board.
-#define RGB_LED_ON_SDA 1
-
-// Time for the die to cool after begin(). See bme280Begin().
-#define BME280_SETTLE_MS 500
+// ESP32-WROOM-32 hardware I2C: SDA GPIO21, SCL GPIO22. The BMP280 sits on
+// the base board, the SHT41 at the end of the 4 m cable, on the same bus.
+#define I2C_SDA_PIN SDA
+#define I2C_SCL_PIN SCL
 
 #define API_URL "https://weather.rajtik.com/api/v1/measurement"
 
 // Twenty readings to a ten-minute window. Slow enough that self-heating
 // in forced mode stays negligible.
 static const uint32_t SAMPLE_INTERVAL_MS = 30000;
+
+// How long closeWindow() waits for the noise task to close the same slot.
+static const uint32_t NOISE_TAKE_WAIT_MS = 500;
 
 static const uint32_t WIFI_TIMEOUT_MS = 15000;
 static const uint32_t NTP_TIMEOUT_MS = 10000;
@@ -125,64 +123,69 @@ static void refreshStatus() {
 
 // ---------------------------------------------------------------- sensors
 
-static Adafruit_BME280 bme;
+static Adafruit_BMP280 bmp(&Wire);
+static Adafruit_SHT4x sht;
 
-// See RGB_LED_ON_SDA. Wire has to release the pin for the LED write; the
-// peripheral manager hands a pin to one driver at a time.
-static void quietSharedLed() {
-#if RGB_LED_ON_SDA && defined(RGB_BUILTIN)
-  Wire.end();
-  rgbLedWrite(RGB_BUILTIN, 0, 0, 0);
-  Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
-#endif
-}
-
-static bool bme280Begin() {
-  Wire.begin(BME280_SDA_PIN, BME280_SCL_PIN);
-
+// Pressure only: the BMP280 sits indoors next to the board, so its
+// temperature is the room's and never goes out.
+static bool bmp280Begin() {
   // Boards ship with either address depending on how SDO is strapped.
-  if (!bme.begin(0x76, &Wire) && !bme.begin(0x77, &Wire)) {
-    logInfo("BME280 not found");
-    quietSharedLed();
+  if (!bmp.begin(0x76) && !bmp.begin(0x77)) {
+    logInfo("BMP280 not found");
     return false;
   }
 
-  // Forced mode: no self-heating between samples. No oversampling or
-  // filtering; the window average does that on half-minute readings.
-  bme.setSampling(Adafruit_BME280::MODE_FORCED,
-                  Adafruit_BME280::SAMPLING_X1,  // temperature
-                  Adafruit_BME280::SAMPLING_X1,  // pressure
-                  Adafruit_BME280::SAMPLING_X1,  // humidity
-                  Adafruit_BME280::FILTER_OFF);
-
-  // begin() runs normal mode at 16x oversampling for >100 ms, which warms
-  // the die ~0.1 degC. Measured: back within 0.02 degC after ~350 ms.
-  delay(BME280_SETTLE_MS);
-
-  // After the reset in begin() the data registers hold power-on defaults;
-  // the first forced read would return those.
-  bme.takeForcedMeasurement();
-  quietSharedLed();
-
+  // Forced mode, no oversampling or filtering; the window average does
+  // that on half-minute readings.
+  bmp.setSampling(Adafruit_BMP280::MODE_FORCED,
+                  Adafruit_BMP280::SAMPLING_X1,  // temperature, needed for the pressure compensation
+                  Adafruit_BMP280::SAMPLING_X1,  // pressure
+                  Adafruit_BMP280::FILTER_OFF);
   return true;
 }
 
-static bool readBme280(bme280_reading_t& out) {
-  bool ok = bme.takeForcedMeasurement();
-
-  float t = bme.readTemperature();  // degC
-  float h = bme.readHumidity();     // %
-  float p = bme.readPressure();     // Pa, already the unit the API takes
-
-  quietSharedLed();
-
-  if (!ok) {
-    logInfo("BME280 measurement failed");
+// Temperature and humidity, in the radiation shield outside.
+static bool sht41Begin() {
+  if (!sht.begin(&Wire)) {
+    logInfo("SHT41 not found");
     return false;
   }
 
+  sht.setPrecision(SHT4X_HIGH_PRECISION);
+  sht.setHeater(SHT4X_NO_HEATER);
+
+  // The first read after begin() fails more often than not (seen on the
+  // bench with sensors_check); spend it here rather than on the window.
+  sensors_event_t humidity, temp;
+  sht.getEvent(&humidity, &temp);
+  return true;
+}
+
+static bool sensorsBegin() {
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  bool bmpFound = bmp280Begin();
+  bool shtFound = sht41Begin();
+  return bmpFound && shtFound;
+}
+
+static bool readSensors(station_reading_t& out) {
+  sensors_event_t humidityEvent, tempEvent;
+  if (!sht.getEvent(&humidityEvent, &tempEvent)) {
+    logInfo("SHT41 measurement failed");
+    return false;
+  }
+
+  if (!bmp.takeForcedMeasurement()) {
+    logInfo("BMP280 measurement failed");
+    return false;
+  }
+
+  float t = tempEvent.temperature;               // degC
+  float h = humidityEvent.relative_humidity;     // %
+  float p = bmp.readPressure();                  // Pa, already the unit the API takes
+
   if (isnan(t) || isnan(h) || isnan(p)) {
-    logInfo("BME280 returned NaN");
+    logInfo("sensors returned NaN: t=%.2f h=%.2f p=%.0f", t, h, p);
     return false;
   }
 
@@ -192,10 +195,10 @@ static bool readBme280(bme280_reading_t& out) {
 
   // One out-of-range extreme would have the server reject the whole batch
   // and block every window behind it.
-  if (temperature < BME280_TEMP_MIN || temperature > BME280_TEMP_MAX ||
-      humidity < BME280_HUMIDITY_MIN || humidity > BME280_HUMIDITY_MAX ||
-      pressure < BME280_PRESSURE_MIN || pressure > BME280_PRESSURE_MAX) {
-    logInfo("BME280 out of range: t=%ld h=%ld p=%ld", temperature, humidity, pressure);
+  if (temperature < READING_TEMP_MIN || temperature > READING_TEMP_MAX ||
+      humidity < READING_HUMIDITY_MIN || humidity > READING_HUMIDITY_MAX ||
+      pressure < READING_PRESSURE_MIN || pressure > READING_PRESSURE_MAX) {
+    logInfo("reading out of range: t=%ld h=%ld p=%ld", temperature, humidity, pressure);
     return false;
   }
 
@@ -204,7 +207,7 @@ static bool readBme280(bme280_reading_t& out) {
   out.humidity = (uint16_t)humidity;
   out.pressure = (uint32_t)pressure;
 
-  logTrace("BME280: %.2f C  %.2f %%  %.2f hPa", t, h, p / 100.0f);
+  logTrace("SHT41: %.2f C  %.2f %%  BMP280: %.2f hPa", t, h, p / 100.0f);
   return true;
 }
 
@@ -544,7 +547,7 @@ static uint32_t lastUploadOkMs = 0;
 // Oldest first, one batch per POST, stops at the first failure. The server
 // upserts, so a batch whose answer got lost is safe to send again.
 static void uploadBuffered() {
-  static char payload[8192];
+  static char payload[TRANSMISSION_PAYLOAD_BYTES];
 
   lastUploadAttemptMs = millis();
 
@@ -589,10 +592,23 @@ static bool windowOpen = false;
 static uint32_t lastSampleMs = 0;
 
 static void closeWindow() {
-  bme280_window_t entry;
+  station_window_t entry;
 
   if (!windowClose(window, entry)) {
     return;
+  }
+
+  // The reading that closed this window is already in the next slot, and
+  // the noise task closes a slot on its first frame past the boundary.
+  if (noiseTake(window.slot, entry.noise, NOISE_TAKE_WAIT_MS)) {
+    logInfo("noise %lu: LAeq %d  LAmax %d  LA10 %d  LA90 %d  (0.01 dB)  s=%u",
+            (unsigned long)window.slot, entry.noise.laeq, entry.noise.lamax,
+            entry.noise.la10, entry.noise.la90, entry.noise.seconds);
+  } else {
+    noise_stats_t n = noiseStats();
+    logInfo("noise %lu: none (running %d, frames %lu, silent %lu, short reads %lu)",
+            (unsigned long)window.slot, n.running, (unsigned long)n.frames,
+            (unsigned long)n.silent_frames, (unsigned long)n.short_reads);
   }
 
   logInfo("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  n=%u",
@@ -621,9 +637,10 @@ static void restartIfStuck() {
 
 // ---------------------------------------------------------------- ota
 
-// The open window is closed into the buffer first. The upload blocks the
-// loop, so the watchdog is fed from the progress callback; a stalled
-// transfer still trips it. Off without a password.
+// The open window is closed into the buffer first and the noise task is
+// paused, so the transfer has the CPU. The upload blocks the loop, so the
+// watchdog is fed from the progress callback; a stalled transfer still
+// trips it. Off without a password.
 static void otaBegin() {
   if (OTA_PASSWORD[0] == '\0') {
     logInfo("no OTA password set, OTA off");
@@ -643,6 +660,7 @@ static void otaBegin() {
       closeWindow();
       windowOpen = false;
     }
+    noisePause();
   });
   ArduinoOTA.onProgress([](unsigned int, unsigned int) {
     esp_task_wdt_reset();
@@ -652,6 +670,7 @@ static void otaBegin() {
   });
   ArduinoOTA.onError([](ota_error_t error) {
     logInfo("OTA: failed (%u), staying on %s", (unsigned)error, FIRMWARE_VERSION);
+    noiseResume();
   });
 
   ArduinoOTA.begin();
@@ -694,10 +713,14 @@ void setup() {
     logInfo("%u windows restored from the flash", restored);
   }
 
-  // Without the sensor there is nothing to run, and the log has said why.
-  while (!bme280Begin()) {
+  // Without the sensors there is nothing to run, and the log has said why.
+  while (!sensorsBegin()) {
     delay(5000);
   }
+
+  // The station runs on without the microphone; the windows go out
+  // without noise and the log says why.
+  noiseBegin();
 
   watchdogBegin();
 
@@ -740,8 +763,8 @@ void loop() {
   if (lastSampleMs == 0 || millis() - lastSampleMs >= SAMPLE_INTERVAL_MS) {
     lastSampleMs = millis();
 
-    bme280_reading_t reading;
-    if (readBme280(reading)) {
+    station_reading_t reading;
+    if (readSensors(reading)) {
       // Off the reading's own stamp: an SNTP step or the measurement
       // itself can cross a slot boundary since the top of the loop.
       uint32_t slot = windowSlotOf(reading.timestamp);

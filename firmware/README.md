@@ -1,32 +1,36 @@
 # Firmware
 
-ESP32 firmware for the weather station. Reads a BME280 every thirty seconds,
-folds the readings into ten-minute windows - mean, minimum and maximum per
-channel - and uploads each closed window to `POST /api/v1/measurement` over
-HTTPS. Anything that fails to upload stays buffered on the flash until the
-link is back, and the station can be looked at over the LAN without a cable.
+ESP32 firmware for the weather station. Reads temperature and humidity from
+an SHT41 and pressure from a BMP280 every thirty seconds, listens to an
+INMP441 microphone all the time, folds both into ten-minute windows - mean,
+minimum and maximum per channel, and the noise levels and third-octave
+spectrum over the same ten minutes - and uploads each closed window to
+`POST /api/v1/measurement` over HTTPS. Anything that fails to upload stays
+buffered on the flash until the link is back, and the station can be looked
+at over the LAN without a cable.
 
 ```
-BME280 --I2C--> ESP32-C3 --HTTPS--> Laravel API
-                  |    \
-                  |     HTTP on the LAN: status and log
-                  |
-          window buffer on the flash, 144 entries (a day)
+SHT41   --I2C--+
+BMP280  --I2C--+--> ESP32-WROOM-32 --HTTPS--> Laravel API
+INMP441 --I2S--+     core 0: noise   |    \
+                     core 1: the rest |     HTTP on the LAN: status and log
+                                      |
+                        window buffer on the flash, 144 entries (a day)
 ```
 
-The board is mains powered over USB and never sleeps. The earlier design - a
-battery board waking every ten minutes for one reading - is what protocol V1
+The board is mains powered and never sleeps. The earlier design - a battery
+board waking every ten minutes for one reading - is what protocol V1
 recorded; see the git history before this file for it.
 
 ## Hardware
 
-- ESP32-C3-DevKitM-1 v1.0, indoors, powered over USB
-- BME280 breakout, on the balcony
-- TFA 98.1114.0 radiation shield around it, with the breakout upright on the
-  centre post of the base plate, mid-height in the plate stack, touching
-  nothing
+- ESP32-WROOM-32 DevKit (NodeMCU-32S type, CP2102), indoors, in female
+  headers on a perfboard base with 5 V over a 5.5/2.5 mm DC jack
+- BMP280 on the base board, indoors: pressure only - its temperature is the
+  room's and never goes out
+- SHT41 and INMP441 on the balcony, in a TFA 98.1114.0 radiation shield
 - about 4 m of outdoor FTP cable between them (Solarix FTP 4x2x0.5 CAT5E PE,
-  UV resistant), carrying 3V3, GND, SDA and SCL
+  UV resistant), into an RJ45 jack on the base board
 
 The shield hangs on a bracket off the top rail of an east-facing balcony,
 more than half a metre from the wall and outboard of the railing, so air
@@ -35,61 +39,40 @@ morning the reading runs more than 10 °C above the air around it - that is
 the error of a passive shield facing the sunrise, and the V2 window band is
 what shows it. The main README says what to make of it.
 
-The breakout goes on the board's hardware I2C pins as the Arduino variant
-defines them.
+| Signal | RJ45 (T568B) | ESP32-WROOM-32                  |
+| ------ | ------------ | ------------------------------- |
+| 3V3    | 1            | 3V3                             |
+| SDA    | 2            | GPIO21, 4k7 pull-up on the base |
+| SCL    | 3            | GPIO22, 4k7 pull-up on the base |
+| SD     | 4            | GPIO33, 47 R at the microphone  |
+| GND    | 5, 6         | GND                             |
+| SCK    | 7            | GPIO26, 47 R at the ESP32       |
+| WS     | 8            | GPIO25, 47 R at the ESP32       |
 
-| BME280 | ESP32-C3-DevKitM-1 |
-| ------ | ------------------ |
-| VIN    | 3V3                |
-| GND    | GND                |
-| SCL    | GPIO9              |
-| SDA    | GPIO8              |
+The BMP280 sits on the same bus on the base (address 0x76, `CSB` to 3V3,
+`SDO` to GND). The sketch takes the I2C pins from the board variant through
+the `SDA` / `SCL` symbols; the I2S pins are in `noise.h`. The INMP441's
+`L/R` is strapped to GND on the module, so it talks in the left slot.
 
-The sketch takes the numbers from the board variant through the `SDA` /
-`SCL` symbols, so `BME280_SDA_PIN` / `BME280_SCL_PIN` only need editing to
-move the sensor elsewhere. Four metres of I2C is well past what the bus was
-meant for, and at the default 100 kHz with the breakout's own pull-ups it
-runs without a retry; if a longer run ever misbehaves, lower the clock before
-anything else.
-
-`SDO` and `CSB` can stay unconnected on a breakout - it straps them, and the
-firmware probes both 0x76 and 0x77.
-
-BMP280 modules are pin compatible, frequently sold as BME280, and have no
-humidity sensor. `bme280_check` reads the chip id and says which one is on the
-bus.
-
-### The RGB LED shares a pin with SDA
-
-The DevKitM-1 hangs its WS2812 RGB LED on GPIO8, which is also the variant's
-SDA. The LED reads every I2C transfer as its own data, and whenever the line
-sits low long enough to latch it lights up in whatever colour the bytes
-spelled - usually full white, at random, for as long as the next transfer
-takes to overwrite it.
-
-`RGB_LED_ON_SDA` (on by default) blanks the LED after every transfer: Wire
-lets go of the pin, the LED is written black, Wire takes the pin back. A
-sample then shows as a flicker at most. Set it to 0 if the LED is cut off the
-board, or if the sensor moves to other pins. There is no status LED - the
-serial log says what the station is doing, and the dashboard and the
-heartbeat monitor say when it stops.
+Both grounds on the cable matter. With one of them open the SHT41 dropped
+about one reading in seven - a byte, then `FF`s, or no acknowledge at all -
+while the WiFi was on; with both it runs clean at the default 100 kHz. If
+I2C or I2S ever misbehaves again, the cable shield goes to GND at the ESP32
+end, and after that the I2C clock comes down.
 
 ### Serial
 
-The DevKitM-1 routes `Serial` through a CP2102N USB-UART bridge, so the port
-(`/dev/cu.usbserial-*`) is always there and _USB CDC On Boot_ stays
-_Disabled_. Enabling it points `Serial` at the chip's own USB, which the
-board does not bring out, and the monitor goes quiet.
+The DevKit routes `Serial` through a CP2102 USB-UART bridge, so the port is
+`/dev/cu.usbserial-*`. Plugging it in resets the board.
 
 ## Build
 
-Arduino IDE, board _ESP32C3 Dev Module_ from ESP32 core 3.x. Needs
-`Adafruit BME280 Library` and `ArduinoJson` v7. Set _Partition Scheme_ to
-_Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_: the sketch is past the
-1.2 MB the default scheme gives an app, and OTA needs two app slots. The
-128 kB of filesystem hold the 4 kB window buffer and two 32 kB logs with
-room to spare. The rest stays at the defaults - 4 MB flash, _USB CDC On
-Boot_ disabled.
+Arduino IDE, board _ESP32 Dev Module_ from ESP32 core 3.x. Needs
+`Adafruit BMP280 Library`, `Adafruit SHT4x Library` and `ArduinoJson` v7;
+the FFT is esp-dsp, which the core already carries. Set _Partition Scheme_
+to _Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_: OTA needs two app
+slots, and the image is ~1.2 MB. The 128 kB of filesystem hold the 13 kB
+window buffer and two 32 kB logs. The rest stays at the defaults.
 
 Changing the partition scheme wipes the filesystem, so a backlog buffered
 on the flash does not survive the switch. It is a one-time cost.
@@ -114,7 +97,7 @@ To build from the terminal, `arduino-cli` (Homebrew, or the one bundled
 with the IDE) shares the IDE's cores and libraries:
 
 ```
-arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs weather_station
+arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs weather_station
 ```
 
 ### Versions
@@ -137,13 +120,15 @@ lists `weather-station` with its address under _Port_ next to the serial
 ones. From the terminal:
 
 ```
-arduino-cli upload --fqbn esp32:esp32:esp32c3:PartitionScheme=min_spiffs --port weather-station.local weather_station
+arduino-cli upload --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --port weather-station.local weather_station
 ```
 
 The IP does instead of the name when mDNS is slow to answer. The image
 lands in the other app slot and the board restarts from it; the window
 being filled is closed into the buffer first, so the update costs no
-readings. The board asks for `OTA_PASSWORD` - an open OTA port would take
+readings, and the noise task is paused so the transfer has the CPU. The
+noise of the slot the update lands in is lost - that window goes out
+without it. The board asks for `OTA_PASSWORD` - an open OTA port would take
 any image from anyone on the network - and with the password left empty
 OTA is off altogether.
 
@@ -184,13 +169,14 @@ There is no authentication. It only reads, and it is only on the LAN.
 
 ## Protocol
 
-Version 2. Fixed point integers throughout, converted when the reading is
-taken. One entry per ten-minute window.
+Version 3. Fixed point integers throughout, converted when the reading is
+taken. One entry per ten-minute window: the V2 fields, plus a `noise` object
+when the microphone gave anything for that window.
 
 ```json
 {
     "sensor_name": "sensor-001",
-    "protocol_version": 2,
+    "protocol_version": 3,
     "measurements": [
         {
             "timestamp": 1757000000,
@@ -203,7 +189,15 @@ taken. One entry per ten-minute window.
             "pressure": 97389,
             "pressure_min": 97381,
             "pressure_max": 97396,
-            "samples": 20
+            "samples": 20,
+            "noise": {
+                "seconds": 600,
+                "laeq": 5562,
+                "lamax": 5898,
+                "la10": 5797,
+                "la90": 5284,
+                "bands": [3120, 3305, ...26 in all...]
+            }
         }
     ]
 }
@@ -215,7 +209,7 @@ Units, ranges and what the server answers are in
 Beside `measurements` goes a `station` object with the state of the board
 at the time of the upload - see _Looking at the station_ for the fields.
 The server stores it apart from the readings, and it is optional: a batch
-without it is still a valid V2 batch.
+without it is still a valid batch.
 
 The bare field is the mean over the window, rounded to nearest; `_min` and
 `_max` are the lowest and highest reading in it. The server refuses a
@@ -275,12 +269,13 @@ window. The API validates each entry and rejects the whole batch on one bad
 value, and one wild reading would otherwise carry a window's extreme out of
 range and wedge every window queued behind it.
 
-`Adafruit_BME280::begin()` runs the sensor in normal mode at 16x oversampling
-for over 100 ms before this switches it to forced, which warms the die by a
-tenth of a degree; `BME280_SETTLE_MS` waits it out, once, at boot. Forced
-mode keeps the sensor asleep between samples, so half a minute apart it does
-not heat itself. Oversampling and the IIR filter stay off: the window mean
-does that job, over readings half a minute apart rather than milliseconds.
+A reading needs both sensors: the SHT41 for temperature and humidity, the
+BMP280 for pressure. If either fails the reading is dropped and the window
+takes the next one. The SHT41 measures at high precision without its heater;
+the first read after `begin()` failed more often than not on the bench, so
+`sht41Begin()` spends it. The BMP280 runs in forced mode with oversampling
+and the IIR filter off: the window mean does that job, over readings half a
+minute apart rather than milliseconds.
 
 `ca_certs.h` pins ISRG Root X1 and ISRG Root YR. Let's Encrypt renews the leaf
 every few months, so pinning it would break uploads on every renewal. Two roots
@@ -294,9 +289,50 @@ a turn after a minute of that, and lists what the radio can hear when the
 first association after boot fails - around -70 dBm is comfortable, -80
 marginal, past -85 a TLS upload will not survive.
 
+## Noise
+
+`noise.cpp` runs as a task of its own pinned to core 0, below the WiFi
+driver and lwIP, so the radio always wins; core 1 keeps the loop - sensors,
+the HTTP server, the TLS upload, OTA - which would otherwise take the CPU
+from the FFT for seconds at a time. The task sleeps in the I2S read and
+wakes for a few milliseconds per frame.
+
+- I2S at 16 kHz, 32-bit slots, left channel. The INMP441 sends a signed
+  24-bit sample left-aligned in the slot: it is read into `int32_t` and
+  shifted `>> 8` arithmetically, then scaled to full scale 1 as `float`.
+  Everything after that is single precision, on the FPU.
+- 2048-point FFT (esp-dsp) over Hann windows that overlap by half: a frame
+  every 64 ms, 7.8 Hz bins. 4096 points left the TLS upload 2 kB of heap.
+- The power in each bin is corrected for the INMP441's own high-pass - the
+  biquad equalizer from esp32-i2s-slm, evaluated per bin once at boot, +10 dB
+  at 25 Hz, +1.6 dB at 100 Hz, flat from 500 Hz - and summed into 26
+  base-10 third-octave bands (25 Hz to 8 kHz, unweighted) and into one
+  A-weighted total (IEC 61672 per bin). Bins below 20 Hz are the mic's DC
+  offset and are left out.
+- Calibration: dB SPL = dBFS + 120 from the datasheet (-26 dBFS at 94 dB
+  SPL), plus `MIC_OFFSET_DB` = -15, matched against a phone SLM next to the
+  module.
+- The A-weighted power of the frames in each wall-clock second makes that
+  second's LAeq,1s. Over a window slot, `laeq` is the energy mean of all
+  frames, `lamax` the loudest second, `la10` and `la90` the levels 10 % and
+  90 % of the seconds exceed, `seconds` how many went in; the bands are
+  energy means like `laeq`.
+
+The task follows the wall clock, so its slots are the readings' slots; it
+closes one on its first frame past the boundary and the loop picks it up
+when it closes the window. Nothing is counted before the clock is set, nor
+for three seconds after the mic starts. A frame with no signal at all - SD
+stuck low or high - is counted as silent and left out, so a dead
+microphone sends windows without `noise` rather than windows of silence;
+the window's log line says which.
+
+Nyquist is 8 kHz, so the 8 kHz band (7.1 - 8.9 kHz) sees only its lower
+half and reads low; the 25 - 40 Hz bands get one bin each.
+
 ## Sketches
 
-`weather_station` is the station. `bme280_check` is diagnostics - I2C scan,
-chip id, both addresses, live readings with range checks, and a thermal
-settling profile that reports how long the sensor needs after `begin()`. It
-does not blank the shared LED, so expect it to light up while it runs.
+`weather_station` is the station. `sensors_check` is diagnostics for the
+whole set: I2C scan, then one line every two seconds with the BMP280, the
+SHT41 and the INMP441's level, retrying a sensor that is missing so a fixed
+joint shows up without a reset. `bme280_check` is for the BME280 boards
+before 3.0.
