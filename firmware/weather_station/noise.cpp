@@ -36,7 +36,9 @@
 static I2SClass i2s;
 static TaskHandle_t task = nullptr;
 
-// On the heap, ~40 kB with the FFT's twiddle table: allocated once in noiseBegin().
+// On the heap, ~40 kB with the FFT's twiddle table. Given back for every
+// upload: the TLS handshake needs it, and with it taken mbedTLS failed to
+// allocate (largest free block 36 kB) or hung until the watchdog fired.
 static int32_t* raw;          // one I2S read
 static float* history;        // the last NOISE_FFT_SIZE samples, full scale = 1
 static float* spectrum;       // interleaved re/im for esp-dsp
@@ -70,6 +72,12 @@ static float sorted[NOISE_MAX_SECONDS];
 static uint32_t secondStamp = 0;
 static uint32_t secondFrames = 0;
 static float secondSumA = 0;
+
+// The loop asks, the task parks at the top of its loop and says so; only
+// then are the buffers freed. The task wakes on a notification.
+static volatile bool pauseRequested = false;
+static volatile bool paused = false;
+static bool buffersAllocated = false;
 
 // Shared with the loop: the finished slot and the counters.
 static portMUX_TYPE shared = portMUX_INITIALIZER_UNLOCKED;
@@ -236,7 +244,18 @@ static void noiseTask(void*) {
   const uint32_t startedMs = millis();
   float frameBands[NOISE_BAND_COUNT];
 
+  // A fresh history is zeros; the frames over it would read low.
+  uint8_t hopsToRefill = 2;
+
   while (true) {
+    if (pauseRequested) {
+      paused = true;
+      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+      paused = false;
+      hopsToRefill = 2;
+      continue;
+    }
+
     // A short read drops the hop; the history stays contiguous.
     bool complete = true;
     memmove(history, history + NOISE_HOP, sizeof(float) * (NOISE_FFT_SIZE - NOISE_HOP));
@@ -254,6 +273,11 @@ static void noiseTask(void*) {
     }
     if (!complete) {
       stats.short_reads++;
+      continue;
+    }
+
+    if (hopsToRefill > 0) {
+      hopsToRefill--;
       continue;
     }
 
@@ -292,7 +316,23 @@ static void noiseTask(void*) {
   }
 }
 
-bool noiseBegin() {
+static void releaseBuffers() {
+  free(raw);
+  free(history);
+  free(spectrum);
+  free(gainZ);
+  free(gainA);
+  free(bandOfBin);
+  raw = nullptr;
+  history = nullptr;
+  spectrum = nullptr;
+  gainZ = gainA = nullptr;
+  bandOfBin = nullptr;
+  dsps_fft2r_deinit_fc32();
+  buffersAllocated = false;
+}
+
+static bool allocateBuffers() {
   raw = (int32_t*)malloc(sizeof(int32_t) * NOISE_READ_SAMPLES);
   history = (float*)calloc(NOISE_FFT_SIZE, sizeof(float));
   spectrum = (float*)malloc(sizeof(float) * NOISE_FFT_SIZE * 2);
@@ -300,17 +340,23 @@ bool noiseBegin() {
   gainA = (float*)malloc(sizeof(float) * NOISE_FFT_SIZE / 2);
   bandOfBin = (uint8_t*)malloc(NOISE_FFT_SIZE / 2);
 
-  if (!raw || !history || !spectrum || !gainZ || !gainA || !bandOfBin) {
-    logInfo("noise: out of memory, running without the microphone");
-    return false;
-  }
-
-  if (dsps_fft2r_init_fc32(nullptr, NOISE_FFT_SIZE) != ESP_OK) {
-    logInfo("noise: FFT init failed, running without the microphone");
+  if (!raw || !history || !spectrum || !gainZ || !gainA || !bandOfBin
+      || dsps_fft2r_init_fc32(nullptr, NOISE_FFT_SIZE) != ESP_OK) {
+    releaseBuffers();
     return false;
   }
 
   prepareTables();
+  buffersAllocated = true;
+  return true;
+}
+
+bool noiseBegin() {
+  if (!allocateBuffers()) {
+    logInfo("noise: out of memory, running without the microphone");
+    return false;
+  }
+
   resetAccumulator(0);
 
   i2s.setPins(NOISE_SCK_PIN, NOISE_WS_PIN, -1, NOISE_SD_PIN);
@@ -355,15 +401,44 @@ noise_stats_t noiseStats() {
   return stats;
 }
 
+// The task finishes the frame it is on and parks; a hop is 64 ms and the
+// FFT a few more, so it answers well inside the wait.
+#define NOISE_PAUSE_WAIT_MS 1000
+
 void noisePause() {
-  if (task != nullptr) {
-    vTaskSuspend(task);
+  if (task == nullptr || !buffersAllocated) {
+    return;
   }
+
+  pauseRequested = true;
+  const uint32_t start = millis();
+  while (!paused && millis() - start < NOISE_PAUSE_WAIT_MS) {
+    delay(5);
+  }
+
+  // Freeing under a task still in the middle of a frame would corrupt the heap.
+  if (!paused) {
+    logInfo("noise: task did not park, keeping its memory");
+    return;
+  }
+
+  releaseBuffers();
 }
 
-// The history now spans the pause; the slot it lands in starts over.
+// The slot being filled goes on; it misses the seconds of the pause.
 void noiseResume() {
-  if (task != nullptr) {
-    vTaskResume(task);
+  if (task == nullptr) {
+    return;
   }
+
+  if (!buffersAllocated && !allocateBuffers()) {
+    // Stays parked; the next resume tries again.
+    stats.running = false;
+    logInfo("noise: no memory to resume, largest free block %u", (unsigned)ESP.getMaxAllocHeap());
+    return;
+  }
+
+  stats.running = true;
+  pauseRequested = false;
+  xTaskNotifyGive(task);
 }

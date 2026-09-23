@@ -12,6 +12,18 @@ assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 2.2.0 shipped without a bump, so a board on them reports the number
 before.
 
+## 3.0.1 - 2026-09-23
+
+Board ESP32_DEV · Protocol 3 · Server v3.0.1
+
+- I2C at 20 kHz instead of the default 100 kHz, for the 4 m cable to the
+  SHT41.
+- The noise task gives its ~40 kB back for every upload and takes it again
+  after. With it held, mbedTLS could not allocate (largest free block
+  36 kB): the upload failed or hung until the watchdog restarted the board,
+  every two minutes. The noise of a window misses the seconds of its upload.
+- A transport error logs mbedTLS's own reason and the largest free block.
+
 ## 3.0.0 - 2026-09-23
 
 Board ESP32_DEV · Protocol 3 · Server v3.0.1

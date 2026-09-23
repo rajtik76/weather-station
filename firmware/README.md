@@ -56,9 +56,10 @@ the `SDA` / `SCL` symbols; the I2S pins are in `noise.h`. The INMP441's
 
 Both grounds on the cable matter. With one of them open the SHT41 dropped
 about one reading in seven - a byte, then `FF`s, or no acknowledge at all -
-while the WiFi was on; with both it runs clean at the default 100 kHz. If
+while the WiFi was on; with both it ran clean at 100 kHz. The bus runs at
+20 kHz anyway (`I2C_CLOCK_HZ`), for the margin on four metres of cable. If
 I2C or I2S ever misbehaves again, the cable shield goes to GND at the ESP32
-end, and after that the I2C clock comes down.
+end first.
 
 ### Serial
 

@@ -27,7 +27,7 @@
 
 // Sent with every batch; bump it with each build that goes on a board, and
 // tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
-#define FIRMWARE_VERSION "3.0.0"
+#define FIRMWARE_VERSION "3.0.1"
 
 // The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
 // DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
@@ -41,6 +41,10 @@
 // the base board, the SHT41 at the end of the 4 m cable, on the same bus.
 #define I2C_SDA_PIN SDA
 #define I2C_SCL_PIN SCL
+
+// 4 m of cable to the SHT41: slower edges than the default 100 kHz leave
+// room for the cable's capacitance and whatever the radio couples into it.
+#define I2C_CLOCK_HZ 20000
 
 #define API_URL "https://weather.rajtik.com/api/v1/measurement"
 
@@ -163,6 +167,7 @@ static bool sht41Begin() {
 
 static bool sensorsBegin() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(I2C_CLOCK_HZ);
   bool bmpFound = bmp280Begin();
   bool shtFound = sht41Begin();
   return bmpFound && shtFound;
@@ -528,7 +533,12 @@ static bool postTransmission(const char* payload) {
   // A negative code is a client side failure, not an HTTP status - most
   // often the TLS handshake, which is the interesting one here.
   if (code < 0) {
-    logInfo("POST -> %d, transport error: %s", code, http.errorToString(code).c_str());
+    // mbedTLS says why the handshake failed; the largest free block says
+    // whether its buffers fitted at all.
+    char tlsError[96];
+    int tlsCode = client.lastError(tlsError, sizeof(tlsError));
+    logInfo("POST -> %d, transport error: %s; TLS %d: %s; largest free block %u",
+            code, http.errorToString(code).c_str(), tlsCode, tlsError, (unsigned)ESP.getMaxAllocHeap());
   } else if (code == 401 || code == 422) {
     // 422 means the payload does not match the contract. Without the body
     // there is no way to tell which field the server refused.
@@ -544,6 +554,8 @@ static bool postTransmission(const char* payload) {
 static uint32_t lastUploadAttemptMs = 0;
 static uint32_t lastUploadOkMs = 0;
 
+static void uploadBatches(char* payload, size_t payloadLen);
+
 // Oldest first, one batch per POST, stops at the first failure. The server
 // upserts, so a batch whose answer got lost is safe to send again.
 static void uploadBuffered() {
@@ -556,12 +568,19 @@ static void uploadBuffered() {
     return;
   }
 
+  // The noise task's buffers are what TLS needs: FFT between uploads, not during.
+  noisePause();
+  uploadBatches(payload, sizeof(payload));
+  noiseResume();
+}
+
+static void uploadBatches(char* payload, size_t payloadLen) {
   while (windowBufferCount() > 0) {
     transmission_t tx;
     windowBufferToTransmission(tx, DEVICE_ID);
     refreshStatus();
 
-    if (!transmissionToJson(tx, status, payload, sizeof(payload))) {
+    if (!transmissionToJson(tx, status, payload, payloadLen)) {
       logInfo("payload buffer too small");
       return;
     }
@@ -638,7 +657,7 @@ static void restartIfStuck() {
 // ---------------------------------------------------------------- ota
 
 // The open window is closed into the buffer first and the noise task is
-// paused, so the transfer has the CPU. The upload blocks the loop, so the
+// paused, so the transfer has the CPU and the memory. The upload blocks the loop, so the
 // watchdog is fed from the progress callback; a stalled transfer still
 // trips it. Off without a password.
 static void otaBegin() {

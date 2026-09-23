@@ -53,8 +53,9 @@ bool noiseTake(uint32_t slot, noise_window_t& out, uint32_t waitMs);
 
 noise_stats_t noiseStats();
 
-// Around an OTA update: the transfer gets the CPU and the board restarts
-// after it; a failed update resumes. The slot being filled is lost either way.
+// Around an upload or an OTA update: the task parks and its ~40 kB go back
+// to the heap for TLS, then are allocated again. The slot being filled
+// misses the seconds in between.
 void noisePause();
 void noiseResume();
 
