@@ -8,7 +8,7 @@
 
     {{-- ── Top bar ────────────────────────────────────────────────── --}}
     <div class="flex items-center justify-between gap-4 border-b border-zinc-900/10 px-4 py-3 font-mono text-[11px] font-medium tracking-[0.25em] text-zinc-500 uppercase sm:px-8 dark:border-white/10 dark:text-zinc-400">
-        <span>ESP32 + BME280</span>
+        <span>ESP32 + SHT41 + BMP280 + INMP441</span>
         <span class="flex items-center gap-2 normal-case tracking-normal">
             <span
                 @class([
@@ -50,7 +50,8 @@
                 </flux:heading>
                 {{-- Instrument Serif runs small beside the sans; one step larger. --}}
                 <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
-                    A BME280 on an ESP32 samples every thirty seconds and reports each ten minutes as a mean with its extremes.
+                    An SHT41 outside and a BMP280 indoors are read every thirty seconds by an ESP32, which reports each ten minutes as a mean with its extremes.
+                    A microphone beside the SHT41 adds the noise: A-weighted levels and a third-octave spectrum per window.
                     Pressure is measured at 345 m and shown reduced to mean sea level.
                 </flux:text>
             </div>
