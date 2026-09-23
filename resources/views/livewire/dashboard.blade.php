@@ -8,7 +8,7 @@
 
     {{-- ── Top bar ────────────────────────────────────────────────── --}}
     <div class="flex items-center justify-between gap-4 border-b border-zinc-900/10 px-4 py-3 font-mono text-[11px] font-medium tracking-[0.25em] text-zinc-500 uppercase sm:px-8 dark:border-white/10 dark:text-zinc-400">
-        <span>ESP32 + SHT41 + BMP280 + INMP441</span>
+        <span class="hidden sm:inline">Personal weather station</span>
         <span class="flex items-center gap-2 normal-case tracking-normal">
             <span
                 @class([
