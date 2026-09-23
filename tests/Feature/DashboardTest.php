@@ -10,6 +10,8 @@ use App\Models\StationEvent;
 use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
+use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\NoiseWindow;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -448,6 +450,27 @@ it('carries the spread of the samples behind each bucket', function (): void {
         ->and($hour[11])->toBe(1013.7)
         ->and($hour[3])->toBeGreaterThan(1013.39)
         ->and($hour[3])->toBeLessThan(1013.7);
+});
+
+it('lists a V3 packet with its noise object', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v3()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5562, lamax: 5898, la10: 5797, la90: 5284, bands: array_fill(0, 26, 3120)),
+        ),
+    ]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('"noise"', false)
+        ->assertSee('"laeq":5562', true);
 });
 
 it('bands a V1 reading on itself', function (): void {

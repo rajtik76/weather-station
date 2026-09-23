@@ -392,7 +392,7 @@ class Dashboard extends Component
      * `created_at`: the reading's own stamp is in the JSON beside it, and a
      * buffered batch arrives long after it was measured.
      *
-     * @return list<array{timestamp: int, packet: array<string, int>, at: string, ago: string, t: float, h: float, p: float}>
+     * @return list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}>
      */
     #[Computed]
     public function recentTransmissions(): array

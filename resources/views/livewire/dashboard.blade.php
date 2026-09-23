@@ -298,7 +298,8 @@
                     ])
                 >
                     {{-- The blob as stored, one field per line: a V2 packet on
-                         one line outruns a desktop. Coloured by the key's first word. --}}
+                         one line outruns a desktop. Coloured by the key's first word.
+                         V3's "noise" object stays on its line as JSON. --}}
                     <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
                         <span class="block text-zinc-400 dark:text-zinc-600">{</span>
                         <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
@@ -309,7 +310,7 @@
                                 'pressure' => 'text-violet-600 dark:text-violet-500',
                                 default => 'text-zinc-700 dark:text-zinc-300',
                             })
-                            <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}">{{ $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
+                            <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}{{ is_array($value) ? ' break-all' : '' }}">{{ is_array($value) ? json_encode($value) : $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
                         @endforeach
                         <span class="block text-zinc-400 dark:text-zinc-600">}</span>
                     </p>
