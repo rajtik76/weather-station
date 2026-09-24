@@ -1593,3 +1593,13 @@ it('dates the forecast by when it arrived, not by the window it starts from', fu
         ->assertSee('made 24.9.2026 10:10')
         ->assertDontSee('made 24.9.2026 10:00');
 });
+
+it('folds the forecast like the strips', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
+
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toMatch('/aria-expanded="true"[^>]*aria-controls="forecast"[^>]*aria-label="Collapse Forecast"/')
+        ->toContain('<div id="forecast" x-bind:class="{ hidden: collapsed }">');
+});
