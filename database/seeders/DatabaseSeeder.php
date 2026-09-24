@@ -16,6 +16,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->call(MeasurementSeeder::class);
+        $this->call([MeasurementSeeder::class, ForecastSeeder::class]);
     }
 }
