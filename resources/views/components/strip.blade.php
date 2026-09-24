@@ -17,19 +17,7 @@
     >
         {{ $slot }}
         {{-- Folds the strip to its header; the canvas stays mounted, so the zoom and crosshair survive. --}}
-        <flux:button
-            x-on:click="collapsed = ! collapsed"
-            variant="subtle"
-            size="xs"
-            icon="chevron-up"
-            aria-expanded="true"
-            x-bind:aria-expanded="collapsed ? 'false' : 'true'"
-            aria-controls="strip-{{ $key }}"
-            aria-label="Collapse {{ $label }}"
-            x-bind:aria-label="collapsed ? 'Expand {{ $label }}' : 'Collapse {{ $label }}'"
-            class="ml-auto"
-            x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
-        />
+        <x-fold-button controls="strip-{{ $key }}" :label="$label" />
     </div>
 
     {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}

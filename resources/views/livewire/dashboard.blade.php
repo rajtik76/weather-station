@@ -150,19 +150,7 @@
                     made {{ $forecast['at'] }} · {{ $forecast['ago'] }} ·
                     {{ $forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}
                 </p>
-                <flux:button
-                    x-on:click="collapsed = ! collapsed"
-                    variant="subtle"
-                    size="xs"
-                    icon="chevron-up"
-                    aria-expanded="true"
-                    x-bind:aria-expanded="collapsed ? 'false' : 'true'"
-                    aria-controls="forecast"
-                    aria-label="Collapse Forecast"
-                    x-bind:aria-label="collapsed ? 'Expand Forecast' : 'Collapse Forecast'"
-                    class="ml-auto"
-                    x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
-                />
+                <x-fold-button controls="forecast" label="Forecast" />
             </div>
 
             <div id="forecast" x-bind:class="{ hidden: collapsed }">
@@ -215,6 +203,66 @@
                     Range: eight readings in ten land inside it. Rain: the chance of at least 0.1 mm by then.
                     Trained on ČHMÚ station records (CC BY 4.0), run from this station's readings alone.
                 </p>
+
+                {{-- Inside the forecast's fold, so folding the forecast takes it along.
+                     Starts folded: rendered hidden, so nothing flashes before Alpine runs. --}}
+                @if ($this->forecastAccuracy !== [])
+                    <div class="border-t border-zinc-900/5 dark:border-white/5" x-data="{ collapsed: true }">
+                        <div class="flex items-center gap-x-6 px-4 py-3 sm:px-8">
+                            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                                Accuracy · last {{ $this::ACCURACY_DAYS }} days
+                            </p>
+                            <x-fold-button controls="forecast-accuracy" label="Forecast accuracy" :collapsed="true" />
+                        </div>
+
+                        <div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">
+                            <div class="overflow-x-auto px-4 sm:px-8">
+                                <table class="w-full font-mono text-xs tabular-nums">
+                                    <thead>
+                                        <tr class="text-left text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                                            <th class="py-2 pr-6 font-medium">Ahead</th>
+                                            <th class="py-2 pr-6 font-medium">In range</th>
+                                            <th class="py-2 pr-6 font-medium">Error</th>
+                                            <th class="py-2 pr-6 font-medium">If unchanged</th>
+                                            <th class="py-2 pr-6 font-medium">Rain chance · rained / dry</th>
+                                            <th class="py-2 font-medium">Forecasts</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-zinc-800 dark:text-zinc-200">
+                                        @foreach ($this->forecastAccuracy as $score)
+                                            <tr class="border-t border-zinc-900/5 dark:border-white/5">
+                                                <td class="py-1.5 pr-6">+{{ $score['hours'] }} h</td>
+                                                <td @class([
+                                                    'py-1.5 pr-6',
+                                                    // Near the 80 % the range aims at; far over it means a range too wide.
+                                                    'text-emerald-600 dark:text-emerald-400' => abs($score['inRange'] - 80) <= 10,
+                                                    'text-amber-600 dark:text-amber-500' => abs($score['inRange'] - 80) > 10,
+                                                ])>{{ number_format($score['inRange'], 0) }} %</td>
+                                                <td class="py-1.5 pr-6">{{ number_format($score['error'], 1, ',', ' ') }} °C</td>
+                                                <td class="py-1.5 pr-6 text-zinc-500 dark:text-zinc-400">{{ number_format($score['unchangedError'], 1, ',', ' ') }} °C</td>
+                                                <td class="py-1.5 pr-6">
+                                                    @if ($score['rainCount'] === 0)
+                                                        <span class="text-zinc-500 dark:text-zinc-400">not listened</span>
+                                                    @else
+                                                        {{ $score['chanceWhenRain'] === null ? 'no rain' : number_format($score['chanceWhenRain'], 0).' %' }}
+                                                        /
+                                                        {{ $score['chanceWhenDry'] === null ? 'no dry spell' : number_format($score['chanceWhenDry'], 0).' %' }}
+                                                    @endif
+                                                </td>
+                                                <td class="py-1.5">{{ $score['count'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="px-4 pt-2 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
+                                In range: how often the temperature landed inside the forecast range, which aims at 80 %.
+                                Error: the mean distance from the middle of the forecast; if unchanged, the error of assuming nothing changes.
+                                Rain as the microphone heard it: the mean chance given when it rained and when it stayed dry. Drizzle is not heard.
+                            </p>
+                        </div>
+                    </div>
+                @endif
             </div>
         </section>
     @endif

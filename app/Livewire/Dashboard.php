@@ -9,6 +9,7 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\StationReport;
+use App\Queries\ForecastAccuracy;
 use App\Queries\MeasurementBuckets;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
@@ -19,6 +20,7 @@ use App\ValueObject\Readout;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -54,6 +56,7 @@ use UnexpectedValueException;
  * @property-read Sensor|null $selectedSensor
  * @property-read bool $hasSensorChoice
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
+ * @property-read list<Score> $forecastAccuracy
  *
  * Chart rows are positional arrays to keep the JSON payload small. A bucket
  * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
@@ -70,6 +73,7 @@ use UnexpectedValueException;
  * @phpstan-import-type Bucket from MeasurementBuckets
  * @phpstan-import-type NoiseBucket from MeasurementBuckets
  * @phpstan-import-type Horizon from Forecast
+ * @phpstan-import-type Score from ForecastAccuracy
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -84,6 +88,9 @@ class Dashboard extends Component
 
     /** A forecast shows only while it starts this close to the newest reading. */
     private const int FORECAST_FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
+    /** How far back the forecasts are scored against what came; the panel's label reads it. */
+    public const int ACCURACY_DAYS = 7;
 
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;
@@ -531,6 +538,33 @@ class Dashboard extends Component
             'corrected' => $forecast->corrected,
             'horizons' => $horizons,
         ];
+    }
+
+    /**
+     * The last week's forecasts scored against the readings that followed,
+     * per horizon; empty until one has come true. Not the chart window: a
+     * score over a zoomed hour would say nothing. Cached until the next
+     * forecast: it comes with the upload that completes new scores. Fifteen
+     * minutes at most, for when the service is down and none comes.
+     *
+     * @return list<Score>
+     */
+    #[Computed]
+    public function forecastAccuracy(): array
+    {
+        $sensorId = $this->selectedSensor?->id;
+        $newest = Forecast::query()->where('sensor_id', $sensorId)->max('issued_at');
+
+        if ($newest === null) {
+            return [];
+        }
+
+        // Its inputs change with each forecast, every ten minutes; the page polls every one.
+        return Cache::remember(
+            "forecast-accuracy:{$sensorId}:{$newest}",
+            now()->addMinutes(15),
+            fn (): array => new ForecastAccuracy($sensorId)->since(now()->subDays(self::ACCURACY_DAYS)->getTimestamp()),
+        );
     }
 
     /**
