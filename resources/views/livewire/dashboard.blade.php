@@ -223,86 +223,44 @@
     ></div>
 
     @foreach ($strips as $strip)
-        {{-- The fold is Alpine state: a Livewire round trip would re-run every query to flip a class. --}}
-        <section
-            aria-label="{{ $strip['label'] }} history"
-            class="border-b border-zinc-900/10 dark:border-white/10"
-            x-data="{ collapsed: false }"
-        >
-            <div
-                class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8"
-                x-bind:class="{ 'pb-2': ! collapsed, 'pb-5': collapsed }"
-            >
-                @foreach ($strip['channels'] as $channel)
-                    @if (isset($channel['toggle']))
-                        {{-- The label is the switch; the last one on is disabled instead. --}}
-                        @php($shown = $this->channels[$channel['key']] ?? false)
-                        @php($last = $this->isLastChannel($channel['key']))
-                        <button
-                            type="button"
-                            wire:click="toggleChannel('{{ $channel['key'] }}')"
-                            aria-pressed="{{ $shown ? 'true' : 'false' }}"
-                            @disabled($last)
+        <x-strip :key="$strip['key']" :label="$strip['label']" :height="$strip['height']">
+            @foreach ($strip['channels'] as $channel)
+                @if (isset($channel['toggle']))
+                    {{-- The label is the switch; the last one on is disabled instead. --}}
+                    @php($shown = $this->channels[$channel['key']] ?? false)
+                    @php($last = $this->isLastChannel($channel['key']))
+                    <button
+                        type="button"
+                        wire:click="toggleChannel('{{ $channel['key'] }}')"
+                        aria-pressed="{{ $shown ? 'true' : 'false' }}"
+                        @disabled($last)
+                        @class([
+                            'flex items-center gap-2 rounded-sm font-mono text-[11px] font-medium tracking-[0.2em] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:focus-visible:outline-zinc-100',
+                            'cursor-pointer' => ! $last,
+                            'cursor-default' => $last,
+                            'text-zinc-500 dark:text-zinc-400' => $shown,
+                            'hover:text-zinc-800 dark:hover:text-zinc-200' => $shown && ! $last,
+                            'text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400' => ! $shown,
+                        ])
+                    >
+                        <span
                             @class([
-                                'flex items-center gap-2 rounded-sm font-mono text-[11px] font-medium tracking-[0.2em] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:focus-visible:outline-zinc-100',
-                                'cursor-pointer' => ! $last,
-                                'cursor-default' => $last,
-                                'text-zinc-500 dark:text-zinc-400' => $shown,
-                                'hover:text-zinc-800 dark:hover:text-zinc-200' => $shown && ! $last,
-                                'text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400' => ! $shown,
+                                'size-1.5 rounded-full',
+                                $channel['accent'] => $shown,
+                                'bg-zinc-300 dark:bg-zinc-600' => ! $shown,
                             ])
-                        >
-                            <span
-                                @class([
-                                    'size-1.5 rounded-full',
-                                    $channel['accent'] => $shown,
-                                    'bg-zinc-300 dark:bg-zinc-600' => ! $shown,
-                                ])
-                                aria-hidden="true"
-                            ></span>
-                            {{ $channel['label'] }} ({{ $channel['unit'] }})
-                        </button>
-                    @else
-                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                            <span class="{{ $channel['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
-                            {{ $channel['label'] }} ({{ $channel['unit'] }})
-                        </p>
-                    @endif
-                @endforeach
-                {{-- Folds the strip to its header; the canvas stays mounted, so the zoom and crosshair survive. --}}
-                <flux:button
-                    x-on:click="collapsed = ! collapsed"
-                    variant="subtle"
-                    size="xs"
-                    icon="chevron-up"
-                    aria-expanded="true"
-                    x-bind:aria-expanded="collapsed ? 'false' : 'true'"
-                    aria-controls="strip-{{ $strip['key'] }}"
-                    aria-label="Collapse {{ $strip['label'] }}"
-                    x-bind:aria-label="collapsed ? 'Expand {{ $strip['label'] }}' : 'Collapse {{ $strip['label'] }}'"
-                    class="ml-auto"
-                    x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
-                />
-            </div>
-
-            {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
-            <div id="strip-{{ $strip['key'] }}" x-bind:class="{ hidden: collapsed }">
-                {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
-                <div
-                    wire:ignore
-                    data-strip="{{ $strip['key'] }}"
-                    class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
-                >
-                    <div data-canvas class="absolute inset-0"></div>
-                    <div
-                        data-zoom-band
-                        hidden
-                        aria-hidden="true"
-                        class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
-                    ></div>
-                </div>
-            </div>
-        </section>
+                            aria-hidden="true"
+                        ></span>
+                        {{ $channel['label'] }} ({{ $channel['unit'] }})
+                    </button>
+                @else
+                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                        <span class="{{ $channel['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
+                        {{ $channel['label'] }} ({{ $channel['unit'] }})
+                    </p>
+                @endif
+            @endforeach
+        </x-strip>
     @endforeach
 
     {{-- ── Noise ──────────────────────────────────────────────────── --}}
@@ -330,66 +288,25 @@
         ])
 
         @foreach ($noiseStrips as $strip)
-            <section
-                aria-label="{{ $strip['label'] }} history"
-                class="border-b border-zinc-900/10 dark:border-white/10"
-                x-data="{ collapsed: false }"
-            >
-                <div
-                    class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8"
-                    x-bind:class="{ 'pb-2': ! collapsed, 'pb-5': collapsed }"
-                >
-                    <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                        {{ $strip['label'] }} ({{ $strip['unit'] }})
+            <x-strip :key="$strip['key']" :label="$strip['label']" :height="$strip['height']">
+                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                    {{ $strip['label'] }} ({{ $strip['unit'] }})
+                </p>
+                @foreach ($strip['legend'] as $entry)
+                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                        <span class="{{ $entry['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
+                        {{ $entry['label'] }}
                     </p>
-                    @foreach ($strip['legend'] as $entry)
-                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                            <span class="{{ $entry['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
-                            {{ $entry['label'] }}
-                        </p>
-                    @endforeach
-                    @if ($strip['key'] === 'spectrum')
-                        {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
-                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                            <span data-spectrum-low wire:ignore></span>
-                            <span data-spectrum-scale wire:ignore class="h-1.5 w-24 rounded-full" aria-hidden="true"></span>
-                            <span data-spectrum-high wire:ignore></span>
-                        </p>
-                    @endif
-                    {{-- Folds the strip to its header; the canvas stays mounted, so the zoom and crosshair survive. --}}
-                    <flux:button
-                        x-on:click="collapsed = ! collapsed"
-                        variant="subtle"
-                        size="xs"
-                        icon="chevron-up"
-                        aria-expanded="true"
-                        x-bind:aria-expanded="collapsed ? 'false' : 'true'"
-                        aria-controls="strip-{{ $strip['key'] }}"
-                        aria-label="Collapse {{ $strip['label'] }}"
-                        x-bind:aria-label="collapsed ? 'Expand {{ $strip['label'] }}' : 'Collapse {{ $strip['label'] }}'"
-                        class="ml-auto"
-                        x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
-                    />
-                </div>
-
-                {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
-                <div id="strip-{{ $strip['key'] }}" x-bind:class="{ hidden: collapsed }">
-                    {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
-                    <div
-                        wire:ignore
-                        data-strip="{{ $strip['key'] }}"
-                        class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
-                    >
-                        <div data-canvas class="absolute inset-0"></div>
-                        <div
-                            data-zoom-band
-                            hidden
-                            aria-hidden="true"
-                            class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
-                        ></div>
-                    </div>
-                </div>
-            </section>
+                @endforeach
+                @if ($strip['key'] === 'spectrum')
+                    {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
+                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                        <span data-spectrum-low wire:ignore></span>
+                        <span data-spectrum-scale wire:ignore class="h-1.5 w-24 rounded-full" aria-hidden="true"></span>
+                        <span data-spectrum-high wire:ignore></span>
+                    </p>
+                @endif
+            </x-strip>
         @endforeach
     @endif
 

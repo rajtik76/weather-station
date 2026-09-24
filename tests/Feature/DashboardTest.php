@@ -697,6 +697,19 @@ it('renders every strip open with a client-side fold', function (): void {
         ->not->toContain('wire:click="toggleStrip');
 });
 
+it('folds the noise strips like the others', function (): void {
+    Measurement::factory()->v3()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => (string) noisyWindow(5000, 5500, 4500, 6000, 3000),
+    ]);
+
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toMatch('/aria-controls="strip-spectrum"[^>]*aria-label="Collapse Noise spectrum"/')
+        ->toContain('<div id="strip-spectrum" x-bind:class="{ hidden: collapsed }">')
+        ->toContain('data-strip="noise"')
+        ->toContain('data-spectrum-scale');
+});
+
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
