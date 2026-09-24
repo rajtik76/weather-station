@@ -1565,3 +1565,18 @@ it('shows whether each forecast hour warms or cools on the one before', function
         ->assertSet('forecast.horizons.1.trend', 'rising')
         ->assertSet('forecast.horizons.2.trend', 'falling');
 });
+
+it('picks up a newer forecast on the next poll', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
+    $dashboard = Livewire::test(Dashboard::class)->assertSee('from 24.9.2026 10:00');
+
+    // Ten minutes on: the station uploads, the service answers, the page polls.
+    $this->travel(10)->minutes();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
+
+    $dashboard->call('$refresh')->assertSee('from 24.9.2026 10:10');
+});
