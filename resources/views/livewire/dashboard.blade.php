@@ -275,6 +275,7 @@
         data-chart-events="{{ json_encode($this->stationEvents) }}"
         data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
         data-noise-rows="{{ json_encode($this->noise) }}"
+        data-noise-rain="{{ json_encode($this->rainSlots) }}"
         data-window-from="{{ $this->windowMs['from'] }}"
         data-window-to="{{ $this->windowMs['to'] }}"
         data-chart-component="{{ $this->getId() }}"

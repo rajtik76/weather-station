@@ -14,6 +14,7 @@ use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\NoiseWindow;
+use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,6 +31,7 @@ use UnexpectedValueException;
  *
  * @property-read list<BucketRow> $readings
  * @property-read list<NoiseRow> $noise
+ * @property-read list<array{0: int, 1: int}> $rainSlots
  * @property-read list<ReadingRow> $overview
  * @property-read array{from: int, to: int} $windowMs
  * @property-read bool $hasReadings
@@ -259,6 +261,41 @@ class Dashboard extends Component
         $buckets = $this->measurementBuckets()->noise($this->chartWindow());
 
         return array_values($buckets->map(fn (object $bucket): array => $this->plotNoise($bucket))->all());
+    }
+
+    /**
+     * The noise slots the microphone heard rain in, as `[wall-clock ms,
+     * epoch]` - the waterfall marks them. Each window is heard on its own
+     * and a slot is rainy when any of its windows was: RainDetector is
+     * calibrated on ten-minute windows, and on an averaged hour a shower
+     * would fade into the dry windows beside it.
+     *
+     * @return list<array{0: int, 1: int}>
+     */
+    #[Computed]
+    public function rainSlots(): array
+    {
+        if ($this->noise === []) {
+            return [];
+        }
+
+        $rainy = [];
+
+        foreach ($this->measurementBuckets()->spectra($this->chartWindow()) as $window) {
+            /** @var list<int> $bands */
+            $bands = json_decode($window->bands, true, flags: JSON_THROW_ON_ERROR);
+
+            if (RainDetector::hears(array_map(fn (int $level): float => $level / 100, $bands))) {
+                $rainy[(int) $window->bucket] = true;
+            }
+        }
+
+        ksort($rainy);
+
+        return array_map(
+            fn (int $bucket): array => [LocalTime::of($bucket)->wallClockMs(), $bucket],
+            array_keys($rainy),
+        );
     }
 
     /**

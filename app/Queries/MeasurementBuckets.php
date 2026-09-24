@@ -102,6 +102,32 @@ final readonly class MeasurementBuckets
     }
 
     /**
+     * Every noise window's own spectrum with the bucket it falls in, not
+     * averaged: rain is heard per window, and a shower averaged with the dry
+     * windows around it would vanish on a wide bucket. Same bounds as noise().
+     * Bands in hundredths of a dB, as the jsonb array holds them.
+     *
+     * @return Collection<int, object{bucket: int, bands: string}>
+     */
+    public function spectra(ChartWindow $window): Collection
+    {
+        $step = $window->range()->bucketSeconds();
+
+        /** @var Collection<int, object{bucket: int, bands: string}> $spectra */
+        $spectra = DB::query()
+            ->from('measurements')
+            ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
+            ->selectRaw("data->'noise'->'bands' AS bands")
+            ->where('sensor_id', $this->sensorId)
+            ->whereBetween('timestamp', [$this->slotOf($window->from, $step), $this->slotOf($window->to, $step) + $step - 1])
+            ->whereRaw("data->'noise' IS NOT NULL")
+            ->orderBy('timestamp')
+            ->get();
+
+        return $spectra;
+    }
+
+    /**
      * First reading of every bucket. Grouping, not `timestamp % bucket <
      * STEP`: the station's stamps sit minutes off the slot and drift, so a
      * phase test would miss rows.

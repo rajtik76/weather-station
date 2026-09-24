@@ -9,6 +9,7 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\StationReport;
+use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
@@ -1487,3 +1488,58 @@ it('pictures each forecast hour by its rain chance and the real sunrise', functi
     'possible' => ['2026-09-24 20:00:00', 0.3, 'cloud-drizzle', 'rain'],
     'likely' => ['2026-09-24 08:00:00', 0.6, 'cloud-rain', 'rain'],
 ]);
+
+/**
+ * A V3 window whose spectrum carries the given 8 kHz level and 1 kHz ring
+ * over its neighbours, in dB.
+ */
+function spectrumWindow(float $high, float $ring, float $neighbours = 40.0): MeasurementDataV3
+{
+    $bands = array_fill(0, 26, 3000);
+    $bands[15] = (int) round($neighbours * 100);
+    $bands[17] = (int) round($neighbours * 100);
+    $bands[16] = (int) round(($neighbours + $ring) * 100);
+    $bands[25] = (int) round($high * 100);
+
+    return new MeasurementDataV3(
+        temperature: 2150, humidity: 4800, pressure: 97389,
+        temperatureMin: 2100, temperatureMax: 2200,
+        humidityMin: 4700, humidityMax: 4900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+        noise: new NoiseWindow(seconds: 600, laeq: 6500, lamax: 7200, la10: 6700, la90: 6000, bands: $bands),
+    );
+}
+
+it('marks the waterfall slots the microphone heard rain in', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    // On the hour and half past: slot starts at any bucket width the default range picks.
+    $rain = now()->subMinutes(60)->getTimestamp();
+    $wetRoad = now()->subMinutes(30)->getTimestamp();
+
+    foreach ([$rain => spectrumWindow(57.6, 4.7), $wetRoad => spectrumWindow(50.8, 0.6)] as $timestamp => $window) {
+        Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $timestamp, 'data' => (string) $window]);
+    }
+
+    // The slot's wall-clock ms, as the waterfall's cells are placed, and its epoch.
+    Livewire::test(Dashboard::class)->assertSet('rainSlots', [[LocalTime::of($rain)->wallClockMs(), $rain]]);
+});
+
+it('keeps a shower on a wide bucket among dry windows', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    // One bucket of the month view: an hour.
+    $hour = now()->subHours(2)->getTimestamp();
+
+    // Traffic loud around 1 kHz in the dry windows: averaged in, it would drown the shield's ring.
+    foreach (range(0, 5) as $slot) {
+        Measurement::factory()->for($sensor)->v3()->create([
+            'timestamp' => $hour + $slot * 600,
+            'data' => (string) ($slot === 2 ? spectrumWindow(57.6, 4.7) : spectrumWindow(30.0, 0.0, 50.0)),
+        ]);
+    }
+
+    Livewire::test(Dashboard::class, ['from' => now()->subDays(20)->getTimestamp(), 'to' => now()->getTimestamp()])
+        ->assertSet('rainSlots', [[LocalTime::of($hour)->wallClockMs(), $hour]]);
+});
