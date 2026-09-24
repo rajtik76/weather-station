@@ -1313,8 +1313,10 @@ function bindZoom(chart, element, component) {
         band.hidden = false;
     };
 
+    // A finger drags the same selection: the strip's touch-action leaves the browser
+    // only vertical scroll and pinch, and either one cancels the pointer mid-drag.
     element.addEventListener("pointerdown", (event) => {
-        if (event.button !== 0 || event.pointerType === "touch") {
+        if (event.button !== 0 || !event.isPrimary) {
             return;
         }
 

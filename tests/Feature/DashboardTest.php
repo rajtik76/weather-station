@@ -712,6 +712,14 @@ it('renders every strip open with a client-side fold', function (): void {
         ->not->toContain('wire:click="toggleStrip');
 });
 
+it('leaves sideways touch drags on a strip to the zoom selection', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    // The page still scrolls and pinches over a chart; only the horizontal pan is taken.
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toMatch('/data-strip="th"\s+class="[^"]*touch-pan-y touch-pinch-zoom/');
+});
+
 it('folds the noise strips like the others', function (): void {
     Measurement::factory()->v3()->create([
         'timestamp' => now()->subMinutes(10)->getTimestamp(),

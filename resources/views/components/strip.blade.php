@@ -22,11 +22,12 @@
 
     {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
     <div id="strip-{{ $key }}" x-bind:class="{ hidden: collapsed }">
-        {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
+        {{-- ECharts owns everything below; a morph would tear out the canvas.
+             Touch pans only vertically, so a sideways finger drag selects a span to zoom into. --}}
         <div
             wire:ignore
             data-strip="{{ $key }}"
-            class="relative {{ $height }} w-full cursor-crosshair select-none"
+            class="relative {{ $height }} w-full cursor-crosshair touch-pan-y touch-pinch-zoom select-none"
         >
             <div data-canvas class="absolute inset-0"></div>
             <div
