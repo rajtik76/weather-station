@@ -12,7 +12,9 @@ use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
+use Illuminate\Foundation\Vite;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 
@@ -165,6 +167,17 @@ it('shows an empty state when nothing has been recorded', function (): void {
     $this->get('/')
         ->assertOk()
         ->assertSee('Nothing in this range');
+});
+
+it('loads the bundled font faces', function (): void {
+    $this->partialMock(Vite::class)
+        ->shouldReceive('fonts')
+        ->once()
+        ->andReturn(new HtmlString('<style id="bundled-fonts"></style>'));
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('<style id="bundled-fonts"></style>', escape: false);
 });
 
 it('ignores readings older than the window', function (): void {

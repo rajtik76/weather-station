@@ -25,7 +25,7 @@ export default defineConfig({
                     weights: [400, 500, 600],
                 }),
                 bunny("Bricolage Grotesque", {
-                    weights: [800],
+                    weights: [700, 800],
                 }),
                 // Italic only; nothing on the page is set upright in it.
                 bunny("Instrument Serif", {

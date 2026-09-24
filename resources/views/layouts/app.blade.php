@@ -12,6 +12,9 @@
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
+        {{-- The families are bundled by bunny() in vite.config.js; @vite does
+             not emit them, this does. --}}
+        @fonts
         @vite(['resources/css/app.css', 'resources/js/app.js'])
 
         @livewireStyles
