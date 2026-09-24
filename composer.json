@@ -93,6 +93,9 @@
         "lint": [
             "@php vendor/bin/pint --parallel"
         ],
+        "lint:check": [
+            "@php vendor/bin/pint --parallel --test"
+        ],
         "rector": [
             "@php vendor/bin/rector process"
         ],
@@ -104,6 +107,7 @@
         ],
         "review": [
             "Composer\\Config::disableProcessTimeout",
+            "@lint:check",
             "@rector:check",
             "@stan",
             "@test"
