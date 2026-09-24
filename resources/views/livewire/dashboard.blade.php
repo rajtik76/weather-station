@@ -220,11 +220,16 @@
     ></div>
 
     @foreach ($strips as $strip)
+        {{-- The fold is Alpine state: a Livewire round trip would re-run every query to flip a class. --}}
         <section
             aria-label="{{ $strip['label'] }} history"
             class="border-b border-zinc-900/10 dark:border-white/10"
+            x-data="{ collapsed: false }"
         >
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
+            <div
+                class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8"
+                x-bind:class="{ 'pb-2': ! collapsed, 'pb-5': collapsed }"
+            >
                 @foreach ($strip['channels'] as $channel)
                     @if (isset($channel['toggle']))
                         {{-- The label is the switch; the last one on is disabled instead. --}}
@@ -261,21 +266,38 @@
                         </p>
                     @endif
                 @endforeach
+                {{-- Folds the strip to its header; the canvas stays mounted, so the zoom and crosshair survive. --}}
+                <flux:button
+                    x-on:click="collapsed = ! collapsed"
+                    variant="subtle"
+                    size="xs"
+                    icon="chevron-up"
+                    aria-expanded="true"
+                    x-bind:aria-expanded="collapsed ? 'false' : 'true'"
+                    aria-controls="strip-{{ $strip['key'] }}"
+                    aria-label="Collapse {{ $strip['label'] }}"
+                    x-bind:aria-label="collapsed ? 'Expand {{ $strip['label'] }}' : 'Collapse {{ $strip['label'] }}'"
+                    class="ml-auto"
+                    x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
+                />
             </div>
 
-            {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
-            <div
-                wire:ignore
-                data-strip="{{ $strip['key'] }}"
-                class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
-            >
-                <div data-canvas class="absolute inset-0"></div>
+            {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
+            <div id="strip-{{ $strip['key'] }}" x-bind:class="{ hidden: collapsed }">
+                {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
                 <div
-                    data-zoom-band
-                    hidden
-                    aria-hidden="true"
-                    class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
-                ></div>
+                    wire:ignore
+                    data-strip="{{ $strip['key'] }}"
+                    class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
+                >
+                    <div data-canvas class="absolute inset-0"></div>
+                    <div
+                        data-zoom-band
+                        hidden
+                        aria-hidden="true"
+                        class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
+                    ></div>
+                </div>
             </div>
         </section>
     @endforeach
@@ -308,8 +330,12 @@
             <section
                 aria-label="{{ $strip['label'] }} history"
                 class="border-b border-zinc-900/10 dark:border-white/10"
+                x-data="{ collapsed: false }"
             >
-                <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8">
+                <div
+                    class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-5 pb-2 sm:px-8"
+                    x-bind:class="{ 'pb-2': ! collapsed, 'pb-5': collapsed }"
+                >
                     <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
                         {{ $strip['label'] }} ({{ $strip['unit'] }})
                     </p>
@@ -327,21 +353,38 @@
                             <span data-spectrum-high wire:ignore></span>
                         </p>
                     @endif
+                    {{-- Folds the strip to its header; the canvas stays mounted, so the zoom and crosshair survive. --}}
+                    <flux:button
+                        x-on:click="collapsed = ! collapsed"
+                        variant="subtle"
+                        size="xs"
+                        icon="chevron-up"
+                        aria-expanded="true"
+                        x-bind:aria-expanded="collapsed ? 'false' : 'true'"
+                        aria-controls="strip-{{ $strip['key'] }}"
+                        aria-label="Collapse {{ $strip['label'] }}"
+                        x-bind:aria-label="collapsed ? 'Expand {{ $strip['label'] }}' : 'Collapse {{ $strip['label'] }}'"
+                        class="ml-auto"
+                        x-bind:class="{ '[&_svg]:rotate-180': collapsed }"
+                    />
                 </div>
 
-                {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
-                <div
-                    wire:ignore
-                    data-strip="{{ $strip['key'] }}"
-                    class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
-                >
-                    <div data-canvas class="absolute inset-0"></div>
+                {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
+                <div id="strip-{{ $strip['key'] }}" x-bind:class="{ hidden: collapsed }">
+                    {{-- ECharts owns everything below; a morph would tear out the canvas. --}}
                     <div
-                        data-zoom-band
-                        hidden
-                        aria-hidden="true"
-                        class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
-                    ></div>
+                        wire:ignore
+                        data-strip="{{ $strip['key'] }}"
+                        class="relative {{ $strip['height'] }} w-full cursor-crosshair select-none"
+                    >
+                        <div data-canvas class="absolute inset-0"></div>
+                        <div
+                            data-zoom-band
+                            hidden
+                            aria-hidden="true"
+                            class="pointer-events-none absolute inset-y-0 border-x border-zinc-900/40 bg-zinc-900/10 dark:border-white/40 dark:bg-white/10"
+                        ></div>
+                    </div>
                 </div>
             </section>
         @endforeach
@@ -349,50 +392,81 @@
 
     {{-- ── Payload tail ───────────────────────────────────────────── --}}
     @if ($this->recentTransmissions !== [])
-        <section aria-label="Last transmissions" class="border-b border-zinc-900/10 dark:border-white/10">
+        @php($transmissionCount = count($this->recentTransmissions))
+        <section
+            aria-label="Last transmissions"
+            class="border-b border-zinc-900/10 dark:border-white/10"
+            x-data="{ all: false }"
+        >
             <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
+                {{-- Counts what is on screen: folded, that is the newest one alone. --}}
                 <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    Last {{ count($this->recentTransmissions) }} measurements · when they arrived
+                    <span x-bind:class="{ hidden: all }">Last measurement · when it arrived</span>
+                    @if ($transmissionCount > 1)
+                        <span class="hidden" x-bind:class="{ hidden: ! all }">Last {{ $transmissionCount }} measurements · when they arrived</span>
+                    @endif
                 </p>
-                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    POST /api/v1/measurement · 0,01 °C · 0,01 % · Pa · UTC unix · samples
-                </p>
+                <div class="flex items-center gap-x-4">
+                    <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                        POST /api/v1/measurement · 0,01 °C · 0,01 % · Pa · UTC unix · samples
+                    </p>
+                    {{-- Folded, the newest transmission still shows; only the older ones go. Nothing to unfold with one. --}}
+                    <flux:button
+                        x-on:click="all = ! all"
+                        variant="subtle"
+                        size="xs"
+                        icon="chevron-down"
+                        aria-expanded="false"
+                        x-bind:aria-expanded="all ? 'true' : 'false'"
+                        aria-controls="transmissions"
+                        aria-label="Show all transmissions"
+                        x-bind:aria-label="all ? 'Show the last transmission only' : 'Show all transmissions'"
+                        x-bind:class="{ '[&_svg]:rotate-180': all }"
+                        :disabled="$transmissionCount < 2"
+                    />
+                </div>
             </div>
 
-            @foreach ($this->recentTransmissions as $packet)
-                <div
-                    @class([
-                        'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
-                        'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
-                    ])
-                >
-                    {{-- The blob as stored, one field per line: a V2 packet on
-                         one line outruns a desktop. Coloured by the key's first word.
-                         V3's "noise" object stays on its line as JSON. --}}
-                    <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                        <span class="block text-zinc-400 dark:text-zinc-600">{</span>
-                        <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
-                        @foreach ($packet['packet'] as $field => $value)
-                            @php($accent = match (strtok($field, '_')) {
-                                'temperature' => 'text-amber-600',
-                                'humidity' => 'text-cyan-600',
-                                'pressure' => 'text-violet-600 dark:text-violet-500',
-                                default => 'text-zinc-700 dark:text-zinc-300',
-                            })
-                            <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}{{ is_array($value) ? ' break-all' : '' }}">{{ is_array($value) ? json_encode($value) : $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
-                        @endforeach
-                        <span class="block text-zinc-400 dark:text-zinc-600">}</span>
-                    </p>
+            <div id="transmissions">
+                @foreach ($this->recentTransmissions as $packet)
+                    <div
+                        @class([
+                            'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
+                            'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
+                            'hidden' => ! $loop->first,
+                        ])
+                        @unless ($loop->first)
+                            x-bind:class="{ hidden: ! all }"
+                        @endunless
+                    >
+                        {{-- The blob as stored, one field per line: a V2 packet on
+                             one line outruns a desktop. Coloured by the key's first word.
+                             V3's "noise" object stays on its line as JSON. --}}
+                        <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                            <span class="block text-zinc-400 dark:text-zinc-600">{</span>
+                            <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
+                            @foreach ($packet['packet'] as $field => $value)
+                                @php($accent = match (strtok($field, '_')) {
+                                    'temperature' => 'text-amber-600',
+                                    'humidity' => 'text-cyan-600',
+                                    'pressure' => 'text-violet-600 dark:text-violet-500',
+                                    default => 'text-zinc-700 dark:text-zinc-300',
+                                })
+                                <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}{{ is_array($value) ? ' break-all' : '' }}">{{ is_array($value) ? json_encode($value) : $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
+                            @endforeach
+                            <span class="block text-zinc-400 dark:text-zinc-600">}</span>
+                        </p>
 
-                    <p class="flex flex-wrap gap-x-4 font-mono text-xs text-zinc-500 tabular-nums xl:justify-end dark:text-zinc-400">
-                        <span>{{ $packet['at'] }}</span>
-                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
-                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
-                        <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa MSL</span>
-                        <span class="hidden md:inline">{{ $packet['ago'] }}</span>
-                    </p>
-                </div>
-            @endforeach
+                        <p class="flex flex-wrap gap-x-4 font-mono text-xs text-zinc-500 tabular-nums xl:justify-end dark:text-zinc-400">
+                            <span>{{ $packet['at'] }}</span>
+                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
+                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
+                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa MSL</span>
+                            <span class="hidden md:inline">{{ $packet['ago'] }}</span>
+                        </p>
+                    </div>
+                @endforeach
+            </div>
         </section>
     @endif
 

@@ -22,12 +22,11 @@ echarts.use([
 ]);
 
 /**
- * One ECharts instance per strip, connected so crosshair and zoom track
- * together. A zoom is a server round trip: the selected epochs go to
- * Livewire, which re-queries at the bucket width the new span needs.
+ * One ECharts instance per strip, all built on one frame (chartOption) with
+ * one tooltip and one crosshair across them. A zoom is a server round trip:
+ * the selected epochs go to Livewire, which re-queries at the bucket width
+ * the new span needs.
  */
-
-const GROUP = "station";
 
 const DRAG_SLOP_PX = 6;
 
@@ -77,14 +76,6 @@ const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
 let hidden = new Set();
 
 const isShown = (channel) => !hidden.has(channel.key);
-
-/** Pressure has its own strip: on a shared axis its 40 hPa range is a flat line. */
-const STRIPS = [
-    { key: "th", channels: ["t", "h", "d"], option: optionFor },
-    { key: "p", channels: ["p"], option: optionFor },
-    { key: "noise", option: noiseOption },
-    { key: "spectrum", option: spectrumOption },
-];
 
 /** Tick labels per unit. ECharts' default prints a bare day number; all numeric to stay language-neutral. */
 const TIME_LABELS = {
@@ -155,6 +146,45 @@ const NOISE_BANDS = [
     "8k",
 ];
 
+/**
+ * A strip brings its own axes and series (`option`) and what its tooltip
+ * lists for a row (`lines`); the frame, tooltip and crosshair are shared.
+ * `rows` and `time` say where the tooltip finds the row under the pointer.
+ * Pressure has its own strip: on a shared axis its 40 hPa range is a flat line.
+ */
+const STRIPS = [
+    {
+        key: "th",
+        channels: ["t", "h", "d"],
+        option: weatherOption,
+        lines: weatherLines,
+        rows: () => rows,
+        time: COLUMN.time,
+    },
+    {
+        key: "p",
+        channels: ["p"],
+        option: weatherOption,
+        lines: weatherLines,
+        rows: () => rows,
+        time: COLUMN.time,
+    },
+    {
+        key: "noise",
+        option: noiseOption,
+        lines: noiseLines,
+        rows: () => noiseRows,
+        time: NOISE_COLUMN.time,
+    },
+    {
+        key: "spectrum",
+        option: spectrumOption,
+        lines: spectrumLines,
+        rows: () => noiseRows,
+        time: NOISE_COLUMN.time,
+    },
+];
+
 /** Emerald: its own strip, and a hue none of the weather lines use. */
 const NOISE_COLOUR = { light: "#059669", dark: "#34d399" };
 
@@ -189,6 +219,12 @@ const EVENT_COLOUR = "#a1a1aa";
 const GRID_SIDES = { left: 64, right: 64 };
 
 const charts = new Map();
+
+/** Each strip chart's ResizeObserver, disconnected where the chart is disposed. */
+const sizeObservers = new Map();
+
+/** typicalStep() per strip key, worked out once a render; the tooltip reads it on every pointer move. */
+const stripSteps = new Map();
 
 let rows = [];
 
@@ -296,14 +332,19 @@ function formatValue(value, channel) {
     return value === null ? "n/a" : `${formatNumber(value, channel.decimals)} ${channel.unit}`;
 }
 
-/** Stamps are wall-clock ms tagged UTC (see Dashboard::wallClockMs), so formatters read them as UTC. */
-const stampFormat = new Intl.DateTimeFormat("cs-CZ", {
-    day: "numeric",
-    month: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-});
+/**
+ * The page's one date format, `j.n.Y H:i` as LocalTime::stamp() prints it. Stamps are
+ * wall-clock ms tagged UTC (see LocalTime::wallClockMs), so the parts are read as UTC.
+ */
+function formatStamp(wallClockMs) {
+    const date = new Date(wallClockMs);
+    const pad = (part) => String(part).padStart(2, "0");
+
+    return (
+        `${date.getUTCDate()}.${date.getUTCMonth() + 1}.${date.getUTCFullYear()} ` +
+        `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
+    );
+}
 
 function nearestRow(list, time, column = COLUMN.time) {
     if (list.length === 0) {
@@ -346,61 +387,96 @@ function epochFromWallMs(list, milliseconds) {
     return Math.round(milliseconds / 1000) - offsetSeconds;
 }
 
-function tooltipHtml(params) {
+/**
+ * The one tooltip every strip shows. Axis trigger with the pointer on x: the
+ * crosshair rides the time axis, and on the waterfall ECharts would pick the
+ * band axis, a category axis, instead.
+ */
+function tooltipFor(strip, colours) {
+    return {
+        trigger: "axis",
+        axisPointer: { axis: "x" },
+        appendToBody: true,
+        backgroundColor: colours.surface,
+        borderColor: colours.border,
+        textStyle: { color: colours.label, fontSize: 12 },
+        formatter: (params) => {
+            const point = Array.isArray(params) ? params[0] : params;
+
+            return tooltipHtml(strip, point?.axisValue);
+        },
+    };
+}
+
+function tooltipHtml(strip, time) {
     if (hovered) {
-        return eventTooltipHtml(hovered);
+        return eventTooltipHtml(strip, hovered);
     }
 
-    const point = Array.isArray(params) ? params[0] : params;
-    const row = rowAt(point?.axisValue);
+    const row = nearestRow(strip.rows(), time, strip.time);
 
-    if (!row) {
+    return row ? readingsHtml(strip, row) : "";
+}
+
+/** The slot's stamp over the strip's own lines; nothing when the strip has nothing to say for it. */
+function readingsHtml(strip, row) {
+    const lines = strip.lines(row, strip);
+
+    if (lines.length === 0) {
         return "";
     }
 
-    return readingsHtml(row);
-}
-
-function readingsHtml(row) {
     const colours = palette();
-    const heading =
+
+    return (
         `<div style="font-weight:500;margin-bottom:4px;color:${colours.text}">` +
-        `${stampFormat.format(new Date(row[COLUMN.time]))}</div>`;
-
-    const lines = CHANNELS.filter(isShown)
-        .map((channel) => {
-            const dot =
-                `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
-                `background:${colourFor(channel.key)};margin-right:6px"></span>`;
-
-            return (
-                `<div style="display:flex;align-items:center;gap:12px">` +
-                `<span>${dot}${channel.label}</span>` +
-                `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text}">` +
-                `${formatValue(row[COLUMN[channel.key]], channel)}</span>` +
-                `</div>` +
-                spreadHtml(row, channel)
-            );
-        })
-        .join("");
-
-    return heading + lines;
+        `${formatStamp(row[strip.time])}</div>` +
+        lines.map((line) => tooltipLine(line, colours)).join("")
+    );
 }
 
-/** Min and max under the mean, only where they differ (V1 rows and navigator rows have no spread). */
-function spreadHtml(row, channel) {
+/** `colour` puts a dot before the label, `detail` a smaller line under the value. */
+function tooltipLine({ label, value, colour = "", strong = false, detail = "" }, colours) {
+    const dot = colour
+        ? `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
+          `background:${colour};margin-right:6px"></span>`
+        : "";
+    const under = detail
+        ? `<div style="display:flex;gap:12px;font-size:11px;opacity:0.8">` +
+          `<span style="margin-left:auto;font-variant-numeric:tabular-nums">${detail}</span></div>`
+        : "";
+
+    return (
+        `<div style="display:flex;align-items:center;gap:12px">` +
+        `<span>${dot}${label}</span>` +
+        `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text};` +
+        `${strong ? "font-weight:500" : ""}">${value}</span></div>` +
+        under
+    );
+}
+
+/** Only the strip's own channels, and of those only the ones switched on. */
+function weatherLines(row, strip) {
+    return strip.channels
+        .map(channelFor)
+        .filter(isShown)
+        .map((channel) => ({
+            label: channel.label,
+            value: formatValue(row[COLUMN[channel.key]], channel),
+            colour: colourFor(channel.key),
+            detail: spreadText(row, channel),
+        }));
+}
+
+/** Min and max under the mean, only where they differ (V1 rows have no spread). */
+function spreadText(row, channel) {
     const [low, high] = spreadOf(row, channel);
 
     if (low === null || high === null || low === high) {
         return "";
     }
 
-    return (
-        `<div style="display:flex;gap:12px;font-size:11px;opacity:0.8">` +
-        `<span style="margin-left:auto;font-variant-numeric:tabular-nums">` +
-        `${formatNumber(low, channel.decimals)} to ${formatNumber(high, channel.decimals)} ${channel.unit}</span>` +
-        `</div>`
-    );
+    return `${formatNumber(low, channel.decimals)} to ${formatNumber(high, channel.decimals)} ${channel.unit}`;
 }
 
 function spreadOf(row, channel) {
@@ -417,15 +493,6 @@ function labelsEvents(strip) {
 
 const EVENT_LABEL_ROOM = 30;
 
-const eventStampFormat = new Intl.DateTimeFormat("cs-CZ", {
-    day: "numeric",
-    month: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-});
-
 /** Titles are hand-typed and land in innerHTML. */
 function escapeHtml(text) {
     const node = document.createElement("span");
@@ -435,8 +502,6 @@ function escapeHtml(text) {
 }
 
 /** Median spacing between rows, to tell a gap from a step. Read off the rows because the bucket width varies with the window. */
-let step = 0;
-
 function typicalStep(list, column = COLUMN.time) {
     if (list.length < 2) {
         return 0;
@@ -453,16 +518,21 @@ function typicalStep(list, column = COLUMN.time) {
     return gaps[gaps.length >> 1];
 }
 
-function hasReadingAt(time) {
-    const row = rowAt(time);
+/** The strip's row at an event, or null when the event sits in a hole or off the rows. */
+function stripRowAt(strip, time) {
+    const list = strip.rows();
+    const row = nearestRow(list, time, strip.time);
 
-    return row !== null && Math.abs(row[COLUMN.time] - time) <= step * 1.5 ? row : null;
+    return row !== null &&
+        Math.abs(row[strip.time] - time) <= (stripSteps.get(strip.key) ?? 0) * 1.5
+        ? row
+        : null;
 }
 
 /**
  * The event line under the pointer. Event lines have no tooltip of their
- * own: an item tooltip on a connected chart broadcasts its data index and the
- * other strip jumps to that reading. The shared axis tooltip reads this instead.
+ * own: an item tooltip would drop the readings and the crosshair. The axis
+ * tooltip reads this instead.
  */
 let hovered = null;
 
@@ -486,27 +556,26 @@ function trackEventHover(chart) {
     });
 }
 
-/** Over readings: their tooltip with the title above. Over a hole: the event alone, with its date. */
-function eventTooltipHtml(event) {
+/** Over readings: the strip's tooltip with the title above. Over a hole: the event alone, with its date. */
+function eventTooltipHtml(strip, event) {
     const colours = palette();
-    const row = hasReadingAt(event.time);
+    const row = stripRowAt(strip, event.time);
+    const readings = row ? readingsHtml(strip, row) : "";
 
     const title =
         `<div style="font-weight:600;font-size:14px;color:${colours.text}">` +
         `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
         `background:${event.colour};margin-right:6px"></span>${escapeHtml(event.name)}</div>`;
 
-    if (row) {
+    if (readings) {
         return (
             title +
             `<div style="margin-top:6px;padding-top:6px;border-top:1px solid ${colours.border}">` +
-            `${readingsHtml(row)}</div>`
+            `${readings}</div>`
         );
     }
 
-    return (
-        title + `<div style="margin-top:2px">${eventStampFormat.format(new Date(event.time))}</div>`
-    );
+    return title + `<div style="margin-top:2px">${formatStamp(event.time)}</div>`;
 }
 
 /**
@@ -549,8 +618,7 @@ function eventLines() {
     });
 }
 
-function optionFor(strip) {
-    const colours = palette();
+function weatherOption(strip, colours) {
     const channels = strip.channels.map(channelFor).filter(isShown);
     // One axis per distinct `axis` among the drawn lines, in declared order,
     // so the temperature axis keeps the left whichever of its lines is on.
@@ -560,17 +628,7 @@ function optionFor(strip) {
         .map(channelFor);
 
     return {
-        animation: false,
-        // Stamps already carry the local offset; UTC keeps the axis on station time for every viewer.
-        useUTC: true,
-        grid: {
-            ...GRID_SIDES,
-            top: labelsEvents(strip) ? EVENT_LABEL_ROOM : 12,
-            bottom: 28,
-        },
-        tooltip: tooltipFrame(colours, tooltipHtml),
-        axisPointer: { snap: true },
-        xAxis: timeAxis(colours),
+        grid: { top: labelsEvents(strip) ? EVENT_LABEL_ROOM : 12 },
         yAxis: axes.map((entry, index) => ({
             type: "value",
             scale: true,
@@ -613,7 +671,27 @@ function noiseColour() {
     return NOISE_COLOUR[isDark() ? "dark" : "light"];
 }
 
-/** Every strip's time axis, so the stacked canvases line up. */
+/**
+ * The frame every strip is drawn in: same grid sides, time axis, tooltip and
+ * pointer, so the stacked canvases line up and behave alike. The strip's own
+ * `grid` and `xAxis` keys refine the shared ones.
+ */
+function chartOption(strip) {
+    const colours = palette();
+    const own = strip.option(strip, colours);
+
+    return {
+        animation: false,
+        // Stamps already carry the local offset; UTC keeps the axis on station time for every viewer.
+        useUTC: true,
+        ...own,
+        grid: { ...GRID_SIDES, top: 12, bottom: 28, ...own.grid },
+        tooltip: tooltipFor(strip, colours),
+        axisPointer: { snap: true },
+        xAxis: { ...timeAxis(colours), ...own.xAxis },
+    };
+}
+
 function timeAxis(colours) {
     return {
         type: "time",
@@ -628,58 +706,21 @@ function timeAxis(colours) {
     };
 }
 
-/**
- * Always the axis trigger: an item tooltip on a connected chart broadcasts
- * its data index and the other strips jump to that reading (see hovered).
- */
-function tooltipFrame(colours, formatter) {
-    return {
-        trigger: "axis",
-        appendToBody: true,
-        backgroundColor: colours.surface,
-        borderColor: colours.border,
-        textStyle: { color: colours.label, fontSize: 12 },
-        formatter,
-    };
+function formatLevel(value, unit) {
+    return value === null ? "n/a" : `${formatNumber(value, 1)} ${unit}`;
 }
 
-function noiseRowAt(time) {
-    return nearestRow(noiseRows, time, NOISE_COLUMN.time);
-}
-
-function noiseLine(label, value, colours, strong = false) {
-    return (
-        `<div style="display:flex;align-items:center;gap:12px">` +
-        `<span>${label}</span>` +
-        `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text};` +
-        `${strong ? "font-weight:500" : ""}">` +
-        `${value === null ? "n/a" : `${formatNumber(value, 1)} dB(A)`}</span></div>`
-    );
-}
-
-function noiseTooltipHtml(params) {
-    const point = Array.isArray(params) ? params[0] : params;
-    const row = noiseRowAt(point?.axisValue);
-
-    if (!row) {
-        return "";
-    }
-
-    const colours = palette();
-
-    return (
-        `<div style="font-weight:500;margin-bottom:4px;color:${colours.text}">` +
-        `${stampFormat.format(new Date(row[NOISE_COLUMN.time]))}</div>` +
-        noiseLine("LAeq", row[NOISE_COLUMN.laeq], colours, true) +
-        noiseLine("LA10", row[NOISE_COLUMN.la10], colours) +
-        noiseLine("LA90", row[NOISE_COLUMN.la90], colours) +
-        noiseLine("LAmax", row[NOISE_COLUMN.lamax], colours)
-    );
+function noiseLines(row) {
+    return [
+        { label: "LAeq", value: formatLevel(row[NOISE_COLUMN.laeq], "dB(A)"), strong: true },
+        { label: "LA10", value: formatLevel(row[NOISE_COLUMN.la10], "dB(A)") },
+        { label: "LA90", value: formatLevel(row[NOISE_COLUMN.la90], "dB(A)") },
+        { label: "LAmax", value: formatLevel(row[NOISE_COLUMN.lamax], "dB(A)") },
+    ];
 }
 
 /** LAeq over the LA90 to LA10 band - the level most of the window sat in - with LAmax dotted above. */
-function noiseOption() {
-    const colours = palette();
+function noiseOption(strip, colours) {
     const colour = noiseColour();
     const time = (row) => row[NOISE_COLUMN.time];
     const spread = (row) =>
@@ -688,12 +729,6 @@ function noiseOption() {
             : row[NOISE_COLUMN.la10] - row[NOISE_COLUMN.la90];
 
     return {
-        animation: false,
-        useUTC: true,
-        grid: { ...GRID_SIDES, top: 12, bottom: 28 },
-        tooltip: tooltipFrame(colours, noiseTooltipHtml),
-        axisPointer: { snap: true },
-        xAxis: timeAxis(colours),
         yAxis: {
             type: "value",
             scale: true,
@@ -798,26 +833,19 @@ function spectrumBandAt(row) {
     return levels.indexOf(Math.max(...levels.filter((value) => value !== null)));
 }
 
-function spectrumTooltipHtml(params) {
-    const point = Array.isArray(params) ? params[0] : params;
-    const row = noiseRowAt(point?.axisValue);
-
-    if (!row || row[NOISE_COLUMN.laeq] === null) {
-        return "";
+function spectrumLines(row) {
+    if (row[NOISE_COLUMN.laeq] === null) {
+        return [];
     }
 
     const band = spectrumBandAt(row);
-    const value = row[NOISE_COLUMN.band + band];
-    const colours = palette();
 
-    return (
-        `<div style="font-weight:500;margin-bottom:4px;color:${colours.text}">` +
-        `${stampFormat.format(new Date(row[NOISE_COLUMN.time]))}</div>` +
-        `<div style="display:flex;align-items:center;gap:12px">` +
-        `<span>${NOISE_BANDS[band]} Hz</span>` +
-        `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:${colours.text}">` +
-        `${value === null ? "n/a" : `${formatNumber(value, 1)} dB`}</span></div>`
-    );
+    return [
+        {
+            label: `${NOISE_BANDS[band]} Hz`,
+            value: formatLevel(row[NOISE_COLUMN.band + band], "dB"),
+        },
+    ];
 }
 
 /** Paints the scale beside the strip's label with the ramp and its ends. */
@@ -840,8 +868,7 @@ function paintSpectrumScale(range) {
  * strips above, so zoom and crosshair carry over. A custom series rather
  * than a heatmap - ECharts' heatmap wants a category axis for time.
  */
-function spectrumOption() {
-    const colours = palette();
+function spectrumOption(strip, colours) {
     const range = spectrumRange();
     // The noise rows' own slot width: it is the bucket the cells stand for.
     const width = typicalStep(noiseRows, NOISE_COLUMN.time) || 600000;
@@ -864,14 +891,7 @@ function spectrumOption() {
         : [];
 
     return {
-        animation: false,
-        useUTC: true,
-        grid: { ...GRID_SIDES, top: 12, bottom: 28 },
-        // The band axis is a category axis, which ECharts would pick for
-        // the pointer; the strips share time, so the pointer rides x.
-        tooltip: { ...tooltipFrame(colours, spectrumTooltipHtml), axisPointer: { axis: "x" } },
-        axisPointer: { snap: true },
-        xAxis: { ...timeAxis(colours), min: first, max: last },
+        xAxis: { min: first, max: last },
         yAxis: {
             type: "category",
             data: NOISE_BANDS,
@@ -910,8 +930,7 @@ function spectrumOption() {
                 },
             },
             // A custom series gives the axis tooltip nothing to snap to, so
-            // it would neither show nor sync the crosshair: an invisible
-            // line through every slot does.
+            // it would not show: an invisible line through every slot does.
             {
                 type: "line",
                 showSymbol: false,
@@ -1212,6 +1231,42 @@ function bindZoom(chart, element, component) {
     element.addEventListener("dblclick", () => component.call("resetZoom"));
 }
 
+/**
+ * One crosshair over every strip, matched by time. echarts.connect matches
+ * by series and data index instead, which misses whenever two strips draw
+ * different series. The pointer's own strip shows its crosshair natively;
+ * the others follow here, and only while the pointer is inside the grid,
+ * as the native one does.
+ */
+function syncCursor(chart) {
+    const zr = chart.getZr();
+    // A collapsed strip has no box to point into.
+    const others = () =>
+        [...charts.values()].filter((other) => other !== chart && other.getWidth() > 0);
+
+    zr.on("mousemove", (event) => {
+        const inGrid = chart.containPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY]);
+        const time = inGrid ? chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX) : null;
+
+        others().forEach((other) => (time === null ? hideCursor(other) : showCursor(other, time)));
+    });
+
+    zr.on("globalout", () => others().forEach(hideCursor));
+}
+
+/** Half height lands inside every strip's grid, so the tooltip follows x alone. */
+function showCursor(chart, time) {
+    chart.dispatchAction({
+        type: "showTip",
+        x: chart.convertToPixel({ xAxisIndex: 0 }, time),
+        y: chart.getHeight() / 2,
+    });
+}
+
+function hideCursor(chart) {
+    chart.dispatchAction({ type: "updateAxisPointer", currTrigger: "leave" });
+}
+
 let mounting = false;
 
 let painted = null;
@@ -1255,8 +1310,6 @@ function render(payload, force) {
         rows = [];
     }
 
-    step = typicalStep(rows);
-
     try {
         overview = JSON.parse(payload.dataset.navigatorRows);
     } catch {
@@ -1281,6 +1334,9 @@ function render(payload, force) {
         noiseRows = [];
     }
 
+    stripSteps.clear();
+    STRIPS.forEach((strip) => stripSteps.set(strip.key, typicalStep(strip.rows(), strip.time)));
+
     const component = window.Livewire?.find(payload.dataset.chartComponent);
 
     mountNavigator(payload, component);
@@ -1298,8 +1354,7 @@ function render(payload, force) {
     // The noise strips come and go with the window; a chart whose canvas left the page goes too.
     charts.forEach((chart, key) => {
         if (!document.body.contains(chart.getDom())) {
-            chart.dispose();
-            charts.delete(key);
+            disposeStrip(key);
         }
     });
 
@@ -1313,7 +1368,7 @@ function render(payload, force) {
         let chart = charts.get(strip.key);
 
         if (chart && chart.getDom() !== element.querySelector("[data-canvas]")) {
-            chart.dispose();
+            disposeStrip(strip.key);
             chart = null;
         }
 
@@ -1321,11 +1376,11 @@ function render(payload, force) {
             chart = echarts.init(element.querySelector("[data-canvas]"), null, {
                 renderer: "canvas",
             });
-            echarts.connect(GROUP);
-            chart.group = GROUP;
             charts.set(strip.key, chart);
+            watchSize(strip.key, chart, element);
             blockWheel(element);
             trackEventHover(chart);
+            syncCursor(chart);
 
             if (strip.key === "spectrum") {
                 trackSpectrumPointer(chart);
@@ -1336,14 +1391,31 @@ function render(payload, force) {
             }
         }
 
-        chart.setOption(strip.option(strip), { notMerge: true });
+        chart.setOption(chartOption(strip), { notMerge: true });
     });
+}
 
-    echarts.connect(GROUP);
+/**
+ * A collapsed strip is hidden, not removed, so its chart shrinks to nothing;
+ * the window's resize event never comes when it opens again. The observer
+ * also sees every window resize, so resize() leaves the strips alone.
+ */
+function watchSize(key, chart, element) {
+    const observer = new ResizeObserver(() => chart.resize());
+
+    observer.observe(element);
+    sizeObservers.set(key, observer);
+}
+
+/** A detached element may never get another resize callback; disconnect here, not there. */
+function disposeStrip(key) {
+    sizeObservers.get(key)?.disconnect();
+    sizeObservers.delete(key);
+    charts.get(key)?.dispose();
+    charts.delete(key);
 }
 
 function resize() {
-    charts.forEach((chart) => chart.resize());
     overviewChart?.resize();
 }
 

@@ -8,6 +8,7 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
+use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
@@ -233,7 +234,7 @@ class MeasurementSeeder extends Seeder
 
     private function localHour(int $slot): int
     {
-        return (int) now()->setTimestamp($slot)->setTimezone('Europe/Prague')->format('G');
+        return (int) now()->setTimestamp($slot)->setTimezone(LocalTime::TIMEZONE)->format('G');
     }
 
     /**

@@ -4,24 +4,19 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
-use App\Enums\ChartRange;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\StationReport;
-use App\ValueObject\DewPoint;
-use App\ValueObject\MeasurementData;
+use App\Queries\MeasurementBuckets;
+use App\ValueObject\ChartWindow;
+use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\NoiseWindow;
-use App\ValueObject\SeaLevelPressure;
-use Carbon\CarbonInterface;
+use App\ValueObject\Readout;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Query\Builder as QueryBuilder;
-use Illuminate\Support\Collection as SupportCollection;
-use Illuminate\Support\Facades\Date;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -44,7 +39,7 @@ use UnexpectedValueException;
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
  * @property-read int $currentYear
- * @property-read CarbonInterface|null $lastMeasurement
+ * @property-read LocalTime|null $lastMeasurement
  * @property-read string|null $measuredAt
  * @property-read string|null $measuredAgo
  * @property-read bool $isSilent
@@ -66,50 +61,27 @@ use UnexpectedValueException;
  * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
  * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
- * @phpstan-type NoiseBucket object{bucket: int, laeq: ?string, la10: ?string, la90: ?string, lamax: ?string, bands: ?string}
- * @phpstan-type Bucket object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string, t_min: ?string, t_max: ?string, h_min: ?string, h_max: ?string, p_min: ?string, p_max: ?string}
+ *
+ * @phpstan-import-type Bucket from MeasurementBuckets
+ * @phpstan-import-type NoiseBucket from MeasurementBuckets
  */
 #[Title('Station Log')]
 class Dashboard extends Component
 {
-    /** Reporting interval of the station. */
-    private const int STEP_SECONDS = 600;
-
-    /** Stored stamps are UTC; only the presentation shifts. */
-    private const string DISPLAY_TIMEZONE = 'Europe/Prague';
-
     private const float LATITUDE = 49.733242;
 
     private const float LONGITUDE = 13.399911;
 
-    /** Station height for the sea-level reduction; the stored reading stays as sent. */
-    private const float ALTITUDE_METRES = 345.0;
-
     private const int LOCATION_RADIUS_METRES = 800;
 
-    private const int SILENT_AFTER_SECONDS = 3 * self::STEP_SECONDS;
+    private const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
     /** Navigator thinning: one reading per bucket once the record is large. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
 
     private const int OVERVIEW_UNTHINNED_ROWS = 1500;
 
-    private const ChartRange DEFAULT_WINDOW = ChartRange::Week;
-
-    /** Fewer points than this would not make a line. */
-    private const int MIN_SPAN_SECONDS = 4 * self::STEP_SECONDS;
-
-    /**
-     * A month. A strip is ~1000 px wide; hourly means over a month still
-     * show a day's swing, anything wider averages it away. The navigator
-     * spans the whole record regardless.
-     */
-    private const int MAX_SPAN_SECONDS = 2592000;
-
     private const int RECENT_TRANSMISSIONS = 3;
-
-    /** How long a window's microphone listened; the weight of its noise levels. */
-    private const string NOISE_SECONDS = "(data->'noise'->>'seconds')::float8";
 
     /** Zoomed window as UTC epochs, null to follow the default. Instants, not preset steps, so a drag can land anywhere. */
     #[Url]
@@ -157,6 +129,17 @@ class Dashboard extends Component
     {
         $this->from = null;
         $this->to = null;
+    }
+
+    /** Both ends are public, so `$wire.set()` reaches them without zoomTo(). */
+    public function updatedFrom(): void
+    {
+        $this->normaliseWindow();
+    }
+
+    public function updatedTo(): void
+    {
+        $this->normaliseWindow();
     }
 
     public function updatedSensor(): void
@@ -239,9 +222,7 @@ class Dashboard extends Component
     #[Computed]
     public function readings(): array
     {
-        $step = ChartRange::forSpan($this->spanSeconds())->bucketSeconds();
-
-        $buckets = $this->buckets($step, $this->windowFrom(), $this->windowTo());
+        $buckets = $this->measurementBuckets()->readings($this->chartWindow());
 
         if (! $buckets->contains(fn (object $bucket): bool => $bucket->t_avg !== null)) {
             return [];
@@ -260,8 +241,7 @@ class Dashboard extends Component
     #[Computed]
     public function noise(): array
     {
-        $hasNoise = $this->measurements()
-            ->whereBetween('timestamp', [$this->windowFrom(), $this->windowTo()])
+        $hasNoise = $this->measurementsInWindow()
             ->whereRaw("data->'noise' IS NOT NULL")
             ->exists();
 
@@ -269,9 +249,7 @@ class Dashboard extends Component
             return [];
         }
 
-        $step = ChartRange::forSpan($this->spanSeconds())->bucketSeconds();
-
-        $buckets = $this->noiseBuckets($step, $this->windowFrom(), $this->windowTo());
+        $buckets = $this->measurementBuckets()->noise($this->chartWindow());
 
         return array_values($buckets->map(fn (object $bucket): array => $this->plotNoise($bucket))->all());
     }
@@ -295,8 +273,8 @@ class Dashboard extends Component
                 ->when(
                     $total >= self::OVERVIEW_UNTHINNED_ROWS,
                     fn (Builder $query): Builder => $query->where(
-                        fn (Builder $kept): Builder => $this->firstPerBucket($kept, self::OVERVIEW_BUCKET_SECONDS)
-                            ->orWhere('timestamp', $this->lastMeasurement?->getTimestamp())
+                        fn (Builder $kept): Builder => $this->measurementBuckets()->firstPerBucket($kept, self::OVERVIEW_BUCKET_SECONDS)
+                            ->orWhere('timestamp', $this->lastMeasurement?->timestamp)
                     )
                 )
                 ->orderBy('timestamp')
@@ -305,16 +283,18 @@ class Dashboard extends Component
     }
 
     /**
-     * The window in the navigator's own axis units (see wallClockMs).
+     * The window in the navigator's own axis units (see LocalTime::wallClockMs).
      *
      * @return array{from: int, to: int}
      */
     #[Computed]
     public function windowMs(): array
     {
+        $window = $this->chartWindow();
+
         return [
-            'from' => $this->wallClockMs($this->windowFrom()),
-            'to' => $this->wallClockMs($this->windowTo()),
+            'from' => LocalTime::of($window->from)->wallClockMs(),
+            'to' => LocalTime::of($window->to)->wallClockMs(),
         ];
     }
 
@@ -328,9 +308,7 @@ class Dashboard extends Component
     #[Computed]
     public function recordCount(): int
     {
-        return $this->measurements()
-            ->whereBetween('timestamp', [$this->windowFrom(), $this->windowTo()])
-            ->count();
+        return $this->measurementsInWindow()->count();
     }
 
     /**
@@ -365,11 +343,11 @@ class Dashboard extends Component
     #[Computed]
     public function window(): array
     {
-        $format = ChartRange::forSpan($this->spanSeconds())->stampFormat();
+        $window = $this->chartWindow();
 
         return [
-            'from' => $this->localise($this->windowFrom())->format($format),
-            'to' => $this->localise($this->windowTo())->format($format),
+            'from' => LocalTime::of($window->from)->stamp(),
+            'to' => LocalTime::of($window->to)->stamp(),
         ];
     }
 
@@ -388,17 +366,7 @@ class Dashboard extends Component
                 ->where('timestamp', '>=', now()->subDay()->getTimestamp())
                 ->orderBy('timestamp')
                 ->get()
-                ->map(fn (Measurement $measurement): array => [
-                    't' => round($measurement->data->temperature / 100, 2),
-                    'h' => round($measurement->data->humidity / 100, 2),
-                    'p' => $this->seaLevelHpa($measurement->data),
-                    'tMin' => round($measurement->data->temperatureMin / 100, 2),
-                    'tMax' => round($measurement->data->temperatureMax / 100, 2),
-                    'hMin' => round($measurement->data->humidityMin / 100, 2),
-                    'hMax' => round($measurement->data->humidityMax / 100, 2),
-                    'pMin' => $this->seaLevelHpa($this->withPressure($measurement->data, $measurement->data->pressureMin)),
-                    'pMax' => $this->seaLevelHpa($this->withPressure($measurement->data, $measurement->data->pressureMax)),
-                ])
+                ->map(fn (Measurement $measurement): array => Readout::of($measurement->data)->toArray())
                 ->all()
         );
 
@@ -444,19 +412,16 @@ class Dashboard extends Component
                 ->limit(self::RECENT_TRANSMISSIONS)
                 ->get()
                 ->map(function (Measurement $measurement): array {
-                    // Rows written before the column existed.
-                    $receivedAt = $this->localise(
-                        $measurement->created_at?->getTimestamp() ?? $measurement->timestamp
-                    );
+                    $readout = Readout::of($measurement->data);
 
                     return [
                         'timestamp' => $measurement->timestamp,
                         'packet' => $measurement->data->jsonSerialize(),
-                        'at' => $receivedAt->format('j. n. Y H:i'),
-                        'ago' => $this->ago($receivedAt),
-                        't' => round($measurement->data->temperature / 100, 2),
-                        'h' => round($measurement->data->humidity / 100, 2),
-                        'p' => $this->seaLevelHpa($measurement->data),
+                        // Rows written before the column existed.
+                        ...LocalTime::of($measurement->created_at?->getTimestamp() ?? $measurement->timestamp)->forHumans(),
+                        't' => $readout->temperature(),
+                        'h' => $readout->humidity(),
+                        'p' => $readout->pressure(),
                     ];
                 })
                 ->all()
@@ -482,7 +447,6 @@ class Dashboard extends Component
         }
 
         $data = $report->data;
-        $receivedAt = $this->localise($report->created_at?->getTimestamp() ?? 0);
 
         return [
             'firmware' => (string) $data['firmware'],
@@ -498,8 +462,7 @@ class Dashboard extends Component
             'buffered' => (int) $data['buffered'],
             'uploadFailures' => (int) $data['upload_failures'],
             ...$this->clockDrift($data),
-            'at' => $receivedAt->format('j. n. Y H:i'),
-            'ago' => $this->ago($receivedAt),
+            ...LocalTime::of($report->created_at?->getTimestamp() ?? 0)->forHumans(),
         ];
     }
 
@@ -522,7 +485,7 @@ class Dashboard extends Component
         return [
             'clockDrift' => $this->signedMilliseconds((int) $data['clock_step_ms']).' in '.$this->duration($overSeconds),
             'clockDriftWorst' => $this->signedMilliseconds((int) ($data['clock_step_max_ms'] ?? $data['clock_step_ms'])),
-            'clockSynced' => $this->localise($syncedAt)->format('H:i'),
+            'clockSynced' => LocalTime::of($syncedAt)->stamp(),
         ];
     }
 
@@ -554,7 +517,7 @@ class Dashboard extends Component
     #[Computed]
     public function currentYear(): int
     {
-        return now(self::DISPLAY_TIMEZONE)->year;
+        return now(LocalTime::TIMEZONE)->year;
     }
 
     /**
@@ -563,34 +526,30 @@ class Dashboard extends Component
      * the sensor was last read.
      */
     #[Computed]
-    public function lastMeasurement(): ?CarbonInterface
+    public function lastMeasurement(): ?LocalTime
     {
         $timestamp = $this->measurements()->max('timestamp');
 
-        return $timestamp === null
-            ? null
-            : Date::createFromTimestamp((int) $timestamp, self::DISPLAY_TIMEZONE);
+        return $timestamp === null ? null : LocalTime::of((int) $timestamp);
     }
 
     #[Computed]
     public function measuredAt(): ?string
     {
-        return $this->lastMeasurement?->format('j. n. Y H:i');
+        return $this->lastMeasurement?->stamp();
     }
 
     #[Computed]
     public function measuredAgo(): ?string
     {
-        return $this->lastMeasurement === null
-            ? null
-            : $this->ago($this->lastMeasurement);
+        return $this->lastMeasurement?->ago();
     }
 
     #[Computed]
     public function isSilent(): bool
     {
         return $this->lastMeasurement === null
-            || $this->lastMeasurement->getTimestamp() < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
+            || $this->lastMeasurement->timestamp < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
     }
 
     /**
@@ -603,19 +562,24 @@ class Dashboard extends Component
         return Measurement::query()->where('sensor_id', $this->selectedSensor?->id);
     }
 
-    private function windowFrom(): int
+    /**
+     * @return Builder<Measurement>
+     */
+    private function measurementsInWindow(): Builder
     {
-        return $this->from ?? now()->getTimestamp() - self::DEFAULT_WINDOW->durationSeconds();
+        $window = $this->chartWindow();
+
+        return $this->measurements()->whereBetween('timestamp', [$window->from, $window->to]);
     }
 
-    private function windowTo(): int
+    private function measurementBuckets(): MeasurementBuckets
     {
-        return $this->to ?? now()->getTimestamp();
+        return new MeasurementBuckets($this->selectedSensor?->id);
     }
 
-    private function spanSeconds(): int
+    private function chartWindow(): ChartWindow
     {
-        return $this->windowTo() - $this->windowFrom();
+        return ChartWindow::of($this->from, $this->to);
     }
 
     /**
@@ -634,7 +598,7 @@ class Dashboard extends Component
                 ->oldest('occurred_at')
                 ->get()
                 ->map(fn (StationEvent $event): array => [
-                    $this->wallClockMs($event->occurred_at),
+                    LocalTime::of($event->occurred_at)->wallClockMs(),
                     $event->title,
                     $event->color,
                 ])
@@ -650,38 +614,12 @@ class Dashboard extends Component
         $this->sensor = $this->selectedSensor?->slug;
     }
 
-    /**
-     * Ordered, at least MIN_SPAN, at most MAX_SPAN, not in the future. Too
-     * wide is clipped from the front: the newer end is the one chosen.
-     */
     private function normaliseWindow(): void
     {
-        if ($this->from === null || $this->to === null) {
-            $this->from = null;
-            $this->to = null;
+        $window = ChartWindow::normalised($this->from, $this->to);
 
-            return;
-        }
-
-        if ($this->from > $this->to) {
-            [$this->from, $this->to] = [$this->to, $this->from];
-        }
-
-        $this->to = min($this->to, now()->getTimestamp());
-        $this->from = max(0, $this->to - self::MAX_SPAN_SECONDS, min($this->from, $this->to - self::MIN_SPAN_SECONDS));
-    }
-
-    /** The station's clock drifts and may stamp ahead of the server; "4 minutes from now" reads as broken. */
-    private function ago(CarbonInterface $moment): string
-    {
-        return $moment->getTimestamp() > now()->getTimestamp()
-            ? 'just now'
-            : $moment->diffForHumans();
-    }
-
-    private function localise(int $timestamp): CarbonInterface
-    {
-        return Date::createFromTimestamp($timestamp, self::DISPLAY_TIMEZONE);
+        $this->from = $window?->from;
+        $this->to = $window?->to;
     }
 
     /** "3 d 4 h", "4 h 12 min", "12 min 5 s". */
@@ -699,100 +637,6 @@ class Dashboard extends Component
     }
 
     /**
-     * Epoch as milliseconds of local wall-clock time. The chart reads its
-     * axis as UTC, so this is what makes ticks and tooltips print local time
-     * whatever the viewer's clock. Not an instant: never compare with now()
-     * or convert again. Rows carry the real epoch beside it.
-     */
-    private function wallClockMs(int $timestamp): int
-    {
-        return ($timestamp + $this->localise($timestamp)->utcOffset() * 60) * 1000;
-    }
-
-    /**
-     * First reading of every bucket. Grouping, not `timestamp % bucket <
-     * STEP`: the station's stamps sit minutes off the slot and drift, so a
-     * phase test would miss rows.
-     *
-     * @param  Builder<Measurement>  $query
-     * @return Builder<Measurement>
-     */
-    private function firstPerBucket(Builder $query, int $bucketSeconds): Builder
-    {
-        return $query->whereIn('timestamp', function (QueryBuilder $bucket) use ($bucketSeconds): void {
-            // Scoped to the sensor, or another station's earlier stamp wins the bucket.
-            $bucket->selectRaw('MIN(timestamp)')
-                ->from('measurements')
-                ->where('sensor_id', $this->selectedSensor?->id)
-                ->groupByRaw('timestamp / ?', [$bucketSeconds]);
-        });
-    }
-
-    /**
-     * PostgreSQL only: `generate_series` lays out every slot and a left join
-     * averages the readings onto it, so a missed slot is a row of nulls.
-     * Buckets divide the epoch, not the local day, so DST never moves them.
-     *
-     * The blob is read by protocol key, not through ProtocolVersion::hydrate(),
-     * so a protocol that renames a field has to change this query too. The
-     * extremes fall back to the value where an entry has none (V1).
-     *
-     * @return SupportCollection<int, Bucket>
-     */
-    private function buckets(int $step, int $from, int $to): SupportCollection
-    {
-        $readings = $this->bucketed($step, $from, $to);
-
-        foreach (['t' => 'temperature', 'h' => 'humidity', 'p' => 'pressure'] as $column => $field) {
-            $readings
-                ->selectRaw("AVG((data->>'{$field}')::int) AS {$column}_avg")
-                ->selectRaw("MIN(COALESCE(data->>'{$field}_min', data->>'{$field}')::int) AS {$column}_min")
-                ->selectRaw("MAX(COALESCE(data->>'{$field}_max', data->>'{$field}')::int) AS {$column}_max");
-        }
-
-        /** @var SupportCollection<int, Bucket> $buckets */
-        $buckets = $this->slots($step, $from, $to)
-            ->leftJoinSub($readings, 'reading', 'reading.bucket', '=', 'slot.bucket')
-            ->addSelect(['t_avg', 'h_avg', 'p_avg', 't_min', 't_max', 'h_min', 'h_max', 'p_min', 'p_max'])
-            ->get();
-
-        return $buckets;
-    }
-
-    /**
-     * Every slot of the window, holes included, to left-join averages onto.
-     * Buckets divide the epoch, not the local day, so DST never moves them.
-     */
-    private function slots(int $step, int $from, int $to): QueryBuilder
-    {
-        return DB::query()
-            ->fromRaw('generate_series(?::int, ?::int, ?::int) AS slot (bucket)', [
-                intdiv($from, $step) * $step,
-                intdiv($to, $step) * $step,
-                $step,
-            ])
-            ->select('slot.bucket')
-            ->orderBy('slot.bucket');
-    }
-
-    /**
-     * The selected sensor's rows over whole edge buckets - so an edge
-     * bucket's average does not depend on where the window opened - grouped
-     * by bucket.
-     *
-     * @param  literal-string  $source
-     */
-    private function bucketed(int $step, int $from, int $to, string $source = 'measurements'): QueryBuilder
-    {
-        return DB::query()
-            ->fromRaw($source)
-            ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
-            ->where('sensor_id', $this->selectedSensor?->id)
-            ->whereBetween('timestamp', [intdiv($from, $step) * $step, intdiv($to, $step) * $step + $step - 1])
-            ->groupByRaw('1');
-    }
-
-    /**
      * The averages go back into a measurement in protocol units so reduction
      * and dew point run through the same code as a single reading. Pressure
      * extremes are reduced with the bucket's mean temperature; the sample
@@ -803,100 +647,32 @@ class Dashboard extends Component
      */
     private function plotBucket(object $bucket): array
     {
-        $time = $this->wallClockMs($bucket->bucket);
+        $time = LocalTime::of($bucket->bucket)->wallClockMs();
 
         if ($bucket->t_avg === null || $bucket->h_avg === null || $bucket->p_avg === null) {
             return [$time, null, null, null, null, $bucket->bucket, null, null, null, null, null, null];
         }
 
-        $mean = new MeasurementDataV1(
+        $mean = Readout::of(new MeasurementDataV1(
             temperature: (int) round((float) $bucket->t_avg),
             humidity: (int) round((float) $bucket->h_avg),
             pressure: (int) round((float) $bucket->p_avg),
-        );
+        ));
 
         return [
             $time,
-            round((float) $bucket->t_avg / 100, 2),
-            round((float) $bucket->h_avg / 100, 2),
-            $this->seaLevelHpa($mean),
-            $this->dewPointCelsius($mean),
+            Readout::hundredths($bucket->t_avg),
+            Readout::hundredths($bucket->h_avg),
+            $mean->pressure(),
+            $mean->dewPoint(),
             $bucket->bucket,
-            round((float) $bucket->t_min / 100, 2),
-            round((float) $bucket->t_max / 100, 2),
-            round((float) $bucket->h_min / 100, 2),
-            round((float) $bucket->h_max / 100, 2),
-            $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_min)),
-            $this->seaLevelHpa($this->withPressure($mean, (int) $bucket->p_max)),
+            Readout::hundredths((float) $bucket->t_min),
+            Readout::hundredths((float) $bucket->t_max),
+            Readout::hundredths((float) $bucket->h_min),
+            Readout::hundredths((float) $bucket->h_max),
+            $mean->seaLevel((int) $bucket->p_min),
+            $mean->seaLevel((int) $bucket->p_max),
         ];
-    }
-
-    /**
-     * Same slots as buckets(). Levels are in hundredths of a dB, so a
-     * level's power is 10^(v / 1000) and back is 1000 log10. They average
-     * as energy, weighted by the seconds each window heard: 50 and 60 dB
-     * are 57.4 together, not 55, and the half minute after a boot does not
-     * count as a whole window. LA10 and LA90 do not combine across windows,
-     * so a bucket wider than one window carries their time-weighted mean in
-     * dB - exact at ten minutes, an approximation above it.
-     *
-     * The bands come out of the jsonb array one row per entry and band
-     * (`WITH ORDINALITY` keeps their order), are averaged per bucket and
-     * band, and go back into one array per bucket in band order.
-     *
-     * @return SupportCollection<int, NoiseBucket>
-     */
-    private function noiseBuckets(int $step, int $from, int $to): SupportCollection
-    {
-        $levels = $this->bucketed($step, $from, $to)
-            ->selectRaw($this->energyMean("data->'noise'->>'laeq'").' AS laeq')
-            ->selectRaw($this->timeMean("data->'noise'->>'la10'").' AS la10')
-            ->selectRaw($this->timeMean("data->'noise'->>'la90'").' AS la90')
-            ->selectRaw("MAX((data->'noise'->>'lamax')::int) AS lamax")
-            ->whereRaw("data->'noise' IS NOT NULL");
-
-        $perBand = $this->bucketed($step, $from, $to, "measurements, jsonb_array_elements_text(measurements.data->'noise'->'bands') WITH ORDINALITY AS band (level, position)")
-            ->selectRaw('position')
-            ->selectRaw($this->energyMean('level').' AS level')
-            ->groupByRaw('2');
-
-        $bands = DB::query()
-            ->fromSub($perBand, 'band')
-            ->select('bucket')
-            ->selectRaw('json_agg(level ORDER BY position) AS bands')
-            ->groupBy('bucket');
-
-        /** @var SupportCollection<int, NoiseBucket> $buckets */
-        $buckets = $this->slots($step, $from, $to)
-            ->leftJoinSub($levels, 'level', 'level.bucket', '=', 'slot.bucket')
-            ->leftJoinSub($bands, 'band', 'band.bucket', '=', 'slot.bucket')
-            ->addSelect(['laeq', 'la10', 'la90', 'lamax', 'bands'])
-            ->get();
-
-        return $buckets;
-    }
-
-    /**
-     * Energy mean of a level in hundredths of a dB, weighted by the seconds
-     * each window heard.
-     *
-     * @param  literal-string  $level
-     * @return literal-string
-     */
-    private function energyMean(string $level): string
-    {
-        return '1000 * LOG(SUM('.self::NOISE_SECONDS.' * POWER(10, ('.$level.')::float8 / 1000)) / SUM('.self::NOISE_SECONDS.'))';
-    }
-
-    /**
-     * Time-weighted mean of a level in dB, for the percentiles.
-     *
-     * @param  literal-string  $level
-     * @return literal-string
-     */
-    private function timeMean(string $level): string
-    {
-        return 'SUM('.self::NOISE_SECONDS.' * ('.$level.')::float8) / SUM('.self::NOISE_SECONDS.')';
     }
 
     /**
@@ -908,7 +684,7 @@ class Dashboard extends Component
      */
     private function plotNoise(object $bucket): array
     {
-        $time = $this->wallClockMs($bucket->bucket);
+        $time = LocalTime::of($bucket->bucket)->wallClockMs();
 
         if ($bucket->laeq === null || $bucket->bands === null) {
             return [$time, $bucket->bucket, ...array_fill(0, 4 + NoiseWindow::BANDS_COUNT, null)];
@@ -930,28 +706,6 @@ class Dashboard extends Component
         ];
     }
 
-    /** The same entry with another pressure, for reducing an extreme. */
-    private function withPressure(MeasurementData $data, int $pressure): MeasurementData
-    {
-        return new MeasurementDataV1(
-            temperature: $data->temperature,
-            humidity: $data->humidity,
-            pressure: $pressure,
-        );
-    }
-
-    /** Two decimals: whole pascals, the sensor's resolution. Tenths drew the pressure line as a staircase. */
-    private function seaLevelHpa(MeasurementData $data): float
-    {
-        return SeaLevelPressure::reduce($data, self::ALTITUDE_METRES)->hectopascals(2);
-    }
-
-    /** Null where there is none (see DewPoint::of); the chart draws a gap. */
-    private function dewPointCelsius(MeasurementData $data): ?float
-    {
-        return DewPoint::of($data)?->celsius(2);
-    }
-
     /**
      * @param  Collection<int, Measurement>  $measurements
      * @return list<ReadingRow>
@@ -960,14 +714,18 @@ class Dashboard extends Component
     {
         return array_values(
             $measurements
-                ->map(fn (Measurement $measurement): array => [
-                    $this->wallClockMs($measurement->timestamp),
-                    round($measurement->data->temperature / 100, 2),
-                    round($measurement->data->humidity / 100, 2),
-                    $this->seaLevelHpa($measurement->data),
-                    $this->dewPointCelsius($measurement->data),
-                    $measurement->timestamp,
-                ])
+                ->map(function (Measurement $measurement): array {
+                    $readout = Readout::of($measurement->data);
+
+                    return [
+                        LocalTime::of($measurement->timestamp)->wallClockMs(),
+                        $readout->temperature(),
+                        $readout->humidity(),
+                        $readout->pressure(),
+                        $readout->dewPoint(),
+                        $measurement->timestamp,
+                    ];
+                })
                 ->all()
         );
     }

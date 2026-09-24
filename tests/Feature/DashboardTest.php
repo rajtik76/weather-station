@@ -141,9 +141,9 @@ it('labels readings in Czech local time, not UTC', function (): void {
 
     $this->get('/')
         ->assertOk()
-        // 12:00 UTC + 2 h, as milliseconds (see Dashboard::wallClockMs).
+        // 12:00 UTC + 2 h, as milliseconds (see LocalTime::wallClockMs).
         ->assertSee('1784124000000')
-        ->assertSee('15. 7. 2026 14:00');
+        ->assertSee('15.7.2026 14:00');
 });
 
 it('labels readings in standard time outside the summer window', function (): void {
@@ -158,7 +158,7 @@ it('labels readings in standard time outside the summer window', function (): vo
         ->assertOk()
         // 12:00 UTC + 1 h, as milliseconds.
         ->assertSee('1768482000000')
-        ->assertSee('15. 1. 2026 13:00');
+        ->assertSee('15.1.2026 13:00');
 });
 
 it('shows an empty state when nothing has been recorded', function (): void {
@@ -181,7 +181,7 @@ it('opens on the last week', function (): void {
     Livewire::test(Dashboard::class)
         ->assertSet('from', null)
         ->assertSet('to', null)
-        ->assertSee('8. 3. 2026 → 15. 3. 2026');
+        ->assertSee('8.3.2026 13:00 → 15.3.2026 13:00');
 });
 
 it('takes the window from the query string', function (): void {
@@ -192,7 +192,7 @@ it('takes the window from the query string', function (): void {
         'to' => Date::parse('2026-03-12 00:00:00', 'UTC')->getTimestamp(),
     ]);
 
-    Livewire::test(Dashboard::class)->assertSee('10. 3. 2026 → 12. 3. 2026');
+    Livewire::test(Dashboard::class)->assertSee('10.3.2026 01:00 → 12.3.2026 01:00');
 });
 
 it('plots only the readings inside the window', function (): void {
@@ -385,7 +385,7 @@ it('draws no wider than a month', function (int $days): void {
         ->call('zoomTo', now()->subDays($days)->getTimestamp(), now()->getTimestamp())
         ->assertSet('to', now()->getTimestamp())
         ->assertSet('from', now()->getTimestamp() - 30 * 86400)
-        ->assertSee('13. 2. 2026 → 15. 3. 2026');
+        ->assertSee('13.2.2026 13:00 → 15.3.2026 13:00');
 
     expect(bucketRows($component->html()))->toHaveCount(30 * 24 + 1);
 })->with([
@@ -656,6 +656,17 @@ it('ignores a switch for a channel the strip does not have', function (): void {
         ->toContain('data-hidden-channels="[&quot;d&quot;]"');
 });
 
+it('renders every strip open with a client-side fold', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    // Alpine hides the wrapper, never removes it: the canvas stays for ECharts to resize.
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toMatch('/aria-expanded="true"[^>]*aria-controls="strip-p"/')
+        ->toContain('<div id="strip-p" x-bind:class="{ hidden: collapsed }">')
+        ->toContain('data-strip="p"')
+        ->not->toContain('wire:click="toggleStrip');
+});
+
 it('narrows the window to a dragged selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
@@ -691,6 +702,23 @@ it('orders and widens a backwards or tiny selection', function (): void {
         ->assertSet('from', now()->getTimestamp() - 2400);
 });
 
+it('normalises a window set without zoomTo', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    // One end alone falls back to the default rather than reaching back to 1970.
+    Livewire::test(Dashboard::class)
+        ->set('from', 0)
+        ->assertSet('from', null)
+        ->assertSet('to', null);
+
+    // Wider than a month is clipped from the front.
+    Livewire::test(Dashboard::class)
+        ->call('zoomTo', now()->subDay()->getTimestamp(), now()->getTimestamp())
+        ->set('from', 0)
+        ->assertSet('to', now()->getTimestamp())
+        ->assertSet('from', now()->getTimestamp() - 30 * 86400);
+});
+
 it('refuses a window from the future', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
@@ -708,7 +736,7 @@ it('names the window it is showing', function (): void {
     Livewire::test(Dashboard::class)
         ->call('zoomTo', now()->subDay()->getTimestamp(), now()->getTimestamp())
         // 12:00 UTC is 13:00 in Prague, and a day-wide window names the clock.
-        ->assertSee('14. 3. 2026 13:00 → 15. 3. 2026 13:00');
+        ->assertSee('14.3.2026 13:00 → 15.3.2026 13:00');
 });
 
 it('reports when the station last transmitted', function (): void {
@@ -720,7 +748,7 @@ it('reports when the station last transmitted', function (): void {
         ->assertOk()
         ->assertSee('Last transmission')
         // 11:48 UTC is 12:48 in Prague, which is still on CET in mid-March.
-        ->assertSee('15. 3. 2026 12:48')
+        ->assertSee('15.3.2026 12:48')
         ->assertSee('12 minutes ago');
 });
 
@@ -807,10 +835,36 @@ it('lists the last three transmissions as the station sent them', function (): v
         // 97 389 Pa at 345 m reduces to 1013,5 hPa.
         ->assertSee('1 013,5')
         // Arrival time, Prague: 11:55 UTC is 12:55 in March.
-        ->assertSee('15. 3. 2026 12:55')
-        ->assertDontSee('15. 3. 2026 11:50')
+        ->assertSee('15.3.2026 12:55')
+        ->assertDontSee('15.3.2026 11:50')
         // The oldest of four is off the tail.
         ->assertDontSee('1901');
+});
+
+it('folds the tail down to the newest transmission', function (): void {
+    $sensor = Sensor::factory()->create();
+
+    foreach ([30, 20, 10] as $minutesAgo) {
+        Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes($minutesAgo)->getTimestamp()]);
+    }
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // Folded by default: the newest row stays, the two older ones are hidden until Alpine unfolds them.
+    expect($html)
+        ->toMatch('/aria-expanded="false"[^>]*aria-controls="transmissions"/')
+        ->toContain('Last measurement · when it arrived')
+        ->toContain('<span class="hidden" x-bind:class="{ hidden: ! all }">Last 3 measurements')
+        ->and(preg_match_all('/dark:border-white\/10 hidden"\s+x-bind:class="\{ hidden: ! all \}"/', $html))->toBe(2);
+});
+
+it('disables the tail fold with a single transmission', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toMatch('/aria-controls="transmissions"[^>]*disabled/')
+        ->toContain('Last measurement · when it arrived')
+        ->not->toContain('measurements · when they arrived');
 });
 
 it('lists a V2 packet under its own keys', function (): void {
@@ -848,11 +902,11 @@ it('dates the tail by arrival while the readout dates the measurement', function
     $html = Livewire::test(Dashboard::class)->html();
 
     // The readout reads the measurement: 11:30 UTC is 12:30 in Prague.
-    expect(Str::before($html, 'data-chart-rows'))->toContain('15. 3. 2026 12:30')
+    expect(Str::before($html, 'data-chart-rows'))->toContain('15.3.2026 12:30')
         // The tail reads the arrival: 11:58 UTC, 12:58 there.
         ->and(Str::after($html, 'aria-label="Last transmissions"'))
-        ->toContain('15. 3. 2026 12:58')
-        ->not->toContain('15. 3. 2026 12:30');
+        ->toContain('15.3.2026 12:58')
+        ->not->toContain('15.3.2026 12:30');
 });
 
 it('draws temperature and humidity on one strip and pressure on another', function (): void {
@@ -868,8 +922,8 @@ it('draws temperature and humidity on one strip and pressure on another', functi
         ->toContain('Humidity (%)')
         ->toContain('Pressure, MSL (hPa)')
         // The tail follows the charts.
-        ->and(Str::after($html, 'data-canvas'))->toContain('when they arrived')
-        ->and(Str::before($html, 'data-canvas'))->not->toContain('when they arrived');
+        ->and(Str::after($html, 'data-canvas'))->toContain('when it arrived')
+        ->and(Str::before($html, 'data-canvas'))->not->toContain('when it arrived');
 });
 
 it('puts the navigator above the strips it scrolls', function (): void {
@@ -1098,8 +1152,8 @@ it('opens on the first registered sensor and switches on request', function (): 
         ->assertSet('sensor', 'first')
         ->assertSee('21,50')
         ->assertDontSee('10,50')
-        ->assertSee('15. 3. 2026 12:50')
-        ->assertDontSee('15. 3. 2026 12:30')
+        ->assertSee('15.3.2026 12:50')
+        ->assertDontSee('15.3.2026 12:30')
         ->assertSee('2150')
         ->assertDontSee('1050');
 
@@ -1109,7 +1163,7 @@ it('opens on the first registered sensor and switches on request', function (): 
         ->assertSet('sensor', 'second')
         ->assertSee('10,50')
         ->assertDontSee('21,50')
-        ->assertSee('15. 3. 2026 12:30')
+        ->assertSee('15.3.2026 12:30')
         ->assertSee('1050')
         ->assertDontSee('2150');
 
@@ -1206,7 +1260,7 @@ it('shows what the station last reported about itself', function (): void {
         ->assertOk()
         ->assertSee('Station · as reported with the last upload')
         // 12:00 UTC is 14:00 in Prague in September.
-        ->assertSee('17. 9. 2026 14:00')
+        ->assertSee('17.9.2026 14:00')
         ->assertSeeInOrder(['firmware', '2.3.0'])
         ->assertSeeInOrder(['board', 'ESP32C3_DEV'])
         ->assertSeeInOrder(['uptime', '3 d 4 h'])
@@ -1223,7 +1277,7 @@ it('shows what the station last reported about itself', function (): void {
         ->assertSeeInOrder(['network switches', '2'])
         ->assertSeeInOrder(['clock drift', '+812 ms in 1 h 0 min'])
         ->assertSeeInOrder(['clock drift worst', '-1 204 ms'])
-        ->assertSeeInOrder(['clock synced', '13:20']);
+        ->assertSeeInOrder(['clock synced', '17.9.2026 13:20']);
 });
 
 it('shows no clock drift before the station has re-synced once', function (): void {

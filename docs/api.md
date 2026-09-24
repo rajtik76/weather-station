@@ -201,7 +201,7 @@ overwrites rather than duplicates - and a station may resend a window under
 a newer firmware, the upsert takes the new blob and the new version number.
 Conversion to °C, % and hPa happens on the way out, and so does the
 sea-level reduction of pressure (one height for the site,
-`Dashboard::ALTITUDE_METRES`), so a corrected height never means rewriting
+`Readout::ALTITUDE_METRES`), so a corrected height never means rewriting
 the record.
 
 `protocol_version` is a column of its own and never lives inside the blob.

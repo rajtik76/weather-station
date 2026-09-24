@@ -59,12 +59,4 @@ enum ChartRange: string
             self::Month => 'Month',
         };
     }
-
-    public function stampFormat(): string
-    {
-        return match ($this) {
-            self::Hour, self::Day => 'j. n. Y H:i',
-            self::Week, self::Month => 'j. n. Y',
-        };
-    }
 }
