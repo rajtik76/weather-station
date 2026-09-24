@@ -341,6 +341,11 @@ noise until the next restart.
 Nyquist is 8 kHz, so the 8 kHz band (7.1 - 8.9 kHz) sees only its lower
 half and reads low; the 25 - 40 Hz bands get one bin each.
 
+The server hears rain in these bands (`App\ValueObject\RainDetector`): drops
+off the roof ring the shield's plastic at 1 kHz and fill the top band. Those
+thresholds are this mounting's. A move of the microphone or the shield
+means checking them against a few rains again.
+
 ## Sketches
 
 `weather_station` is the station. `sensors_check` is diagnostics for the

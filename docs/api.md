@@ -182,12 +182,16 @@ for those rows the changelog is the only record of the hardware.
 Validation is all or nothing: one invalid entry rejects the whole batch and
 nothing from it is stored. After a batch is stored the server requests
 `SENSOR_HEARTBEAT_URL`, if set, once the response has gone out; a slow or
-failing monitor never delays or fails the upload.
+failing monitor never delays or fails the upload. The same goes for the
+forecast: with `FORECAST_URL` set, the station's last 60 days go to the
+forecast service after the response, and a failure is logged and forgotten -
+the next upload asks again ten minutes later.
 
 ## Storage
 
-Three tables: `sensors` for the stations, `measurements` for the readings,
-`station_reports` for the board's state.
+Four tables: `sensors` for the stations, `measurements` for the readings,
+`station_reports` for the board's state, `forecasts` for what the forecast
+service answered.
 
 A sensor is created by the first upload under a new `sensor_name`; a
 description can be added by hand afterwards and is what the dashboard shows
@@ -213,6 +217,14 @@ keep their version.
 A station report is one `jsonb` row per batch, tied to the sensor. The
 dashboard shows the newest under the payload tail - the board's own account
 of how it was doing, readable after it has stopped answering.
+
+A forecast row is one run of the service: `sensor_id`, `issued_at` (the
+ten-minute window of the reading it starts from, unique per sensor, so a
+repeated run replaces rather than duplicates), `model` (the `trained_at` of
+the model, traceable in [`forecast/CHANGELOG.md`](../forecast/CHANGELOG.md)), whether
+the station correction was applied, and the six horizons as a `jsonb` list
+in °C, % and hPa. The contract of the service is in
+[`forecast/README.md`](../forecast/README.md#the-services-contract).
 
 ## Aggregation
 
