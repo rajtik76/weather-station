@@ -37,3 +37,4 @@ firmware/secrets.h
 
 # Python venv for schemdraw (circuit schematics in docs/)
 /.venv
+__pycache__/
