@@ -6,6 +6,7 @@ use App\Livewire\Dashboard;
 use App\Models\Forecast;
 use Database\Seeders\ForecastSeeder;
 use Database\Seeders\MeasurementSeeder;
+use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
 use function Pest\Laravel\seed;
@@ -19,6 +20,8 @@ it('seeds a forecast every seeded station shows on the dashboard', function (str
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
+    // The record ends on the 11:50 slot: hourly forecasts from 12:00 two days back to 11:00, and 11:50's.
+    $this->travelTo(Date::parse('2026-09-24 12:05:00', 'UTC'));
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
     Forecast::query()->each(function (Forecast $forecast): void {
@@ -35,5 +38,11 @@ it('seeds six hours in the shape the forecast service answers with', function ()
         }
     });
 
-    expect(Forecast::query()->count())->toBe(2);
+    expect(Forecast::query()->count())->toBe(2 * (48 + 1));
+});
+
+it('seeds forecasts old enough for the accuracy panel to score', function (): void {
+    seed([MeasurementSeeder::class, ForecastSeeder::class]);
+
+    Livewire::test(Dashboard::class)->assertSee('Accuracy · last 7 days');
 });

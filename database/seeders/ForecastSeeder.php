@@ -13,9 +13,11 @@ use Illuminate\Support\Collection;
 
 /**
  * A forecast from each sensor's newest reading, so the dashboard's forecast
- * block shows after a seed without the forecast service running. Synthetic,
- * but shaped like the service's answer: yesterday's curve moved to today's
- * level, a range that widens with the horizon, rain that sets in close to saturation.
+ * block shows after a seed without the forecast service running, and one on
+ * every hour of the two days before, for the accuracy panel to score.
+ * Synthetic, but shaped like the service's answer: yesterday's curve moved
+ * to today's level, a range that widens with the horizon, rain that sets in
+ * close to saturation.
  */
 class ForecastSeeder extends Seeder
 {
@@ -24,36 +26,52 @@ class ForecastSeeder extends Seeder
     /** trained_at of the model bundle the rows pretend to come from. */
     private const string MODEL = '2026-09-24T08:40:43.136429+00:00';
 
+    /** How far back the hourly forecasts go. */
+    private const int HISTORY_HOURS = 48;
+
     public function run(): void
     {
         foreach (Sensor::query()->get() as $sensor) {
             // Yesterday's curve reaches six hours past this time yesterday.
             $readings = $sensor->measurements()
-                ->where('timestamp', '>=', now()->subHours(31)->getTimestamp())
+                ->where('timestamp', '>=', now()->subHours(self::HISTORY_HOURS + 31)->getTimestamp())
                 ->orderBy('timestamp')
                 ->get()
                 ->mapWithKeys(fn (Measurement $measurement): array => [
                     $this->slot($measurement->timestamp) => $measurement->data,
                 ]);
 
-            $issuedAt = $readings->keys()->last();
-            $now = $issuedAt === null ? null : $readings->get($issuedAt);
+            $newest = $readings->keys()->last();
 
-            if ($now === null) {
+            if ($newest === null) {
                 continue;
             }
 
-            Forecast::query()->updateOrCreate(
-                ['sensor_id' => $sensor->id, 'issued_at' => $issuedAt],
-                [
-                    'model' => self::MODEL,
-                    'corrected' => true,
-                    'data' => array_map(
-                        fn (int $hours): array => $this->horizon($readings, $now, $issuedAt, $hours),
-                        range(1, 6),
-                    ),
-                ],
-            );
+            $since = $newest - self::HISTORY_HOURS * 3600;
+            $issues = $readings->keys()
+                ->filter(fn (int $slot): bool => $slot >= $since && $slot % 3600 === 0)
+                ->push($newest)
+                ->unique();
+
+            foreach ($issues as $issuedAt) {
+                $now = $readings->get($issuedAt);
+
+                if ($now === null) {
+                    continue;
+                }
+
+                Forecast::query()->updateOrCreate(
+                    ['sensor_id' => $sensor->id, 'issued_at' => $issuedAt],
+                    [
+                        'model' => self::MODEL,
+                        'corrected' => true,
+                        'data' => array_map(
+                            fn (int $hours): array => $this->horizon($readings, $now, $issuedAt, $hours),
+                            range(1, 6),
+                        ),
+                    ],
+                );
+            }
         }
     }
 
