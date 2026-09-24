@@ -1,5 +1,6 @@
-# The image builds the Laravel app only.
+# The image builds the Laravel app only; ml/ has its own image.
 firmware/
+/ml/
 
 # Rebuilt inside the image.
 /vendor/

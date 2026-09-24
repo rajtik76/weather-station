@@ -1,0 +1,12 @@
+[project]
+name = "weather-station-ml"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["pandas>=3.0.6", "scikit-learn>=1.9.1"]
+
+[dependency-groups]
+train = ["pyarrow>=25.0.1"]
+
+[tool.uv]
+# Training reads parquet; the service image installs without this group.
+default-groups = ["train"]

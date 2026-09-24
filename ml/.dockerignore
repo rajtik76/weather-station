@@ -1,0 +1,5 @@
+# Only the service code and the lockfile go into the image.
+/.venv
+/data
+/models
+__pycache__/
