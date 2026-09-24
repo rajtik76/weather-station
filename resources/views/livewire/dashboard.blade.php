@@ -143,7 +143,7 @@
                     Forecast · next 6 hours
                 </p>
                 <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    from {{ $forecast['at'] }} ·
+                    made {{ $forecast['at'] }} · {{ $forecast['ago'] }} ·
                     {{ $forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}
                 </p>
             </div>

@@ -526,7 +526,8 @@ class Dashboard extends Component
         }
 
         return [
-            ...LocalTime::of($forecast->issued_at)->forHumans(),
+            // When it arrived, not the window it starts from: that is what the reader asks.
+            ...LocalTime::of($forecast->created_at?->getTimestamp() ?? $forecast->issued_at)->forHumans(),
             'corrected' => $forecast->corrected,
             'horizons' => $horizons,
         ];

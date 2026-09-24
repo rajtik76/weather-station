@@ -1427,7 +1427,7 @@ it('shows the forecast issued from the newest reading', function (): void {
         ->assertOk()
         ->assertSee('Forecast · next 6 hours')
         // 08:00 UTC is 10:00 in Prague in September.
-        ->assertSeeInOrder(['from 24.9.2026 10:00', 'fitted to this station'])
+        ->assertSeeInOrder(['made 24.9.2026 10:00', 'fitted to this station'])
         ->assertSeeInOrder(['+1 h', '11:00', 'Dry.', '13,8', '12,4 to 15,6', 'rain', '2 %'])
         ->assertSeeInOrder(['+2 h', '12:00', 'Rain possible.', '14,2', 'rain', '50 %'])
         // Forecast humidity and pressure stay in the row, off the page.
@@ -1571,12 +1571,25 @@ it('picks up a newer forecast on the next poll', function (): void {
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
-    $dashboard = Livewire::test(Dashboard::class)->assertSee('from 24.9.2026 10:00');
+    $dashboard = Livewire::test(Dashboard::class)->assertSee('made 24.9.2026 10:00');
 
     // Ten minutes on: the station uploads, the service answers, the page polls.
     $this->travel(10)->minutes();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
 
-    $dashboard->call('$refresh')->assertSee('from 24.9.2026 10:10');
+    $dashboard->call('$refresh')->assertSee('made 24.9.2026 10:10');
+});
+
+it('dates the forecast by when it arrived, not by the window it starts from', function (): void {
+    // The upload at 08:10:20 UTC carries the window 08:00-08:10; the forecast is made from it at once.
+    $this->travelTo(Date::parse('2026-09-24 08:10:21', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subSeconds(34)->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(10)->startOfMinute()->getTimestamp()]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('made 24.9.2026 10:10')
+        ->assertDontSee('made 24.9.2026 10:00');
 });
