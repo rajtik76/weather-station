@@ -170,6 +170,14 @@
                             <p class="font-display text-4xl leading-none font-bold">
                                 {{ number_format($hour['t'], 1, ',', ' ') }}<span class="ml-1 align-baseline text-lg font-bold text-amber-600">°C</span>
                             </p>
+                            <flux:icon
+                                :icon="match ($hour['trend']) { 'rising' => 'arrow-trending-up', 'falling' => 'arrow-trending-down', default => 'minus' }"
+                                variant="mini"
+                                class="text-amber-600"
+                                title="{{ ucfirst($hour['trend']) }}"
+                                aria-hidden="true"
+                            />
+                            <span class="sr-only">{{ ucfirst($hour['trend']) }}.</span>
                         </div>
                         <p class="mt-2 flex items-center gap-1.5 font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
                             <flux:icon.thermometer variant="micro" class="text-amber-600" aria-hidden="true" />

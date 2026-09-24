@@ -65,7 +65,7 @@ use UnexpectedValueException;
  * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
  * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
- * @phpstan-type ForecastHour array{hours: int, clock: string, t: float, tLow: float, tHigh: float, rain: int, sky: array{icon: string, label: string, tone: string}}
+ * @phpstan-type ForecastHour array{hours: int, clock: string, t: float, tLow: float, tHigh: float, trend: string, rain: int, sky: array{icon: string, label: string, tone: string}}
  *
  * @phpstan-import-type Bucket from MeasurementBuckets
  * @phpstan-import-type NoiseBucket from MeasurementBuckets
@@ -84,6 +84,9 @@ class Dashboard extends Component
 
     /** A forecast shows only while it starts this close to the newest reading. */
     private const int FORECAST_FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
+    /** A forecast hour this close to the one before it shows no trend. */
+    private const float FORECAST_STEADY_CELSIUS = 0.3;
 
     /** Navigator thinning: one reading per bucket once the record is large. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
@@ -512,13 +515,20 @@ class Dashboard extends Component
             return null;
         }
 
+        // Each hour's trend against the one before it; the first against the newest reading.
+        $newest = $this->measurements()->orderByDesc('timestamp')->first();
+        $previous = $newest === null ? null : Readout::of($newest->data)->temperature();
+        $horizons = [];
+
+        foreach ($forecast->data as $horizon) {
+            $horizons[] = $this->forecastHour($forecast->issued_at, $horizon, $previous);
+            $previous = $horizon['temperature']['mid'];
+        }
+
         return [
             ...LocalTime::of($forecast->issued_at)->forHumans(),
             'corrected' => $forecast->corrected,
-            'horizons' => array_map(
-                fn (array $horizon): array => $this->forecastHour($forecast->issued_at, $horizon),
-                $forecast->data,
-            ),
+            'horizons' => $horizons,
         ];
     }
 
@@ -527,11 +537,13 @@ class Dashboard extends Component
      * too, and they stay in the stored row, but nobody reads them ahead.
      *
      * @param  Horizon  $horizon
+     * @param  float|null  $previous  the hour before's median, or the newest reading's temperature
      * @return ForecastHour
      */
-    private function forecastHour(int $issuedAt, array $horizon): array
+    private function forecastHour(int $issuedAt, array $horizon, ?float $previous): array
     {
         $temperature = $horizon['temperature'];
+        $change = $previous === null ? 0.0 : $temperature['mid'] - $previous;
         $at = $issuedAt + $horizon['hours'] * 3600;
         $rain = (int) round($horizon['rain_probability'] * 100);
 
@@ -541,6 +553,12 @@ class Dashboard extends Component
             't' => round($temperature['mid'], 1),
             'tLow' => round($temperature['low'], 1),
             'tHigh' => round($temperature['high'], 1),
+            // Under FORECAST_STEADY_CELSIUS either way reads as holding: the median wobbles by tenths.
+            'trend' => match (true) {
+                $change >= self::FORECAST_STEADY_CELSIUS => 'rising',
+                $change <= -self::FORECAST_STEADY_CELSIUS => 'falling',
+                default => 'steady',
+            },
             'rain' => $rain,
             'sky' => $this->sky($at, $rain),
         ];

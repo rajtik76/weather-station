@@ -1543,3 +1543,25 @@ it('keeps a shower on a wide bucket among dry windows', function (): void {
     Livewire::test(Dashboard::class, ['from' => now()->subDays(20)->getTimestamp(), 'to' => now()->getTimestamp()])
         ->assertSet('rainSlots', [[LocalTime::of($hour)->wallClockMs(), $hour]]);
 });
+
+it('shows whether each forecast hour warms or cools on the one before', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 1200, humidity: 5000, pressure: 97000),
+    ]);
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => now()->getTimestamp(),
+        'data' => [
+            // Against the reading's 12.0, then each against the hour before.
+            forecastHorizon(1, 12.2, 80.0, 0.0),
+            forecastHorizon(2, 12.5, 80.0, 0.0),
+            forecastHorizon(3, 12.2, 80.0, 0.0),
+        ],
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertSet('forecast.horizons.0.trend', 'steady')
+        ->assertSet('forecast.horizons.1.trend', 'rising')
+        ->assertSet('forecast.horizons.2.trend', 'falling');
+});
