@@ -44,3 +44,10 @@ it('draws the noise strips for the seeded station with a microphone only', funct
     Livewire::test(Dashboard::class)->assertSee('Noise spectrum');
     Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Dashboard::class)->assertDontSee('Noise spectrum');
 });
+
+it('seeds showers the waterfall marks, only where there is a microphone', function (): void {
+    seed(MeasurementSeeder::class);
+
+    expect(Livewire::test(Dashboard::class)->get('rainSlots'))->not->toBeEmpty()
+        ->and(Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Dashboard::class)->get('rainSlots'))->toBeEmpty();
+});

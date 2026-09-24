@@ -69,6 +69,13 @@ class MeasurementSeeder extends Seeder
     private const array BAND_OFFSETS = [935, 775, 556, 718, 315, -173, -304, -655, -1038, -980, -1169, -1245, -1157, -1053, -1187, -1013, -814, -709, -810, -1287, -1793, -2166, -2428, -2582, -2632, -3279];
 
     /**
+     * Showers the microphone hears, as [from, to] hours before the end of the
+     * record: an hour and a half the day before, half an hour two days back.
+     * Relative to the end because the record ends at the seed time.
+     */
+    private const array SHOWERS = [[20.0, 18.5], [44.0, 43.5]];
+
+    /**
      * Real hourly observations for Plzen-Slovany (Open-Meteo, 345 m), 744
      * points, interpolated to ten minutes and jittered. Real data because a
      * model gets pressure wrong at once: 1013 hPa is sea level, a BME280 at
@@ -127,7 +134,7 @@ class MeasurementSeeder extends Seeder
                     'data' => (string) match ($version) {
                         ProtocolVersion::V1 => new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p),
                         ProtocolVersion::V2 => $window(),
-                        ProtocolVersion::V3 => $this->withNoise($window(), $this->noise($slot)),
+                        ProtocolVersion::V3 => $this->withNoise($window(), $this->noise($slot, $this->isShowering($slot, $end))),
                     },
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -189,10 +196,25 @@ class MeasurementSeeder extends Seeder
      * and the maximum a lot. A window cut short by its upload heard a few
      * seconds less than ten minutes.
      */
-    private function noise(int $slot): NoiseWindow
+    private function noise(int $slot, bool $isShowering): NoiseWindow
     {
         $isLoud = mt_rand(0, 11) === 0;
         $laeq = self::NOISE_BY_HOUR[$this->localHour($slot)] * 100 + mt_rand(-150, 150) + ($isLoud ? mt_rand(200, 600) : 0);
+
+        if ($isShowering) {
+            $laeq = mt_rand(6400, 7300);
+        }
+
+        $bands = array_map(
+            fn (int $offset): int => max(0, $laeq + $offset + mt_rand(-150, 150)),
+            self::BAND_OFFSETS,
+        );
+
+        if ($isShowering) {
+            // Drops on the shield, as RainDetector hears them: loud at 8 kHz, the shell ringing at 1 kHz.
+            $bands[25] = mt_rand(4900, 6000);
+            $bands[16] = max($bands[15], $bands[17]) + mt_rand(250, 500);
+        }
 
         return new NoiseWindow(
             seconds: mt_rand(0, 3) === 0 ? mt_rand(570, 599) : self::STEP_SECONDS,
@@ -200,11 +222,21 @@ class MeasurementSeeder extends Seeder
             lamax: $laeq + mt_rand(600, 1400) + ($isLoud ? mt_rand(1000, 2500) : 0),
             la10: $laeq + mt_rand(150, 350),
             la90: $laeq - mt_rand(450, 900),
-            bands: array_map(
-                fn (int $offset): int => max(0, $laeq + $offset + mt_rand(-150, 150)),
-                self::BAND_OFFSETS,
-            ),
+            bands: $bands,
         );
+    }
+
+    private function isShowering(int $slot, int $end): bool
+    {
+        $hoursBeforeEnd = ($end - $slot) / 3600;
+
+        foreach (self::SHOWERS as [$from, $to]) {
+            if ($hoursBeforeEnd <= $from && $hoursBeforeEnd > $to) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function withNoise(MeasurementDataV2 $window, NoiseWindow $noise): MeasurementDataV3
