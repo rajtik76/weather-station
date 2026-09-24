@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\ProtocolVersion;
 use App\Livewire\Dashboard;
+use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
@@ -1391,3 +1392,98 @@ it('shows the selected sensor\'s report, not another station\'s', function (): v
         ->assertSee('north-build')
         ->assertDontSee('south-build');
 });
+
+/**
+ * One horizon as the forecast service stores it.
+ *
+ * @return array<string, mixed>
+ */
+function forecastHorizon(int $hours, float $temperature, float $humidity, float $rain): array
+{
+    return [
+        'hours' => $hours,
+        'temperature' => ['low' => $temperature - 1.44, 'mid' => $temperature, 'high' => $temperature + 1.72],
+        'humidity' => ['low' => $humidity - 5, 'mid' => $humidity, 'high' => $humidity + 5],
+        'pressure' => ['low' => 976.0, 'mid' => 976.47, 'high' => 977.1],
+        'rain_probability' => $rain,
+    ];
+}
+
+it('shows the forecast issued from the newest reading', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->addMinutes(9)->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => now()->getTimestamp(),
+        'corrected' => true,
+        'data' => [
+            forecastHorizon(1, 13.84, 75.7, 0.023),
+            forecastHorizon(2, 14.2, 80.0, 0.5),
+        ],
+    ]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Forecast · next 6 hours')
+        // 08:00 UTC is 10:00 in Prague in September.
+        ->assertSeeInOrder(['from 24.9.2026 10:00', 'fitted to this station'])
+        ->assertSeeInOrder(['+1 h', '11:00', 'Dry.', '13,8', '12,4 to 15,6', 'rain', '2 %'])
+        ->assertSeeInOrder(['+2 h', '12:00', 'Rain possible.', '14,2', 'rain', '50 %'])
+        // Forecast humidity and pressure stay in the row, off the page.
+        ->assertDontSee('1 017,3 hPa')
+        ->assertDontSee('76 %');
+});
+
+it('says when the forecast is not yet fitted to the station', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'corrected' => false]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('not yet fitted to this station');
+});
+
+it('hides a forecast that no longer starts from the current record', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(31)->getTimestamp()]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertDontSee('Forecast · next 6 hours');
+});
+
+it('shows the selected sensor\'s forecast, not another station\'s', function (): void {
+    $shown = Sensor::factory()->create(['name' => 'north']);
+    $other = Sensor::factory()->create(['name' => 'south']);
+    Measurement::factory()->for($shown)->create(['timestamp' => now()->getTimestamp()]);
+    Measurement::factory()->for($other)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($other)->create(['issued_at' => now()->getTimestamp()]);
+
+    $this->get('/?sensor=north')
+        ->assertOk()
+        ->assertDontSee('Forecast · next 6 hours');
+});
+
+it('pictures each forecast hour by its rain chance and the real sunrise', function (string $issuedUtc, float $rain, string $icon, string $tone): void {
+    $this->travelTo(Date::parse($issuedUtc, 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => now()->getTimestamp(),
+        'data' => [forecastHorizon(1, 12.0, 80.0, $rain)],
+    ]);
+
+    Livewire::test(Dashboard::class)
+        ->assertSet('forecast.horizons.0.sky.icon', $icon)
+        ->assertSet('forecast.horizons.0.sky.tone', $tone);
+})->with([
+    // Plzeň, 24 September: sunrise ~05:00 UTC, sunset ~17:10 UTC; the hour shown is one later.
+    'dry by day' => ['2026-09-24 08:00:00', 0.09, 'sun', 'day'],
+    'dry at night' => ['2026-09-24 20:00:00', 0.0, 'moon', 'night'],
+    'slight chance by day' => ['2026-09-24 08:00:00', 0.1, 'cloud-sun', 'day'],
+    'slight chance at night' => ['2026-09-24 20:00:00', 0.29, 'cloud-moon', 'night'],
+    'possible' => ['2026-09-24 20:00:00', 0.3, 'cloud-drizzle', 'rain'],
+    'likely' => ['2026-09-24 08:00:00', 0.6, 'cloud-rain', 'rain'],
+]);

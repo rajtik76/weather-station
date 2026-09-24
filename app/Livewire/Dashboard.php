@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
+use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
@@ -50,6 +51,7 @@ use UnexpectedValueException;
  * @property-read Collection<int, Sensor> $sensors
  * @property-read Sensor|null $selectedSensor
  * @property-read bool $hasSensorChoice
+ * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
  *
  * Chart rows are positional arrays to keep the JSON payload small. A bucket
  * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
@@ -61,9 +63,11 @@ use UnexpectedValueException;
  * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
  * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
+ * @phpstan-type ForecastHour array{hours: int, clock: string, t: float, tLow: float, tHigh: float, rain: int, sky: array{icon: string, label: string, tone: string}}
  *
  * @phpstan-import-type Bucket from MeasurementBuckets
  * @phpstan-import-type NoiseBucket from MeasurementBuckets
+ * @phpstan-import-type Horizon from Forecast
  */
 #[Title('Station Log')]
 class Dashboard extends Component
@@ -75,6 +79,9 @@ class Dashboard extends Component
     private const int LOCATION_RADIUS_METRES = 800;
 
     private const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
+    /** A forecast shows only while it starts this close to the newest reading. */
+    private const int FORECAST_FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
     /** Navigator thinning: one reading per bucket once the record is large. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
@@ -443,6 +450,84 @@ class Dashboard extends Component
                 })
                 ->all()
         );
+    }
+
+    /**
+     * The newest forecast, only while it starts from the station's current
+     * record: a station that went quiet has nothing to forecast from, and an
+     * old forecast would read as today's.
+     *
+     * @return array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null
+     */
+    #[Computed]
+    public function forecast(): ?array
+    {
+        if ($this->lastMeasurement === null) {
+            return null;
+        }
+
+        $forecast = Forecast::query()
+            ->where('sensor_id', $this->selectedSensor?->id)
+            ->latest('issued_at')
+            ->first();
+
+        if ($forecast === null || $forecast->issued_at < $this->lastMeasurement->timestamp - self::FORECAST_FRESH_SECONDS) {
+            return null;
+        }
+
+        return [
+            ...LocalTime::of($forecast->issued_at)->forHumans(),
+            'corrected' => $forecast->corrected,
+            'horizons' => array_map(
+                fn (array $horizon): array => $this->forecastHour($forecast->issued_at, $horizon),
+                $forecast->data,
+            ),
+        ];
+    }
+
+    /**
+     * Temperature and rain only: the service forecasts humidity and pressure
+     * too, and they stay in the stored row, but nobody reads them ahead.
+     *
+     * @param  Horizon  $horizon
+     * @return ForecastHour
+     */
+    private function forecastHour(int $issuedAt, array $horizon): array
+    {
+        $temperature = $horizon['temperature'];
+        $at = $issuedAt + $horizon['hours'] * 3600;
+        $rain = (int) round($horizon['rain_probability'] * 100);
+
+        return [
+            'hours' => $horizon['hours'],
+            'clock' => LocalTime::of($at)->clock(),
+            't' => round($temperature['mid'], 1),
+            'tLow' => round($temperature['low'], 1),
+            'tHigh' => round($temperature['high'], 1),
+            'rain' => $rain,
+            'sky' => $this->sky($at, $rain),
+        ];
+    }
+
+    /**
+     * The picture over a forecast hour. The models forecast rain, not cloud,
+     * so it follows the rain chance alone; sun or moon by the real sunrise.
+     *
+     * @return array{icon: string, label: string, tone: string}
+     */
+    private function sky(int $timestamp, int $rain): array
+    {
+        $sun = date_sun_info($timestamp, self::LATITUDE, self::LONGITUDE);
+        $isDay = $timestamp >= (int) $sun['sunrise'] && $timestamp < (int) $sun['sunset'];
+
+        $tone = $isDay ? 'day' : 'night';
+
+        return match (true) {
+            $rain >= 60 => ['icon' => 'cloud-rain', 'label' => 'rain likely', 'tone' => 'rain'],
+            $rain >= 30 => ['icon' => 'cloud-drizzle', 'label' => 'rain possible', 'tone' => 'rain'],
+            $rain >= 10 => ['icon' => $isDay ? 'cloud-sun' : 'cloud-moon', 'label' => 'slight chance of rain', 'tone' => $tone],
+            default => ['icon' => $isDay ? 'sun' : 'moon', 'label' => 'dry', 'tone' => $tone],
+        };
     }
 
     /**

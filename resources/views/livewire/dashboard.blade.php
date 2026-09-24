@@ -132,6 +132,65 @@
         @endif
     </section>
 
+    {{-- ── Forecast ───────────────────────────────────────────────── --}}
+    {{-- Only while it starts from the current record; Dashboard::forecast(). --}}
+    @if ($this->forecast !== null)
+        @php($forecast = $this->forecast)
+        <section aria-label="Forecast" class="border-t border-zinc-900/10 dark:border-white/10">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
+                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                    Forecast · next 6 hours
+                </p>
+                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                    from {{ $forecast['at'] }} ·
+                    {{ $forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}
+                </p>
+            </div>
+
+            <ol class="grid grid-cols-2 gap-x-8 gap-y-6 px-4 pt-2 pb-4 sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
+                @foreach ($forecast['horizons'] as $hour)
+                    <li>
+                        <p class="font-mono text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                            +{{ $hour['hours'] }} h · <span class="tabular-nums">{{ $hour['clock'] }}</span>
+                        </p>
+                        <div class="mt-2 flex items-center gap-3">
+                            <flux:icon
+                                :icon="$hour['sky']['icon']"
+                                @class([
+                                    'size-9',
+                                    'text-sky-600 dark:text-sky-400' => $hour['sky']['tone'] === 'rain',
+                                    'text-amber-500' => $hour['sky']['tone'] === 'day',
+                                    'text-indigo-400 dark:text-indigo-300' => $hour['sky']['tone'] === 'night',
+                                ])
+                                title="{{ ucfirst($hour['sky']['label']) }}"
+                                aria-hidden="true"
+                            />
+                            <span class="sr-only">{{ ucfirst($hour['sky']['label']) }}.</span>
+                            <p class="font-display text-4xl leading-none font-bold">
+                                {{ number_format($hour['t'], 1, ',', ' ') }}<span class="ml-1 align-baseline text-lg font-bold text-amber-600">°C</span>
+                            </p>
+                        </div>
+                        <p class="mt-2 flex items-center gap-1.5 font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                            <flux:icon.thermometer variant="micro" class="text-amber-600" aria-hidden="true" />
+                            {{ number_format($hour['tLow'], 1, ',', ' ') }} to {{ number_format($hour['tHigh'], 1, ',', ' ') }}
+                        </p>
+                        <p class="mt-1 flex items-center gap-1.5 font-mono text-xs tabular-nums">
+                            <flux:icon.umbrella variant="micro" class="text-sky-600 dark:text-sky-400" aria-hidden="true" />
+                            <span class="text-zinc-500 dark:text-zinc-400">rain</span>
+                            <span class="text-zinc-800 dark:text-zinc-200">{{ $hour['rain'] }} %</span>
+                        </p>
+                    </li>
+                @endforeach
+            </ol>
+
+            {{-- CC BY 4.0 asks for the attribution. --}}
+            <p class="px-4 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
+                Range: eight readings in ten land inside it. Rain: the chance of at least 0.1 mm by then.
+                Trained on ČHMÚ station records (CC BY 4.0), run from this station's readings alone.
+            </p>
+        </section>
+    @endif
+
     {{-- ── Range switcher ─────────────────────────────────────────── --}}
     <section
         aria-label="Chart range"

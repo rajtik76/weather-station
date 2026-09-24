@@ -17,6 +17,8 @@ final readonly class LocalTime
 
     private const string STAMP_FORMAT = 'j.n.Y H:i';
 
+    private const string CLOCK_FORMAT = 'H:i';
+
     private function __construct(public int $timestamp) {}
 
     public static function of(int $timestamp): self
@@ -28,6 +30,12 @@ final readonly class LocalTime
     public function stamp(): string
     {
         return $this->moment()->format(self::STAMP_FORMAT);
+    }
+
+    /** Time of day alone, for a column that sits under a full stamp - like an axis tick. */
+    public function clock(): string
+    {
+        return $this->moment()->format(self::CLOCK_FORMAT);
     }
 
     /** The station's clock drifts and may stamp ahead of the server; "4 minutes from now" reads as broken. */
