@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 use App\Enums\ProtocolVersion;
+use App\Jobs\ForecastWeather;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\assertDatabaseCount;
@@ -157,6 +159,39 @@ it('stores a batch without pinging when no monitor is configured', function (): 
     ])->assertCreated();
 
     Http::assertNothingSent();
+});
+
+it('asks for a forecast for the sensor once a batch is stored', function (): void {
+    config()->set('forecast.url', 'http://forecast.test');
+    Bus::fake([ForecastWeather::class]);
+
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+    ])->assertCreated();
+
+    Bus::assertDispatchedAfterResponse(
+        ForecastWeather::class,
+        fn (ForecastWeather $job): bool => $job->sensor->name === 'bme280',
+    );
+});
+
+it('stores a batch without a forecast when no service is configured', function (): void {
+    config()->set('forecast.url');
+    Bus::fake([ForecastWeather::class]);
+
+    postJson('/api/v1/measurement', [
+        'sensor_name' => 'bme280',
+        'protocol_version' => 1,
+        'measurements' => [
+            ['timestamp' => 1757000001, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+        ],
+    ])->assertCreated();
+
+    Bus::assertNotDispatchedAfterResponse(ForecastWeather::class);
 });
 
 it('registers a sensor on its first upload and reuses it afterwards', function (): void {

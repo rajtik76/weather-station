@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\ProtocolVersion;
 use App\Http\Requests\StoreMeasurementRequest;
+use App\Jobs\ForecastWeather;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
@@ -47,6 +48,7 @@ class StoreMeasurementController extends Controller
         }
 
         $this->pingHeartbeat();
+        $this->forecast($sensor);
 
         return response()->json(['stored' => $upserted], JsonResponse::HTTP_CREATED);
     }
@@ -61,5 +63,17 @@ class StoreMeasurementController extends Controller
         }
 
         dispatch(fn () => rescue(fn () => Http::timeout(5)->get($url)))->afterResponse();
+    }
+
+    /** After the response too: the service takes about a second. Unset URL means no forecasts. */
+    private function forecast(Sensor $sensor): void
+    {
+        $url = config('forecast.url');
+
+        if (! is_string($url) || $url === '') {
+            return;
+        }
+
+        ForecastWeather::dispatchAfterResponse($sensor);
     }
 }

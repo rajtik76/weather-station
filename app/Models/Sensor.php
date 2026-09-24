@@ -70,4 +70,12 @@ class Sensor extends Model
     {
         return $this->hasMany(StationReport::class);
     }
+
+    /**
+     * @return HasMany<Forecast, $this>
+     */
+    public function forecasts(): HasMany
+    {
+        return $this->hasMany(Forecast::class);
+    }
 }
