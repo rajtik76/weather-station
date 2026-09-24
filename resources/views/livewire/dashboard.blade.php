@@ -62,7 +62,10 @@
                     ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'text-amber-600'],
                     ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600'],
                     ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-500'],
+                    ['key' => 'n', 'label' => 'Noise, LAeq', 'unit' => 'dB(A)', 'dec' => 1, 'accent' => 'text-emerald-600 dark:text-emerald-400'],
                 ] as $readout)
+                    {{-- Noise only when the last day holds some. --}}
+                    @continue(! isset($this->metrics[$readout['key']]))
                     @php($m = $this->metrics[$readout['key']])
                     <div>
                         <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase min-[1120px]:justify-end dark:text-zinc-400">

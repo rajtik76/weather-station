@@ -612,6 +612,36 @@ it('reads the day\'s extremes off the samples rather than the means', function (
         ->assertSee('min 44,00 · max 93,00');
 });
 
+it('reads the noise into the hero beside the weather', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    foreach ([[8, 4210], [2, 6380], [0, 5562]] as [$hoursAgo, $laeq]) {
+        Measurement::factory()->for($sensor)->v3()->create([
+            'timestamp' => now()->subHours($hoursAgo)->subMinutes(10)->getTimestamp(),
+            'data' => (string) noisyWindow($laeq, $laeq + 200, $laeq - 300, $laeq + 900, 3000),
+        ]);
+    }
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Noise, LAeq')
+        ->assertSee('55,6')
+        ->assertSee('min 42,1 · max 63,8');
+});
+
+it('leaves the noise out of the hero for a day without it', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v2()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Temperature')
+        ->assertDontSee('Noise, LAeq');
+});
+
 it('keeps the dew point off until the reader asks for it', function (): void {
     Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 

@@ -57,7 +57,7 @@ use UnexpectedValueException;
  *
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
  * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
- * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float}
+ * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float}
  * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
  * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
@@ -330,7 +330,20 @@ class Dashboard extends Component
                     'hMax' => $row[9] ?? $row[2],
                     'pMin' => $row[10] ?? $row[3],
                     'pMax' => $row[11] ?? $row[3],
+                    'n' => $this->noiseAt($row[5]),
                 ];
+            }
+        }
+
+        return null;
+    }
+
+    /** LAeq of the noise bucket on the same slot, null when it heard nothing. */
+    private function noiseAt(int $epoch): ?float
+    {
+        foreach ($this->noise as $row) {
+            if ($row[1] === $epoch) {
+                return $row[2] === null ? null : (float) $row[2];
             }
         }
 
@@ -380,6 +393,9 @@ class Dashboard extends Component
     }
 
     /**
+     * Noise (`n`) only when the day holds some: older rows and a dead
+     * microphone carry none.
+     *
      * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float}>
      */
     #[Computed]
@@ -389,11 +405,12 @@ class Dashboard extends Component
             return [];
         }
 
-        return [
+        return array_filter([
             't' => $this->figures('t'),
             'h' => $this->figures('h'),
             'p' => $this->figures('p'),
-        ];
+            'n' => $this->noiseFigures(),
+        ]);
     }
 
     /**
@@ -734,6 +751,7 @@ class Dashboard extends Component
      * Day min and max come off the entries' extremes, not their means: the
      * coldest sample sits below the coldest ten-minute mean.
      *
+     * @param  't'|'h'|'p'  $field
      * @return array{now: float, delta: float, dayMin: float, dayMax: float}
      */
     private function figures(string $field): array
@@ -746,6 +764,36 @@ class Dashboard extends Component
             throw new UnexpectedValueException("No readings to summarise for [{$field}].");
         }
 
+        return $this->summary($day, $lows, $highs);
+    }
+
+    /**
+     * The day's LAeq, its extremes included: a window has no quietest
+     * sample, and LAmax is a single door slam, not the loudest ten minutes.
+     *
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float}|null
+     */
+    private function noiseFigures(): ?array
+    {
+        $levels = [];
+
+        foreach ($this->lastDay as $entry) {
+            if ($entry['n'] !== null) {
+                $levels[] = $entry['n'];
+            }
+        }
+
+        return $levels === [] ? null : $this->summary($levels, $levels, $levels);
+    }
+
+    /**
+     * @param  non-empty-list<float>  $day
+     * @param  non-empty-list<float>  $lows
+     * @param  non-empty-list<float>  $highs
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float}
+     */
+    private function summary(array $day, array $lows, array $highs): array
+    {
         $now = end($day);
 
         return [

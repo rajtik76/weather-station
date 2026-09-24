@@ -66,10 +66,20 @@ final readonly class Readout
         return DewPoint::of($this->data)?->celsius(2);
     }
 
+    /** LAeq in dB, tenths like the noise strips. Null for an entry the microphone did not hear. */
+    public function noise(): ?float
+    {
+        if (! $this->data instanceof MeasurementDataV3 || ! $this->data->noise instanceof NoiseWindow) {
+            return null;
+        }
+
+        return round($this->data->noise->laeq / 100, 1);
+    }
+
     /**
      * Every channel with its extremes, keyed as the day readouts read them.
      *
-     * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float}
+     * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float}
      */
     public function toArray(): array
     {
@@ -83,6 +93,7 @@ final readonly class Readout
             'hMax' => self::hundredths($this->data->humidityMax),
             'pMin' => $this->seaLevel($this->data->pressureMin),
             'pMax' => $this->seaLevel($this->data->pressureMax),
+            'n' => $this->noise(),
         ];
     }
 }
