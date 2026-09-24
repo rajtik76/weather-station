@@ -20,7 +20,7 @@ beforeEach(function (): void {
 });
 
 /**
- * What ml/serve.py answers, trimmed to one horizon.
+ * What forecast/serve.py answers, trimmed to one horizon.
  *
  * @return array<string, mixed>
  */

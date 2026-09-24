@@ -1,4 +1,4 @@
-# The forecast service. Built from ml/ as the context; the model is not in
+# The forecast service. Built from forecast/ as the context; the model is not in
 # the image but mounted at /models, so a retrain needs no rebuild.
 
 # Dependencies into a virtualenv, with uv. Training-only packages stay out.

@@ -285,7 +285,7 @@ wheels = [
 ]
 
 [[package]]
-name = "weather-station-ml"
+name = "weather-station-forecast"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -12,7 +12,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Asks the forecast service (ml/serve.py) for the next six hours from the
+ * Asks the forecast service (forecast/serve.py) for the next six hours from the
  * sensor's recent history and stores the answer. The service keeps no
  * state, so every run sends the whole window it learns the station
  * correction from.
