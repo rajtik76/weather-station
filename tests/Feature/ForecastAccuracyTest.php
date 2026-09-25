@@ -11,6 +11,7 @@ use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 /**
@@ -233,3 +234,19 @@ it('keeps the score until the next forecast arrives', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
     expect(Livewire::test(Dashboard::class)->get('forecastAccuracy')[0]['count'])->toBe(2);
 });
+
+it('keeps one score per sensor in the cache, however many forecasts come', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    measuredAt($sensor, $issued, 1200);
+    measuredAt($sensor, $issued + 3600, 1300);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
+    Livewire::test(Dashboard::class);
+
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
+    Livewire::test(Dashboard::class);
+
+    // The database store deletes an expired row only when it reads it; a key per forecast was never read again.
+    expect(DB::table('cache')->count())->toBe(1);
+})->with([fn () => config(['cache.default' => 'database'])]);

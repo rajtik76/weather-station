@@ -92,6 +92,9 @@ class Dashboard extends Component
     /** How far back the forecasts are scored against what came; the panel's label reads it. */
     public const int ACCURACY_DAYS = 7;
 
+    /** Part of the accuracy's cache key: bump it when Score changes shape, so a deploy never reads the old one. */
+    private const int ACCURACY_CACHE_SHAPE = 1;
+
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;
 
@@ -543,9 +546,14 @@ class Dashboard extends Component
     /**
      * The last week's forecasts scored against the readings that followed,
      * per horizon; empty until one has come true. Not the chart window: a
-     * score over a zoomed hour would say nothing. Cached until the next
+     * score over a zoomed hour would say nothing. Kept until the next
      * forecast: it comes with the upload that completes new scores. Fifteen
      * minutes at most, for when the service is down and none comes.
+     *
+     * One key per sensor, the forecast it was scored at inside the value: a
+     * key per forecast is never read again once the next one comes, and the
+     * database store only deletes an expired row it reads, so the table grew
+     * by a row every ten minutes.
      *
      * @return list<Score>
      */
@@ -559,12 +567,17 @@ class Dashboard extends Component
             return [];
         }
 
-        // Its inputs change with each forecast, every ten minutes; the page polls every one.
-        return Cache::remember(
-            "forecast-accuracy:{$sensorId}:{$newest}",
-            now()->addMinutes(15),
-            fn (): array => new ForecastAccuracy($sensorId)->since(now()->subDays(self::ACCURACY_DAYS)->getTimestamp()),
-        );
+        $key = 'forecast-accuracy:v'.self::ACCURACY_CACHE_SHAPE.":{$sensorId}";
+        $cached = Cache::get($key);
+
+        if (is_array($cached) && ($cached['issuedAt'] ?? null) === $newest) {
+            return $cached['scores'];
+        }
+
+        $scores = new ForecastAccuracy($sensorId)->since(now()->subDays(self::ACCURACY_DAYS)->getTimestamp());
+        Cache::put($key, ['issuedAt' => $newest, 'scores' => $scores], now()->addMinutes(15));
+
+        return $scores;
     }
 
     /**
