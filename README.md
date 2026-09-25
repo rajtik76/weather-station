@@ -67,8 +67,9 @@ temperature as a range one to six hours ahead, and the chance of rain.
 Folded under it, the last week's forecasts are scored against what the
 station then measured: how often the temperature landed in the range, and the
 mean rain chance given when it rained and when it did not, per hour ahead. Under
-each hour ahead, the temperature is split by the hour of the day the forecast
-was for, to show when in the day it misses.
+each hour ahead, a chart shows by the hour of the day the forecast was for how
+much warmer or colder the station read than forecast, to show when in the day
+it misses - the morning sun on the shield reads warmer.
 The models learnt the weather from eight years of ČHMÚ station records and
 correct themselves for the station from its own history; at forecast time
 they use nothing but the station's readings. How it works, how well it

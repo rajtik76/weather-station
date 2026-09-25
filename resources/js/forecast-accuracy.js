@@ -1,35 +1,37 @@
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
-import { GridComponent, TooltipComponent } from "echarts/components";
+import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
-echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
 /**
- * The temperature accuracy of one horizon by the local hour the forecast was
- * for: a line through all 24 hours, each point coloured by the grade the
- * server gives it (AccuracyGrade), so the points and the figures in the row
- * above read on one scale. An hour with nothing scored is a gap in the line.
+ * How far one horizon's temperature forecast was off by the local hour it was
+ * for: a line through all 24 hours of the mean reading minus the forecast's
+ * middle, around a zero line - above it the station read warmer than forecast,
+ * which is where a sun on the shield shows. The points stay neutral: their
+ * height is the error, and a grade colour would describe another measure. An
+ * hour with nothing scored is a gap.
  * Not a strip: no time axis, no zoom, no crosshair.
  */
 
 /**
- * Rows are `[percent, forecast hours scored, grade, mean and largest distance
- * from the forecast's middle in °C]`, nulls for an hour with none.
+ * Rows are `[percent, forecast hours scored, mean and largest distance from
+ * the forecast's middle in °C, mean reading minus the middle in °C]`, nulls
+ * for an hour with none.
  */
-const HOUR = { percent: 0, count: 1, grade: 2, error: 3, worst: 4 };
+const HOUR = { percent: 0, count: 1, error: 2, worst: 3, bias: 4 };
 
 const celsius = new Intl.NumberFormat("cs-CZ", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
 });
 
-/** The Tailwind colours x-accuracy-percent prints the figures in. */
-const GRADE_COLOUR = {
-    good: { light: "#059669", dark: "#34d399" },
-    fair: { light: "#d97706", dark: "#f59e0b" },
-    poor: { light: "#dc2626", dark: "#f87171" },
-};
+/** Axis ticks: whole degrees print bare, a half as the tooltip prints it. */
+const tick = new Intl.NumberFormat("cs-CZ", {
+    maximumFractionDigits: 1,
+    signDisplay: "exceptZero",
+});
 
 const charts = new Map();
 
@@ -73,24 +75,46 @@ function tooltipHtml(hour, row) {
 
     const hours = row[HOUR.count] === 1 ? "1 forecast hour" : `${row[HOUR.count]} forecast hours`;
 
+    const bias = row[HOUR.bias];
+    // Judged as printed: 0.04 would read "0,0 °C warmer".
+    const side =
+        Math.round(bias * 10) === 0
+            ? "as forecast on average"
+            : `${celsius.format(Math.abs(bias))} °C ${bias > 0 ? "warmer" : "colder"} than forecast on average`;
+
     return (
-        `${span}<br><strong>${row[HOUR.percent]} %</strong> in range · ${hours}` +
-        `<br>off by ${celsius.format(row[HOUR.error])} °C on average, ${celsius.format(row[HOUR.worst])} °C at most`
+        `${span}<br><strong>${side}</strong>` +
+        `<br>off by ${celsius.format(row[HOUR.error])} °C on average, ${celsius.format(row[HOUR.worst])} °C at most` +
+        `<br>${row[HOUR.percent]} % in range · ${hours}`
     );
+}
+
+/**
+ * Whole degrees either side of zero, at least one, so warmer and colder read
+ * alike. With nothing to plot ECharts hands over infinities; one it is.
+ */
+function extent({ min, max }) {
+    const furthest = Math.max(Math.abs(min), Math.abs(max));
+
+    return Number.isFinite(furthest) ? Math.max(1, Math.ceil(furthest)) : 1;
+}
+
+function signedDegrees(value) {
+    return `${tick.format(value)} °C`;
 }
 
 function option(rows) {
     const colours = palette();
-    const tone = isDark() ? "dark" : "light";
 
     return {
         animation: false,
-        grid: { left: 36, right: 8, top: 8, bottom: 22 },
+        grid: { left: 44, right: 8, top: 8, bottom: 22 },
         xAxis: {
             type: "category",
             data: rows.map((row, hour) => pad(hour)),
             boundaryGap: false,
-            axisLine: { lineStyle: { color: colours.axis } },
+            // At the bottom, not on zero: the zero line is the series' own markLine.
+            axisLine: { onZero: false, lineStyle: { color: colours.axis } },
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
             axisLabel: {
                 color: colours.label,
@@ -101,14 +125,14 @@ function option(rows) {
         },
         yAxis: {
             type: "value",
-            min: 0,
-            max: 100,
-            interval: 50,
+            min: (range) => -extent(range),
+            max: (range) => extent(range),
+            splitNumber: 2,
             axisLabel: {
                 color: colours.label,
                 fontFamily: "IBM Plex Mono",
                 fontSize: 10,
-                formatter: "{value} %",
+                formatter: signedDegrees,
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
@@ -129,12 +153,15 @@ function option(rows) {
                 symbol: "circle",
                 symbolSize: 6,
                 lineStyle: { color: colours.label, width: 1.5 },
-                data: rows.map((row) => ({
-                    value: row[HOUR.percent],
-                    itemStyle: {
-                        color: row[HOUR.grade] ? GRADE_COLOUR[row[HOUR.grade]][tone] : colours.axis,
-                    },
-                })),
+                itemStyle: { color: colours.label },
+                markLine: {
+                    silent: true,
+                    symbol: "none",
+                    label: { show: false },
+                    lineStyle: { color: colours.axis, type: "solid", width: 1 },
+                    data: [{ yAxis: 0 }],
+                },
+                data: rows.map((row) => row[HOUR.bias]),
             },
         ],
     };

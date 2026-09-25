@@ -62,14 +62,20 @@ function listenedAt(Sensor $sensor, int $timestamp, bool $raining): void
 }
 
 /**
- * All 24 local hours, empty but for the given `[percent, count, grade, mean error, largest error]`.
+ * All 24 local hours, empty but for the given `[percent, count, mean error, largest error, mean signed error]`.
  *
- * @param  array<int, array{0: float, 1: int, 2: string, 3: float, 4: float}>  $scored
- * @return list<array{0: ?float, 1: int, 2: ?string, 3: ?float, 4: ?float}>
+ * @param  array<int, array{0: float, 1: int, 2: float, 3: float, 4: float}>  $scored
+ * @return list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>
  */
 function byHour(array $scored): array
 {
-    return array_map(fn (int $hour): array => $scored[$hour] ?? [null, 0, null, null, null], range(0, 23));
+    $hours = [];
+
+    for ($hour = 0; $hour < 24; $hour++) {
+        $hours[] = $scored[$hour] ?? [null, 0, null, null, null];
+    }
+
+    return $hours;
 }
 
 beforeEach(function (): void {
@@ -94,23 +100,23 @@ it('scores each horizon against the window that came n hours later, by local hou
 
     // 09:00 and 10:00 UTC are 11:00 and 12:00 in Prague.
     expect(new ForecastAccuracy($sensor->id)->since($issued))->toEqual([
-        ['hours' => 1, 'count' => 1, 'temperature' => 100.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([11 => [100.0, 1, 'good', 0.2, 0.2]])],
-        ['hours' => 2, 'count' => 1, 'temperature' => 0.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([12 => [0.0, 1, 'poor', 2.0, 2.0]])],
+        ['hours' => 1, 'count' => 1, 'temperature' => 100.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]])],
+        ['hours' => 2, 'count' => 1, 'temperature' => 0.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([12 => [0.0, 1, 2.0, 2.0, 2.0]])],
     ]);
 });
 
-it('gives each local hour its mean and its largest miss', function (): void {
+it('gives each local hour its mean and largest miss, and which way it went', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
 
-    // Two forecasts ten minutes apart, both an hour ahead into 11:00 in Prague: 0.2 °C off, then 1.2 °C.
-    foreach ([[$issued, 1300], [$issued + 600, 1400]] as [$at, $truth]) {
+    // Two forecasts ten minutes apart, both an hour ahead into 11:00 in Prague: 0.2 °C warmer, then 1.2 °C colder.
+    foreach ([[$issued, 1300], [$issued + 600, 1160]] as [$at, $truth]) {
         measuredAt($sensor, $at, 1200);
         measuredAt($sensor, $at + 3600, $truth);
         Forecast::factory()->for($sensor)->create(['issued_at' => $at, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     }
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toBe([50.0, 2, 'fair', 0.7, 1.2]);
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toBe([50.0, 2, 0.7, 1.2, -0.5]);
 });
 
 it('scores rain by what the microphone heard within the hours ahead', function (): void {
@@ -189,7 +195,7 @@ it('scores a horizon however far ahead the service forecasts', function (): void
 
     // 05:00 UTC on the next day, 07:00 in Prague.
     expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
-        fn ($score) => $score->toMatchArray(['hours' => 9, 'count' => 1, 'byHour' => byHour([7 => [100.0, 1, 'good', 0.5, 0.5]])]),
+        fn ($score) => $score->toMatchArray(['hours' => 9, 'count' => 1, 'byHour' => byHour([7 => [100.0, 1, 0.5, 0.5, -0.5]])]),
     );
 });
 
@@ -232,8 +238,8 @@ it('folds the accuracy into the forecast, closed until asked', function (): void
         // The row's chart opens by its icon, closed until then.
         ->toMatch('/aria-expanded="false"[^>]*aria-controls="forecast-accuracy-1"[^>]*aria-label="Show \\+1 h by hour of the day"/')
         ->toContain('<tr id="forecast-accuracy-1" class="hidden" x-bind:class="{ hidden: ! open }">')
-        // The chart gets all 24 hours with their grade.
-        ->toContain('data-accuracy-hours="'.e(json_encode(byHour([11 => [100.0, 1, 'good', 0.2, 0.2]]), JSON_THROW_ON_ERROR)).'"');
+        // The chart gets all 24 hours.
+        ->toContain('data-accuracy-hours="'.e(json_encode(byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]]), JSON_THROW_ON_ERROR)).'"');
 });
 
 it('colours the temperature accuracy by its grade', function (): void {

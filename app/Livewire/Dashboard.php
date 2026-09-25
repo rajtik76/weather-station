@@ -97,7 +97,7 @@ class Dashboard extends Component
      * deploy never reads the old one. In the value, not the key - a key per
      * shape would leave the old row behind for good.
      */
-    private const int ACCURACY_CACHE_SHAPE = 2;
+    private const int ACCURACY_CACHE_SHAPE = 3;
 
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;

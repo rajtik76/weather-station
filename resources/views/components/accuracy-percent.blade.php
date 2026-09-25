@@ -1,5 +1,4 @@
-{{-- A forecast accuracy, coloured by AccuracyGrade: the figures in the table
-     and the hourly points in forecast-accuracy.js match it. --}}
+{{-- A forecast accuracy, coloured by AccuracyGrade. --}}
 @props(['percent'])
 
 <span {{ $attributes->class([

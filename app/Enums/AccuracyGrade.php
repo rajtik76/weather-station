@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * How a forecast accuracy reads at a glance. One set of thresholds for the
- * figures and the hourly line alike:
- * the page colours by the case, forecast-accuracy.js the hourly points by its value.
+ * How a forecast accuracy reads at a glance: x-accuracy-percent colours the
+ * figure by it.
  */
 enum AccuracyGrade: string
 {

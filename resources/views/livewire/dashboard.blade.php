@@ -266,7 +266,7 @@
                                                     <div
                                                         data-accuracy-chart="{{ $score['hours'] }}"
                                                         data-accuracy-hours="{{ json_encode($score['byHour']) }}"
-                                                        aria-label="Temperature accuracy {{ $score['hours'] }} h ahead by hour of the day"
+                                                        aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
                                                         role="img"
                                                     >
                                                         <div wire:ignore data-accuracy-canvas class="h-24 w-full"></div>
@@ -280,7 +280,7 @@
                             <p class="px-4 pt-2 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
                                 Temperature: how often it landed inside the forecast range.
                                 Rain as the microphone heard it: the mean chance given when it rained and when it stayed dry. Drizzle is not heard.
-                                The chart icon opens the row's temperature by the local hour the forecast was for.
+                                The chart icon opens the row's temperature by the local hour the forecast was for: measured minus the middle of the forecast, above zero warmer than forecast.
                             </p>
                         </div>
                     </div>

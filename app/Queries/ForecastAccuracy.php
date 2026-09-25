@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Enums\AccuracyGrade;
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
@@ -27,11 +26,13 @@ use Illuminate\Support\Facades\DB;
  *
  * The temperature is also split by the local hour the forecast was for, all
  * 24 of them, to show when in the day it misses (the morning sun on the
- * shield). An hour is `[percent, forecast hours scored, grade, mean and
- * largest distance of the reading from the middle of the forecast in °C]`,
- * nulls where none was.
+ * shield). An hour is `[percent, forecast hours scored, mean and largest
+ * distance of the reading from the middle of the forecast in °C, mean reading
+ * minus the middle in °C]` - the last one signed, so a sun that warms the
+ * shield shows as the station reading warmer than forecast. Nulls where none
+ * was.
  *
- * @phpstan-type Hour array{0: ?float, 1: int, 2: ?string, 3: ?float, 4: ?float}
+ * @phpstan-type Hour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}
  * @phpstan-type Score array{hours: int, count: int, temperature: float, rainCount: int, rainCases: int, chanceWhenRain: ?float, chanceWhenDry: ?float, byHour: list<Hour>}
  */
 final readonly class ForecastAccuracy
@@ -81,7 +82,7 @@ final readonly class ForecastAccuracy
                 $tally[$hours]['inRange'][] = [
                     LocalTime::of($target)->hour(),
                     $truth >= $band['low'] && $truth <= $band['high'],
-                    abs($truth - $band['mid']),
+                    $truth - $band['mid'],
                 ];
 
                 $rained = $this->rainedWithin($forecast->issued_at, $hours, $heard, $rainy);
@@ -183,28 +184,41 @@ final readonly class ForecastAccuracy
     }
 
     /**
-     * @param  list<array{0: int, 1: bool, 2: float}>  $hits  local hour, landed in range, distance from the middle
+     * @param  list<array{0: int, 1: bool, 2: float}>  $hits  local hour, landed in range, reading minus the middle
      * @return list<Hour>
      */
     private function byHour(array $hits): array
     {
         $grouped = [];
 
-        foreach ($hits as [$hour, $right, $error]) {
-            $grouped[$hour][] = [$right, $error];
+        foreach ($hits as [$hour, $right, $difference]) {
+            $grouped[$hour][] = [$right, $difference];
         }
 
-        return array_map(function (int $hour) use ($grouped): array {
+        $hours = [];
+
+        for ($hour = 0; $hour < 24; $hour++) {
             if (! isset($grouped[$hour])) {
-                return [null, 0, null, null, null];
+                $hours[] = [null, 0, null, null, null];
+
+                continue;
             }
 
             $count = count($grouped[$hour]);
             $percent = $this->percent(array_column($grouped[$hour], 0));
-            $errors = array_column($grouped[$hour], 1);
+            $differences = array_column($grouped[$hour], 1);
+            $distances = array_map(abs(...), $differences);
 
-            return [$percent, $count, AccuracyGrade::of($percent)->value, round(array_sum($errors) / $count, 2), round(max($errors), 2)];
-        }, range(0, 23));
+            $hours[] = [
+                $percent,
+                $count,
+                round(array_sum($distances) / $count, 2),
+                round(max($distances), 2),
+                round(array_sum($differences) / $count, 2),
+            ];
+        }
+
+        return $hours;
     }
 
     /**
