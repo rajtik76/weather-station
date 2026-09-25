@@ -24,42 +24,12 @@ recorded; see the git history before this file for it.
 
 ## Hardware
 
-- ESP32-WROOM-32 DevKit (NodeMCU-32S type, CP2102), indoors, in female
-  headers on a perfboard base with 5 V over a 5.5/2.5 mm DC jack
-- BMP280 on the base board, indoors: pressure only - its temperature is the
-  room's and never goes out
-- SHT41 and INMP441 on the balcony, in a TFA 98.1114.0 radiation shield
-- about 4 m of outdoor FTP cable between them (Solarix FTP 4x2x0.5 CAT5E PE,
-  UV resistant), into an RJ45 jack on the base board
+Schematics and the soldering layout of the shield hub are in `docs/hardware/`.
 
-The shield hangs on a bracket off the top rail of an east-facing balcony,
-more than half a metre from the wall and outboard of the railing, so air
-reaches it from every side. Direct sun still gets through: on a clear
-morning the reading runs more than 10 °C above the air around it - that is
-the error of a passive shield facing the sunrise, and the V2 window band is
-what shows it. The main README says what to make of it.
-
-| Signal | RJ45 (T568B) | ESP32-WROOM-32                  |
-| ------ | ------------ | ------------------------------- |
-| 3V3    | 1            | 3V3                             |
-| SDA    | 2            | GPIO21, 4k7 pull-up on the base |
-| SCL    | 3            | GPIO22, 4k7 pull-up on the base |
-| SD     | 4            | GPIO33, 47 R at the microphone  |
-| GND    | 5, 6         | GND                             |
-| SCK    | 7            | GPIO26, 47 R at the ESP32       |
-| WS     | 8            | GPIO25, 47 R at the ESP32       |
-
-The BMP280 sits on the same bus on the base (address 0x76, `CSB` to 3V3,
-`SDO` to GND). The sketch takes the I2C pins from the board variant through
-the `SDA` / `SCL` symbols; the I2S pins are in `noise.h`. The INMP441's
-`L/R` is strapped to GND on the module, so it talks in the left slot.
-
-Both grounds on the cable matter. With one of them open the SHT41 dropped
-about one reading in seven - a byte, then `FF`s, or no acknowledge at all -
-while the WiFi was on; with both it ran clean at 100 kHz. The bus runs at
-20 kHz anyway (`I2C_CLOCK_HZ`), for the margin on four metres of cable. If
-I2C or I2S ever misbehaves again, the cable shield goes to GND at the ESP32
-end first.
+The sketch takes the I2C pins from the board variant through the `SDA` /
+`SCL` symbols (GPIO21 / GPIO22 on the DevKit); the I2S pins are in `noise.h`.
+The INMP441's `L/R` is strapped to GND, so it talks in the left slot. The bus
+runs at 20 kHz (`I2C_CLOCK_HZ`) for the margin on four metres of cable.
 
 ### Serial
 
