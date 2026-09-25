@@ -24,7 +24,9 @@ recorded; see the git history before this file for it.
 
 ## Hardware
 
-Schematics and the soldering layout of the shield hub are in `docs/hardware/`.
+Wiring: the [station schematic](../docs/hardware/station-schematic.svg), the
+[shield hub schematic](../docs/hardware/shield-hub-schematic.svg) and its
+[soldering layout](../docs/hardware/shield-hub-board.svg).
 
 The sketch takes the I2C pins from the board variant through the `SDA` /
 `SCL` symbols (GPIO21 / GPIO22 on the DevKit); the I2S pins are in `noise.h`.
