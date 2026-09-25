@@ -92,7 +92,11 @@ class Dashboard extends Component
     /** How far back the forecasts are scored against what came; the panel's label reads it. */
     public const int ACCURACY_DAYS = 7;
 
-    /** Part of the accuracy's cache key: bump it when Score changes shape, so a deploy never reads the old one. */
+    /**
+     * Stored with the cached accuracy: bump it when Score changes shape, so a
+     * deploy never reads the old one. In the value, not the key - a key per
+     * shape would leave the old row behind for good.
+     */
     private const int ACCURACY_CACHE_SHAPE = 2;
 
     /** A forecast hour this close to the one before it shows no trend. */
@@ -567,15 +571,15 @@ class Dashboard extends Component
             return [];
         }
 
-        $key = 'forecast-accuracy:v'.self::ACCURACY_CACHE_SHAPE.":{$sensorId}";
+        $key = "forecast-accuracy:{$sensorId}";
         $cached = Cache::get($key);
 
-        if (is_array($cached) && ($cached['issuedAt'] ?? null) === $newest) {
+        if (is_array($cached) && ($cached['shape'] ?? null) === self::ACCURACY_CACHE_SHAPE && ($cached['issuedAt'] ?? null) === $newest) {
             return $cached['scores'];
         }
 
         $scores = new ForecastAccuracy($sensorId)->since(now()->subDays(self::ACCURACY_DAYS)->getTimestamp());
-        Cache::put($key, ['issuedAt' => $newest, 'scores' => $scores], now()->addMinutes(15));
+        Cache::put($key, ['shape' => self::ACCURACY_CACHE_SHAPE, 'issuedAt' => $newest, 'scores' => $scores], now()->addMinutes(15));
 
         return $scores;
     }
