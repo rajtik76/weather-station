@@ -38,6 +38,12 @@ final readonly class LocalTime
         return $this->moment()->format(self::CLOCK_FORMAT);
     }
 
+    /** Hour of the local day, 0-23. */
+    public function hour(): int
+    {
+        return $this->moment()->hour;
+    }
+
     /** The station's clock drifts and may stamp ahead of the server; "4 minutes from now" reads as broken. */
     public function ago(): string
     {

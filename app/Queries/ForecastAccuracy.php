@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Enums\AccuracyGrade;
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\LocalTime;
 use App\ValueObject\RainDetector;
 use Illuminate\Support\Facades\DB;
 
@@ -16,15 +18,21 @@ use Illuminate\Support\Facades\DB;
  * models were trained on; a slot the station stamped twice counts by its
  * first reading, as the service reads it.
  *
- * A forecast hour is scored when both its own window and the one n hours on
- * were measured. Temperature: how often the reading landed inside the 10-90 %
- * range (the models aim at 80 %), the mean distance from the median, and
- * beside it the error of assuming nothing changes. Rain, on the same hours:
- * the balcony has no gauge, so the truth is the microphone (RainDetector) -
- * a window of rain it heard within the n hours - and hours it did not listen
- * through are left out of the rain figures only.
+ * A forecast hour is scored when the window n hours on was measured.
+ * Temperature: how often the reading landed inside the 10-90 % range. Rain,
+ * on the same hours: the mean chance given when it rained and when it stayed
+ * dry. The balcony has no gauge, so the truth is the microphone
+ * (RainDetector) - a window of rain it heard within the n hours - and hours
+ * it did not listen through are left out of the rain figures only.
  *
- * @phpstan-type Score array{hours: int, count: int, inRange: float, error: float, unchangedError: float, rainCount: int, rainCases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
+ * The temperature is also split by the local hour the forecast was for, all
+ * 24 of them, to show when in the day it misses (the morning sun on the
+ * shield). An hour is `[percent, forecast hours scored, grade, mean and
+ * largest distance of the reading from the middle of the forecast in °C]`,
+ * nulls where none was.
+ *
+ * @phpstan-type Hour array{0: ?float, 1: int, 2: ?string, 3: ?float, 4: ?float}
+ * @phpstan-type Score array{hours: int, count: int, temperature: float, rainCount: int, rainCases: int, chanceWhenRain: ?float, chanceWhenDry: ?float, byHour: list<Hour>}
  */
 final readonly class ForecastAccuracy
 {
@@ -55,25 +63,26 @@ final readonly class ForecastAccuracy
         $longest = (int) $forecasts->flatMap(fn (Forecast $forecast): array => array_column($forecast->data, 'hours'))->max();
         [$temperatures, $heard, $rainy] = $this->windows($since, $forecasts->last()->issued_at + $longest * 3600);
 
-        /** @var array<int, array{inRange: list<bool>, errors: list<float>, unchanged: list<float>, rain: list<float>, dry: list<float>}> $tally */
+        /** @var array<int, array{inRange: non-empty-list<array{0: int, 1: bool, 2: float}>, rain: list<float>, dry: list<float>}> $tally */
         $tally = [];
 
         foreach ($forecasts as $forecast) {
-            $now = $temperatures[$forecast->issued_at] ?? null;
-
             foreach ($forecast->data as $horizon) {
                 $hours = $horizon['hours'];
-                $truth = $temperatures[$forecast->issued_at + $hours * 3600] ?? null;
+                $target = $forecast->issued_at + $hours * 3600;
+                $truth = $temperatures[$target] ?? null;
 
-                if ($now === null || $truth === null) {
+                if ($truth === null) {
                     continue;
                 }
 
-                $tally[$hours] ??= ['inRange' => [], 'errors' => [], 'unchanged' => [], 'rain' => [], 'dry' => []];
+                $tally[$hours] ??= ['inRange' => [], 'rain' => [], 'dry' => []];
                 $band = $horizon['temperature'];
-                $tally[$hours]['inRange'][] = $truth >= $band['low'] && $truth <= $band['high'];
-                $tally[$hours]['errors'][] = abs($truth - $band['mid']);
-                $tally[$hours]['unchanged'][] = abs($truth - $now);
+                $tally[$hours]['inRange'][] = [
+                    LocalTime::of($target)->hour(),
+                    $truth >= $band['low'] && $truth <= $band['high'],
+                    abs($truth - $band['mid']),
+                ];
 
                 $rained = $this->rainedWithin($forecast->issued_at, $hours, $heard, $rainy);
 
@@ -87,17 +96,15 @@ final readonly class ForecastAccuracy
         $scores = [];
 
         foreach ($tally as $hours => $counts) {
-            $count = count($counts['errors']);
             $scores[] = [
                 'hours' => $hours,
-                'count' => $count,
-                'inRange' => round(100 * count(array_filter($counts['inRange'])) / $count),
-                'error' => round(array_sum($counts['errors']) / $count, 2),
-                'unchangedError' => round(array_sum($counts['unchanged']) / $count, 2),
+                'count' => count($counts['inRange']),
+                'temperature' => $this->percent(array_column($counts['inRange'], 1)),
                 'rainCount' => count($counts['rain']) + count($counts['dry']),
                 'rainCases' => count($counts['rain']),
                 'chanceWhenRain' => $this->meanPercent($counts['rain']),
                 'chanceWhenDry' => $this->meanPercent($counts['dry']),
+                'byHour' => $this->byHour($counts['inRange']),
             ];
         }
 
@@ -173,6 +180,39 @@ final readonly class ForecastAccuracy
         }
 
         return $rained;
+    }
+
+    /**
+     * @param  list<array{0: int, 1: bool, 2: float}>  $hits  local hour, landed in range, distance from the middle
+     * @return list<Hour>
+     */
+    private function byHour(array $hits): array
+    {
+        $grouped = [];
+
+        foreach ($hits as [$hour, $right, $error]) {
+            $grouped[$hour][] = [$right, $error];
+        }
+
+        return array_map(function (int $hour) use ($grouped): array {
+            if (! isset($grouped[$hour])) {
+                return [null, 0, null, null, null];
+            }
+
+            $count = count($grouped[$hour]);
+            $percent = $this->percent(array_column($grouped[$hour], 0));
+            $errors = array_column($grouped[$hour], 1);
+
+            return [$percent, $count, AccuracyGrade::of($percent)->value, round(array_sum($errors) / $count, 2), round(max($errors), 2)];
+        }, range(0, 23));
+    }
+
+    /**
+     * @param  non-empty-list<bool>  $rights
+     */
+    private function percent(array $rights): float
+    {
+        return round(100 * count(array_filter($rights)) / count($rights));
     }
 
     /**

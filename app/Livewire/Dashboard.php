@@ -93,7 +93,7 @@ class Dashboard extends Component
     public const int ACCURACY_DAYS = 7;
 
     /** Part of the accuracy's cache key: bump it when Score changes shape, so a deploy never reads the old one. */
-    private const int ACCURACY_CACHE_SHAPE = 1;
+    private const int ACCURACY_CACHE_SHAPE = 2;
 
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;

@@ -60,11 +60,22 @@ function listenedAt(Sensor $sensor, int $timestamp, bool $raining): void
     ]);
 }
 
+/**
+ * All 24 local hours, empty but for the given `[percent, count, grade, mean error, largest error]`.
+ *
+ * @param  array<int, array{0: float, 1: int, 2: string, 3: float, 4: float}>  $scored
+ * @return list<array{0: ?float, 1: int, 2: ?string, 3: ?float, 4: ?float}>
+ */
+function byHour(array $scored): array
+{
+    return array_map(fn (int $hour): array => $scored[$hour] ?? [null, 0, null, null, null], range(0, 23));
+}
+
 beforeEach(function (): void {
     $this->travelTo(Date::parse('2026-09-24 12:00:00', 'UTC'));
 });
 
-it('scores each horizon against the window that came n hours later', function (): void {
+it('scores each horizon against the window that came n hours later, by local hour', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     measuredAt($sensor, $issued, 1200);
@@ -80,10 +91,25 @@ it('scores each horizon against the window that came n hours later', function ()
         ],
     ]);
 
+    // 09:00 and 10:00 UTC are 11:00 and 12:00 in Prague.
     expect(new ForecastAccuracy($sensor->id)->since($issued))->toEqual([
-        ['hours' => 1, 'count' => 1, 'inRange' => 100.0, 'error' => 0.2, 'unchangedError' => 1.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
-        ['hours' => 2, 'count' => 1, 'inRange' => 0.0, 'error' => 2.0, 'unchangedError' => 3.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
+        ['hours' => 1, 'count' => 1, 'temperature' => 100.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([11 => [100.0, 1, 'good', 0.2, 0.2]])],
+        ['hours' => 2, 'count' => 1, 'temperature' => 0.0, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null, 'byHour' => byHour([12 => [0.0, 1, 'poor', 2.0, 2.0]])],
     ]);
+});
+
+it('gives each local hour its mean and its largest miss', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+
+    // Two forecasts ten minutes apart, both an hour ahead into 11:00 in Prague: 0.2 °C off, then 1.2 °C.
+    foreach ([[$issued, 1300], [$issued + 600, 1400]] as [$at, $truth]) {
+        measuredAt($sensor, $at, 1200);
+        measuredAt($sensor, $at + 3600, $truth);
+        Forecast::factory()->for($sensor)->create(['issued_at' => $at, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
+    }
+
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toBe([50.0, 2, 'fair', 0.7, 1.2]);
 });
 
 it('scores rain by what the microphone heard within the hours ahead', function (): void {
@@ -112,8 +138,19 @@ it('leaves out rain the microphone did not listen through', function (): void {
     measuredAt($sensor, $issued + 3600, 1300);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5, 0.5)]]);
 
-    expect(new ForecastAccuracy($sensor->id)->since($issued)[0])
-        ->toMatchArray(['rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null]);
+    expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
+        fn ($score) => $score->toMatchArray(['count' => 1, 'rainCount' => 0, 'rainCases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null]),
+    );
+});
+
+it('scores a forecast whose own window went unmeasured', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    // Nothing at 08:00; the hour ahead is all the score needs.
+    measuredAt($sensor, $issued + 3600, 1300);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
+
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.count'))->toBe(1);
 });
 
 it('reads a slot stamped twice by its first reading', function (): void {
@@ -125,7 +162,7 @@ it('reads a slot stamped twice by its first reading', function (): void {
     measuredAt($sensor, $issued + 3600 + 598, 2000);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(new ForecastAccuracy($sensor->id)->since($issued)[0])->toMatchArray(['inRange' => 100.0, 'error' => 0.2]);
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.temperature'))->toBe(100.0);
 });
 
 it('scores rain only on the hours whose temperature came true', function (): void {
@@ -149,7 +186,10 @@ it('scores a horizon however far ahead the service forecasts', function (): void
     measuredAt($sensor, $issued + 9 * 3600, 900);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(9, 8.0, 9.5, 11.0)]]);
 
-    expect(new ForecastAccuracy($sensor->id)->since($issued)[0])->toMatchArray(['hours' => 9, 'count' => 1, 'error' => 0.5]);
+    // 05:00 UTC on the next day, 07:00 in Prague.
+    expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
+        fn ($score) => $score->toMatchArray(['hours' => 9, 'count' => 1, 'byHour' => byHour([7 => [100.0, 1, 'good', 0.5, 0.5]])]),
+    );
 });
 
 it('scores only the sensor\'s own forecasts from the given time on', function (): void {
@@ -165,7 +205,7 @@ it('scores only the sensor\'s own forecasts from the given time on', function ()
     Forecast::factory()->for($other)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(new ForecastAccuracy($sensor->id)->since($issued)[0]['count'])->toBe(1)
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.count'))->toBe(1)
         ->and(new ForecastAccuracy($sensor->id)->since($issued + 1))->toBe([]);
 });
 
@@ -182,24 +222,29 @@ it('folds the accuracy into the forecast, closed until asked', function (): void
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
     $dashboard = Livewire::test(Dashboard::class);
-    $dashboard->assertSeeInOrder(['id="forecast"', 'Accuracy · last 7 days', '+1 h', '100 %', '0,2 °C', '1,0 °C', 'not listened'], false);
+    $dashboard->assertSeeInOrder(['id="forecast"', 'Accuracy · last 7 days', '+1 h', '100 %', 'not listened', '<td class="pt-1.5 pr-6">1</td>', 'data-accuracy-chart="1"'], false);
 
     expect($dashboard->html())
         ->toMatch('/aria-expanded="false"[^>]*aria-controls="forecast-accuracy"[^>]*aria-label="Expand Forecast accuracy"/')
         ->toContain('<div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">')
-        // Every reading in range is not a success: the range aims at 80 %, so it was too wide.
-        ->toMatch('/text-amber-600[^"]*">100 %/');
+        ->toMatch('/text-emerald-600[^"]*">100 %/')
+        // The row's chart opens by its icon, closed until then.
+        ->toMatch('/aria-expanded="false"[^>]*aria-controls="forecast-accuracy-1"[^>]*aria-label="Show \\+1 h by hour of the day"/')
+        ->toContain('<tr id="forecast-accuracy-1" class="hidden" x-bind:class="{ hidden: ! open }">')
+        // The chart gets all 24 hours with their grade.
+        ->toContain('data-accuracy-hours="'.e(json_encode(byHour([11 => [100.0, 1, 'good', 0.2, 0.2]]), JSON_THROW_ON_ERROR)).'"');
 });
 
-it('shows no accuracy without a current forecast to fold it into', function (): void {
+it('colours the temperature accuracy by its grade', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     measuredAt($sensor, $issued, 1200);
     measuredAt($sensor, $issued + 3600, 1300);
-    // Scored, but an hour older than the newest reading: the forecast block is gone.
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
+    // Out of range: 0 %.
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 14.0, 15.0, 16.0)]]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
-    Livewire::test(Dashboard::class)->assertDontSee('Forecast · next 6 hours')->assertDontSee('Accuracy · last 7 days');
+    expect(Livewire::test(Dashboard::class)->html())->toMatch('/text-red-600[^"]*">0 %/');
 });
 
 it('says which side of the rain score it has no case for', function (): void {
@@ -215,6 +260,17 @@ it('says which side of the rain score it has no case for', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
     Livewire::test(Dashboard::class)->assertSeeInOrder(['Accuracy · last 7 days', '+1 h', '47 %', '/', 'no dry spell']);
+});
+
+it('shows no accuracy without a current forecast to fold it into', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    measuredAt($sensor, $issued, 1200);
+    measuredAt($sensor, $issued + 3600, 1300);
+    // Scored, but an hour older than the newest reading: the forecast block is gone.
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
+
+    Livewire::test(Dashboard::class)->assertDontSee('Forecast · next 6 hours')->assertDontSee('Accuracy · last 7 days');
 });
 
 it('keeps the score until the next forecast arrives', function (): void {

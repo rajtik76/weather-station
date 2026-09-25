@@ -65,9 +65,10 @@ The forecast comes from a Python service beside the app. After every upload
 the server sends it the station's last 60 days and stores the answer:
 temperature as a range one to six hours ahead, and the chance of rain.
 Folded under it, the last week's forecasts are scored against what the
-station then measured: how often the temperature landed in the range, how
-far off the middle was, and the rain chance given when it rained and when it
-did not.
+station then measured: how often the temperature landed in the range, and the
+mean rain chance given when it rained and when it did not, per hour ahead. Under
+each hour ahead, the temperature is split by the hour of the day the forecast
+was for, to show when in the day it misses.
 The models learnt the weather from eight years of ČHMÚ station records and
 correct themselves for the station from its own history; at forecast time
 they use nothing but the station's readings. How it works, how well it
