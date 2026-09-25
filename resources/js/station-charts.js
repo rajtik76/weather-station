@@ -400,6 +400,9 @@ function tooltipFor(strip, colours) {
         trigger: "axis",
         axisPointer: { axis: "x" },
         appendToBody: true,
+        // A strip spans the screen, so inside the chart is inside the screen. Unconfined,
+        // the flip to the pointer's left pushed a tooltip off a phone's edge.
+        confine: true,
         backgroundColor: colours.surface,
         borderColor: colours.border,
         textStyle: { color: colours.label, fontSize: 12 },
@@ -559,14 +562,19 @@ function trackEventHover(chart) {
     });
 }
 
+/** Narrow enough for a 320 px phone once the tooltip's padding and the page's gutters are in. */
+const EVENT_TITLE_WIDTH = 240;
+
 /** Over readings: the strip's tooltip with the title above. Over a hole: the event alone, with its date. */
 function eventTooltipHtml(strip, event) {
     const colours = palette();
     const row = stripRowAt(strip, event.time);
     const readings = row ? readingsHtml(strip, row) : "";
 
+    // A title is up to 255 characters, and ECharts keeps a tooltip on one line: it wraps here.
     const title =
-        `<div style="font-weight:600;font-size:14px;color:${colours.text}">` +
+        `<div style="font-weight:600;font-size:14px;color:${colours.text};` +
+        `max-width:${EVENT_TITLE_WIDTH}px;white-space:normal;overflow-wrap:anywhere">` +
         `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +
         `background:${event.colour};margin-right:6px"></span>${escapeHtml(event.name)}</div>`;
 

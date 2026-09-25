@@ -66,6 +66,7 @@ function palette() {
 
 const pad = (hour) => String(hour).padStart(2, "0");
 
+/** Short lines, one fact each: ECharts keeps a tooltip on one line per `<br>`, and a phone is 320 px wide. */
 function tooltipHtml(hour, row) {
     const span = `${pad(hour)}:00-${pad((hour + 1) % 24)}:00`;
 
@@ -80,13 +81,39 @@ function tooltipHtml(hour, row) {
     const side =
         Math.round(bias * 10) === 0
             ? "as forecast on average"
-            : `${celsius.format(Math.abs(bias))} °C ${bias > 0 ? "warmer" : "colder"} than forecast on average`;
+            : `${celsius.format(Math.abs(bias))} °C ${bias > 0 ? "warmer" : "colder"} on average`;
 
     return (
         `${span}<br><strong>${side}</strong>` +
-        `<br>off by ${celsius.format(row[HOUR.error])} °C on average, ${celsius.format(row[HOUR.worst])} °C at most` +
-        `<br>${row[HOUR.percent]} % in range · ${hours}`
+        `<br>off by ${celsius.format(row[HOUR.error])} °C on average` +
+        `<br>off by ${celsius.format(row[HOUR.worst])} °C at most` +
+        `<br>${row[HOUR.percent]} % in range<br>${hours}`
     );
+}
+
+/** Room kept between the tooltip and the pointer, and between the tooltip and the screen's edge. */
+const TOOLTIP_GAP = 12;
+const SCREEN_EDGE = 8;
+
+/**
+ * Above the pointer, where a finger does not cover it, on whichever side has
+ * room, and never past the screen. The table scrolls sideways, so the chart
+ * can be wider than the screen: ECharts' own flip and `confine` both measure
+ * the chart and left the tooltip half off a phone.
+ */
+function besidePointer(canvas) {
+    return ([x, y], params, dom, rect, { contentSize: [width, height] }) => {
+        const box = canvas.getBoundingClientRect();
+        const leftmost = SCREEN_EDGE - box.left;
+        const rightmost = document.documentElement.clientWidth - SCREEN_EDGE - box.left - width;
+        const beside = x + TOOLTIP_GAP <= rightmost ? x + TOOLTIP_GAP : x - TOOLTIP_GAP - width;
+        const above = y - TOOLTIP_GAP - height;
+
+        return [
+            Math.max(leftmost, Math.min(beside, rightmost)),
+            box.top + above >= SCREEN_EDGE ? above : y + TOOLTIP_GAP,
+        ];
+    };
 }
 
 /**
@@ -103,7 +130,7 @@ function signedDegrees(value) {
     return `${tick.format(value)} °C`;
 }
 
-function option(rows) {
+function option(rows, canvas) {
     const colours = palette();
 
     return {
@@ -140,6 +167,7 @@ function option(rows) {
             trigger: "axis",
             // The table scrolls sideways, and its overflow would clip a tooltip kept inside.
             appendTo: "body",
+            position: besidePointer(canvas),
             axisPointer: { type: "line", lineStyle: { color: colours.axis } },
             backgroundColor: colours.surface,
             borderColor: colours.border,
@@ -220,7 +248,7 @@ function mount(force = false) {
         }
 
         painted.set(key, element.dataset.accuracyHours);
-        chart.setOption(option(rows), { notMerge: true });
+        chart.setOption(option(rows, canvas), { notMerge: true });
     });
 }
 
