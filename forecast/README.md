@@ -48,13 +48,16 @@ its error on the solar hour and on the errors just verified; then it widens
 or narrows the range until it holds 80 % of the station's own readings.
 Nothing is stored - the correction is refitted each time and sharpens as the
 record grows. It applies to temperature and humidity; correcting pressure
-scored worse.
+scored worse. The service answers with the forecast before the correction
+too (`base`), so the dashboard can score what the correction adds.
 
 **The service** (`serve.py`) is stateless and has no database. Laravel sends
 it the station's last 60 days after every upload (`App\Jobs\ForecastWeather`)
 and stores the answer in `forecasts`; the dashboard shows the newest one
 while it starts from the current record. Temperature and rain are on the
-page; humidity and pressure are kept in the row.
+page; humidity and pressure are kept in the row. Under it, the last 30 days
+of forecasts are scored as shown and before the correction, on the same
+hours, against a naive guess that the temperature stays as it is.
 
 ## Results
 
@@ -133,13 +136,39 @@ otherwise). The answer:
  "horizons": [{"hours": 1,
                "temperature": {"low": 12.4, "mid": 13.84, "high": 15.56},
                "humidity": {...}, "pressure": {...},
-               "rain_probability": 0.023}, ...]}
+               "rain_probability": 0.023,
+               "base": {"temperature": {"low": 12.1, "mid": 13.46, "high": 15.9},
+                        "humidity": {...}}}, ...]}
 ```
 
 `issued_at` is the latest reading's ten-minute window, `model` the bundle's
 `trained_at`, `corrected` whether there was history enough (three days) for
-the station correction. Malformed requests get a 422 with the reason.
+the station correction. `base` is the same forecast before the correction,
+for the two variables it corrects; pressure and rain are not corrected, so
+theirs is the one above. Malformed requests get a 422 with the reason.
 `GET /health` answers `{"status": "ok", "model": ...}`.
+
+```
+POST /base
+{"longitude": 13.40, "since": 1789400000, "readings": [...]}
+```
+
+The base forecast for every reading from `since` on, for forecasts stored
+before the service returned `base`:
+
+```
+{"model": "2026-09-24T08:40:43.136429+00:00",
+ "forecasts": [{"issued_at": 1789400000,
+                "horizons": [{"hours": 1, "temperature": {...},
+                              "humidity": {...}}, ...]}, ...]}
+```
+
+The base models look 48 hours back and nothing else, so an answer is exactly
+what the service gave at the time, as long as the readings start that far
+before `since`. The correction learns from the whole history and is not
+recomputed. `php artisan forecast:backfill-base` in the app asks a week at a
+time, with three days of readings before it, and fills in only the forecasts
+the model now running made.
 
 ## Deploying
 
@@ -152,3 +181,8 @@ on the internal Docker network.
 
 A new model: train, check `evaluate_balcony.py`, copy `forecast.joblib` over
 the mounted one, and add an entry to the changelog.
+
+The first deploy of a service that returns `base`: once the app is deployed
+beside it, run `php artisan forecast:backfill-base` in the app container to
+fill it in on the forecasts stored before. Do it before a new model goes
+on: only the model that made a forecast can recompute its base.

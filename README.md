@@ -63,13 +63,19 @@ so a view can be linked to.
 
 The forecast comes from a Python service beside the app. After every upload
 the server sends it the station's last 60 days and stores the answer:
-temperature as a range one to six hours ahead, and the chance of rain.
-Folded under it, the last week's forecasts are scored against what the
-station then measured: how often the temperature landed in the range, and the
-mean rain chance given when it rained and when it did not, per hour ahead. Under
-each hour ahead, a chart shows by the hour of the day the forecast was for how
-much warmer or colder the station read than forecast, to show when in the day
-it misses - the morning sun on the shield reads warmer.
+temperature as a range one to six hours ahead, and the chance of rain - and
+the same temperature as the base model gave it before the station
+correction. Folded under it, the last 30 days of forecasts are scored against
+what the station then measured, for the chosen hour ahead. A chart shows by
+day how much smaller the forecast's miss was than a naive guess's (the
+temperature at the time, kept for the hours ahead), once as shown and once
+for the base model, on the same hours: the gap between the two lines is what
+the correction has learnt from the station's own misses, and a day a newly
+trained model took over is marked. Below it how often the temperature
+landed in the range and how wide the range was, the mean rain chance given
+when it rained and when it did not, and a chart by the hour of the day the
+forecast was for of how much warmer or colder the station read than
+forecast - the morning sun on the shield reads warmer.
 The models learnt the weather from eight years of ČHMÚ station records and
 correct themselves for the station from its own history; at forecast time
 they use nothing but the station's readings. How it works, how well it
@@ -92,9 +98,9 @@ and belong to this mounting; drizzle too fine to drip is not heard.
 | `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                                                                                                                                                                     |
 | `app/ValueObject/`  | Per-version decoding of a measurement payload.                                                                                                                                                                                                                      |
 | `app/Models/`       | Sensors, measurements, station reports, forecasts and the hand-written events.                                                                                                                                                                                      |
-| `app/Jobs/`         | `ForecastWeather`, which asks the forecast service after an upload and stores the answer.                                                                                                                                                                           |
+| `app/Jobs/`         | `ForecastWeather`, which asks the forecast service after an upload and stores the answer; `BackfillForecastBase`, behind `php artisan forecast:backfill-base`, which fills in the base model's forecast on forecasts stored before the service returned it.         |
 | `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                                                                                                                                                              |
-| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, and a forecast for each, for a dashboard without a device on the desk.                                                                                               |
+| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, and two weeks of forecasts for each, for a dashboard without a device on the desk.                                                                                   |
 | `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands.                                                                                                                                                                                        |
 | `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.                                                                                                                                               |
 
@@ -151,8 +157,10 @@ device on the desk. The first station moves through all three protocols as
 the real one did and carries noise for its last three days, two showers in
 it, so the noise strips and the rain icons have something to draw; the
 second has no microphone. `ForecastSeeder` adds a forecast from each
-station's newest reading, synthetic but shaped like the service's answer,
-so the forecast shows without the service running.
+station's newest reading and one on every hour of the two weeks before,
+synthetic but shaped like the service's answer: a correction that gets better
+as the record grows, and a newly trained model that took over five days back.
+The forecast and its accuracy panel show without the service running.
 
 ## Deploying
 
@@ -164,4 +172,6 @@ time. It does not run migrations; do that as a step of your deploy.
 The forecast service is a second image, built from `forecast/` with its own
 `Dockerfile`, with the trained model mounted rather than built in. It needs
 no public address; point `FORECAST_URL` at it on the internal network. See
-[`forecast/README.md`](forecast/README.md#deploying).
+[`forecast/README.md`](forecast/README.md#deploying). Forecasts stored before
+the service returned the base model's forecast get it with
+`php artisan forecast:backfill-base`, once, after both are deployed.
