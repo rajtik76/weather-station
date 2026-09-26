@@ -23,7 +23,8 @@ use Illuminate\Support\Facades\Date;
  * The base model follows yesterday's curve loosely on a wide range; the
  * forecast shown follows it closer and narrower the longer the record it
  * learnt from, so the accuracy panel has a correction to show improving.
- * The last five days come from a model retrained just before they began.
+ * The last five days come from a model retrained just before they began,
+ * the last two from the second version of the correction's logic.
  *
  * @phpstan-import-type Horizon from Forecast
  */
@@ -39,6 +40,9 @@ class ForecastSeeder extends Seeder
 
     /** How far back the current model took over. */
     private const int RETRAINED_HOURS_AGO = 5 * 24;
+
+    /** How far back the second version of the correction took over. */
+    private const int CORRECTION_CHANGED_HOURS_AGO = 2 * 24;
 
     /** How long the correction takes to learn all it will from the record. */
     private const int LEARNING_HOURS = 10 * 24;
@@ -84,6 +88,7 @@ class ForecastSeeder extends Seeder
                     [
                         'model' => $issuedAt >= $retrainedAt ? $model : self::PREVIOUS_MODEL,
                         'corrected' => true,
+                        'correction' => $issuedAt >= $newest - self::CORRECTION_CHANGED_HOURS_AGO * 3600 ? 2 : 1,
                         'data' => array_map(
                             fn (int $hours): array => $this->horizon($readings, $now, $issuedAt, $hours, $learnt),
                             range(1, 6),
