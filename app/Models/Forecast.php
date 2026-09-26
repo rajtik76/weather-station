@@ -13,10 +13,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * One run of the forecast service, issued from a station's latest reading.
  * Values are in °C, % and hPa as the service returns them; T, H and P come
- * as a 10-90 % range around the median.
+ * as a 10-90 % range around the median. `base` is the same forecast before
+ * the station correction, for the two variables it corrects; a forecast
+ * stored before the service returned it has none until
+ * `forecast:backfill-base` fills it in.
  *
  * @phpstan-type Band array{low: float, mid: float, high: float}
- * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float}
+ * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band}}
  *
  * @property int $sensor_id
  * @property int $issued_at

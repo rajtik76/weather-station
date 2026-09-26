@@ -36,6 +36,10 @@ function serviceForecast(int $issuedAt): array
             'humidity' => ['low' => 70.1, 'mid' => 75.7, 'high' => 80.2],
             'pressure' => ['low' => 976.0, 'mid' => 976.47, 'high' => 977.1],
             'rain_probability' => 0.023,
+            'base' => [
+                'temperature' => ['low' => 12.1, 'mid' => 13.46, 'high' => 15.9],
+                'humidity' => ['low' => 69.0, 'mid' => 76.3, 'high' => 82.5],
+            ],
         ]],
     ];
 }
@@ -48,7 +52,7 @@ function forecastReading(Sensor $sensor, int $timestamp, int $temperature, int $
     ]);
 }
 
-it('sends the last sixty days of the sensor in service units and stores the forecast', function (): void {
+it('sends the last sixty days of the sensor in service units and stores the forecast, its base included', function (): void {
     freezeTime();
     $sensor = Sensor::factory()->create();
     $recent = now()->subMinutes(10)->getTimestamp();
