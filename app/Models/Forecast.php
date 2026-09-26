@@ -25,9 +25,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $issued_at
  * @property string $model
  * @property bool $corrected
+ * @property int|null $correction CORRECTION_VERSION of the station correction's logic; null when the service sent none
  * @property list<Horizon> $data
  */
-#[Fillable(['sensor_id', 'issued_at', 'model', 'corrected', 'data'])]
+#[Fillable(['sensor_id', 'issued_at', 'model', 'corrected', 'correction', 'data'])]
 class Forecast extends Model
 {
     /** @use HasFactory<ForecastFactory> */
@@ -49,6 +50,7 @@ class Forecast extends Model
         return [
             'issued_at' => 'integer',
             'corrected' => 'boolean',
+            'correction' => 'integer',
             'data' => 'array',
         ];
     }

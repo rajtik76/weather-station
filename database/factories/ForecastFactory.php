@@ -29,6 +29,7 @@ class ForecastFactory extends Factory
             'issued_at' => fake()->dateTimeBetween('-1 month')->getTimestamp(),
             'model' => '2026-09-24T08:40:43.136429+00:00',
             'corrected' => true,
+            'correction' => 2,
             // The range widens with the horizon, as the service's does.
             'data' => array_map(fn (int $hours): array => [
                 'hours' => $hours,

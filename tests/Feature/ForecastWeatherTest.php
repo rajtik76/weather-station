@@ -31,6 +31,7 @@ function serviceForecast(int $issuedAt): array
         'issued_at' => $issuedAt,
         'model' => '2026-09-24T08:40:43.136429+00:00',
         'corrected' => true,
+        'correction' => 2,
         'horizons' => [[
             'hours' => 1,
             'temperature' => ['low' => 12.4, 'mid' => 13.84, 'high' => 15.56],
@@ -73,6 +74,7 @@ it('sends the last sixty days of the sensor in service units and stores the fore
         ->and($forecast->issued_at)->toBe($recent)
         ->and($forecast->model)->toBe('2026-09-24T08:40:43.136429+00:00')
         ->and($forecast->corrected)->toBeTrue()
+        ->and($forecast->correction)->toBe(2)
         // toEqual: jsonb reorders keys and stores 976.0 as 976.
         ->and($forecast->data)->toEqual(serviceForecast($recent)['horizons']);
 });

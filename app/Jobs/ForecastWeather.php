@@ -51,12 +51,17 @@ class ForecastWeather
             return;
         }
 
-        /** @var array{issued_at: int, model: string, corrected: bool, horizons: list<Horizon>} $forecast */
+        /** @var array{issued_at: int, model: string, corrected: bool, correction?: int, horizons: list<Horizon>} $forecast */
         $forecast = $response->json();
 
         Forecast::query()->updateOrCreate(
             ['sensor_id' => $this->sensor->id, 'issued_at' => $forecast['issued_at']],
-            ['model' => $forecast['model'], 'corrected' => $forecast['corrected'], 'data' => $forecast['horizons']],
+            [
+                'model' => $forecast['model'],
+                'corrected' => $forecast['corrected'],
+                'correction' => $forecast['correction'] ?? null,
+                'data' => $forecast['horizons'],
+            ],
         );
     }
 
