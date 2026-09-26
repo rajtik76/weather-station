@@ -44,16 +44,22 @@ so the models cope when the balcony's rain source is missing.
 screen on a lawn: morning sun, a warm wall and its own sensor. On every run
 the service forecasts the station's recent history too, compares it with
 what was measured, and fits per variable and horizon a ridge regression of
-its error on the solar hour and on the errors just verified; then it widens
-or narrows the range until it holds 80 % of the station's own readings.
+its error on the solar time and on the errors just verified; then it widens
+or narrows the range until it holds 80 % of the station's own readings. The
+solar time goes in as bins: twenty minutes from 5 to 12 h, when the sun
+warms the shield within minutes, an hour elsewhere. Two harmonics of the
+day, the first version, smeared the morning's warming into the small hours
+and the afternoon.
 Nothing is stored - the correction is refitted each time and sharpens as the
 record grows. It applies to temperature and humidity; correcting pressure
 scored worse. The service answers with the forecast before the correction
 too (`base`), so the dashboard can score what the correction adds.
 
 **The service** (`serve.py`) is stateless and has no database. Laravel sends
-it the station's last 60 days after every upload (`App\Jobs\ForecastWeather`)
-and stores the answer in `forecasts`; the dashboard shows the newest one
+it the station's last 60 days after every upload (`App\Jobs\ForecastWeather`),
+none from before `FORECAST_HISTORY_SINCE` when that is set (the shield went up
+on 16 September 2026, so production starts on the 17th), and stores the
+answer in `forecasts`; the dashboard shows the newest one
 while it starts from the current record. Temperature and rain are on the
 page; humidity and pressure are kept in the row. Under it, the last 30 days
 of forecasts are scored as shown and before the correction, on the same
@@ -80,6 +86,18 @@ On the balcony, correction fitted up to 18 September 2026 and scored on 19 to
 24 September: temperature 6 h ahead 2.51 °C without it, 1.82 °C with it;
 humidity 9.7 % and 7.0 %; the temperature range held 57 % of readings
 without the correction and 74 % with it. Two weeks of record, so these move.
+
+The bins against the two harmonics, walked forward day by day as production
+runs - fitted only on readings from 17 September, after the shield, and
+scored on 20 to 26 September: temperature 1 h ahead 0.89 °C with the bins,
+0.99 °C with the harmonics and 0.92 °C with no correction at all, which the
+harmonics lost to. Between 6 and 11 h, 2 h ahead, 1.74 °C against 2.25 °C;
+3 h ahead 2.03 °C against 2.45 °C. A sunny morning is where the correction
+earns its keep, halving misses of 3-5 °C. On a morning the shield did not
+warm, 22 September 3 h ahead, it still adds warmth that does not come
+(0.90 °C with no correction, 1.55 °C with the bins, 2.82 °C with the
+harmonics): from temperature alone the station cannot tell the two kinds of
+morning apart. A light sensor in the shield is meant to.
 
 Training on 2018-2020 or on 2022-2024 scored the same on 2025: older years
 do not make the models worse.
@@ -132,7 +150,7 @@ otherwise). The answer:
 
 ```
 {"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00",
- "corrected": true,
+ "corrected": true, "correction": 2,
  "horizons": [{"hours": 1,
                "temperature": {"low": 12.4, "mid": 13.84, "high": 15.56},
                "humidity": {...}, "pressure": {...},
@@ -143,10 +161,12 @@ otherwise). The answer:
 
 `issued_at` is the latest reading's ten-minute window, `model` the bundle's
 `trained_at`, `corrected` whether there was history enough (three days) for
-the station correction. `base` is the same forecast before the correction,
+the station correction, `correction` the version of the correction's logic
+(`CORRECTION_VERSION` in `correction.py`, raised with every change to it and
+logged in the changelog). `base` is the same forecast before the correction,
 for the two variables it corrects; pressure and rain are not corrected, so
 theirs is the one above. Malformed requests get a 422 with the reason.
-`GET /health` answers `{"status": "ok", "model": ...}`.
+`GET /health` answers `{"status": "ok", "model": ..., "correction": 2}`.
 
 ```
 POST /base

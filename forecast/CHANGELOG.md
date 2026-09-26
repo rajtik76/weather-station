@@ -9,7 +9,29 @@ Scores are on 2025 at the ČHMÚ stations held out from training (see the
 [README](README.md#results)), mean absolute error 6 h ahead against
 persistence unless stated.
 
-## 2026-09-24T08:40:43Z - not deployed yet
+A change to the station correction's logic (`correction.py`) gets an entry
+too, headed `Correction <n>` - the `CORRECTION_VERSION` the service reports
+as `correction` and every row of `forecasts` stores; the rows from before it
+was kept are version 1. Its scores are on the balcony, walked forward day by
+day as production runs.
+
+## Correction 2 - 2026-09-26
+
+Model 2026-09-24T08:40:43Z · Server v3.10.0
+
+- The daily shape of the station's error in solar-time bins, twenty minutes
+  from 5 to 12 h and an hour elsewhere, instead of two harmonics of the day.
+  The sun warms the shield within minutes on a morning; two harmonics
+  smeared that warming into the small hours and the afternoon.
+- Fitted on readings from 17 September 2026, after the shield went up
+  (`FORECAST_HISTORY_SINCE`), scored on 20 to 26 September: temperature 1 h
+  ahead 0.89 °C (correction 1 0.99, no correction 0.92); between 6 and 11 h,
+  2 h ahead 1.74 °C (2.25), 3 h ahead 2.03 °C (2.45), 6 h ahead 1.92 °C
+  (2.36).
+- Still adds warmth on a morning the shield stays in shade: from temperature
+  alone it cannot tell the two kinds of morning apart.
+
+## 2026-09-24T08:40:43Z
 
 Data ČHMÚ 10-minute, 2018-2024, 32 stations below 700 m · Server v3.4.0
 

@@ -71,7 +71,7 @@ day how much smaller the forecast's miss was than a naive guess's (the
 temperature at the time, kept for the hours ahead), once as shown and once
 for the base model, on the same hours: the gap between the two lines is what
 the correction has learnt from the station's own misses, and a day a newly
-trained model took over is marked. Below it how often the temperature
+trained model or a new version of the correction took over is marked. Below it how often the temperature
 landed in the range and how wide the range was, the mean rain chance given
 when it rained and when it did not, and a chart by the hour of the day the
 forecast was for of how much warmer or colder the station read than
@@ -147,7 +147,10 @@ is empty.
 storing a batch, which suits a push monitor that alerts once the pings stop.
 `FORECAST_URL` is optional too: the forecast service's address (locally
 `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`); unset, no
-forecasts are made.
+forecasts are made. `FORECAST_HISTORY_SINCE`, a local date such as
+`2026-09-17`, keeps readings from before it out of what the service learns
+the station correction from - for when the station changed; unset, it gets
+the last 60 days.
 
 PostgreSQL everywhere, the same image as production: the dashboard averages
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
