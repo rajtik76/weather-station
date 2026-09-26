@@ -7,9 +7,11 @@ namespace App\Jobs;
 use App\Models\Forecast;
 use App\Models\Sensor;
 use App\Queries\ServiceReadings;
+use App\ValueObject\LocalTime;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -29,7 +31,7 @@ class ForecastWeather
 
     public function handle(): void
     {
-        $readings = new ServiceReadings($this->sensor->id)->between(now()->subDays((int) config('forecast.history_days'))->getTimestamp());
+        $readings = new ServiceReadings($this->sensor->id)->between($this->historyFrom());
 
         if ($readings === []) {
             return;
@@ -56,5 +58,22 @@ class ForecastWeather
             ['sensor_id' => $this->sensor->id, 'issued_at' => $forecast['issued_at']],
             ['model' => $forecast['model'], 'corrected' => $forecast['corrected'], 'data' => $forecast['horizons']],
         );
+    }
+
+    /**
+     * The last history_days, cut at history_since when it is set: readings
+     * from before a change at the station would teach the correction the
+     * wrong thing. By the station's stamp, like every measurement time.
+     */
+    private function historyFrom(): int
+    {
+        $from = now()->subDays((int) config('forecast.history_days'))->getTimestamp();
+        $since = config('forecast.history_since');
+
+        if (! is_string($since) || $since === '') {
+            return $from;
+        }
+
+        return max($from, Date::parse($since, LocalTime::TIMEZONE)->startOfDay()->getTimestamp());
     }
 }

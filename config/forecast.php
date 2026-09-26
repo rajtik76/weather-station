@@ -11,6 +11,12 @@ return [
     // correction from it, so longer means a better fit up to a season.
     'history_days' => 60,
 
+    // Optional local date, e.g. 2026-09-17: no history from before it, for
+    // when the station changed enough that older readings would teach the
+    // correction the wrong thing (the radiation shield went up on 16.9.).
+    // Unset, the last history_days are sent.
+    'history_since' => env('FORECAST_HISTORY_SINCE'),
+
     // Plzeň-Slovany. The models use local solar time, so only the longitude matters.
     'longitude' => 13.40,
 ];

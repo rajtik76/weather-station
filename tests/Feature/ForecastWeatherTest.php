@@ -9,6 +9,7 @@ use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 
@@ -74,6 +75,36 @@ it('sends the last sixty days of the sensor in service units and stores the fore
         ->and($forecast->corrected)->toBeTrue()
         // toEqual: jsonb reorders keys and stores 976.0 as 976.
         ->and($forecast->data)->toEqual(serviceForecast($recent)['horizons']);
+});
+
+it('sends no history from before FORECAST_HISTORY_SINCE, local midnight, when it is set', function (): void {
+    $this->travelTo(Date::parse('2026-09-26 12:00:00', 'UTC'));
+    config()->set('forecast.history_since', '2026-09-17');
+    $sensor = Sensor::factory()->create();
+    // 16.9. 23:50 and 17.9. 00:00 in Prague.
+    $before = Date::parse('2026-09-16 21:50:00', 'UTC')->getTimestamp();
+    $since = Date::parse('2026-09-16 22:00:00', 'UTC')->getTimestamp();
+    forecastReading($sensor, $before, 1181, 8327, 97655);
+    forecastReading($sensor, $since, 1181, 8327, 97655);
+    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($since))]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertSent(fn (Request $request): bool => array_column($request['readings'], 'timestamp') === [$since]);
+});
+
+it('keeps to the last sixty days when FORECAST_HISTORY_SINCE lies further back', function (): void {
+    freezeTime();
+    config()->set('forecast.history_since', '2020-01-01');
+    $sensor = Sensor::factory()->create();
+    $recent = now()->subMinutes(10)->getTimestamp();
+    forecastReading($sensor, now()->subDays(61)->getTimestamp(), 500, 5000, 98000);
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($recent))]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertSent(fn (Request $request): bool => array_column($request['readings'], 'timestamp') === [$recent]);
 });
 
 it('replaces the forecast issued from the same reading', function (): void {
