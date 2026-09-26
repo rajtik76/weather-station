@@ -15,12 +15,14 @@ POST /forecast
     the 10 minutes (null or absent when the station has no rain source).
 
     -> {"issued_at": 1790000000, "model": "<trained_at>", "corrected": true,
+        "correction": 2,
         "horizons": [{"hours": 1,
                       "temperature": {"low": .., "mid": .., "high": ..},
                       "humidity": {...}, "pressure": {...},
                       "rain_probability": 0.02,
                       "base": {"temperature": {...}, "humidity": {...}}}, ...]}
     issued_at is the latest reading's 10-minute window (UTC Unix seconds);
+    correction the CORRECTION_VERSION of the station correction's logic;
     base is the forecast before the station correction, for the variables
     it corrects, so the correction's worth can be scored.
 
@@ -34,7 +36,7 @@ POST /base
     in base for forecasts stored before it was kept. The base models look
     48 hours back, so the readings should start that much before since.
 
-GET /health -> {"status": "ok", "model": "<trained_at>"}
+GET /health -> {"status": "ok", "model": "<trained_at>", "correction": 2}
 """
 
 import json
@@ -46,7 +48,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-from correction import CORRECTED_VARIABLES, apply, fit
+from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, apply, fit
 from features import build_features, to_grid
 from forecast import QUANTILES, predict
 
@@ -130,6 +132,7 @@ def make_forecast(payload: dict) -> dict:
         "issued_at": int(latest.name.timestamp()),
         "model": bundle["trained_at"],
         "corrected": bool(corrections),
+        "correction": CORRECTION_VERSION,
         "horizons": [
             {
                 "hours": n,
@@ -185,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path != "/health":
             return self.reply(404, {"error": "not found"})
-        self.reply(200, {"status": "ok", "model": model.get()["trained_at"]})
+        self.reply(200, {"status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION})
 
     def do_POST(self) -> None:
         endpoints = {"/forecast": make_forecast, "/base": make_base}

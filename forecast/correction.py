@@ -8,8 +8,10 @@ record grows.
 
 Per variable and horizon, a ridge regression predicts the base model's
 error from
-  - the solar hour of the target time (two harmonics): recurring daily
-    effects such as the morning sun,
+  - the solar time of the target time, in bins: recurring daily effects
+    such as the morning sun. Twenty minutes through the morning, when the
+    sun warms the shield within minutes, an hour elsewhere; two harmonics
+    smeared the morning's warming into the night and the afternoon,
   - the error of the forecast that verified just now for the same horizon,
     and of the latest 1-hour forecast: whatever is off today.
 Then the 10-90 % range is widened or narrowed so that it holds 80 % of the
@@ -31,6 +33,18 @@ MIN_HISTORY_ROWS = 3 * 24 * STEPS_PER_HOUR
 RIDGE_ALPHA = 10.0
 RANGE_COVERAGE = 0.8
 
+# Raised whenever the correction's logic changes, so a stored forecast says
+# which one made it: 1 fitted two daily harmonics, 2 the solar-time bins.
+CORRECTION_VERSION = 2
+
+# Solar hours of the morning bins, and the edges of every bin over the day.
+MORNING = (5, 12)
+SOLAR_BIN_EDGES = [
+    *range(1, MORNING[0]),
+    *(MORNING[0] + step / 3 for step in range(3 * (MORNING[1] - MORNING[0]) + 1)),
+    *range(MORNING[1] + 1, 24),
+]
+
 # Pressure has no balcony-specific dynamics; correcting it scored worse.
 CORRECTED_VARIABLES = ("T", "H")
 
@@ -50,13 +64,11 @@ def errors(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int)
 def inputs(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int, longitude: float) -> pd.DataFrame:
     """What the correction knows at issue time t."""
     target_time = forecast.index + pd.Timedelta(hours=n)
-    solar = 2 * np.pi * ((target_time.hour + target_time.minute / 60 + longitude / 15) % 24) / 24
+    solar = (target_time.hour + target_time.minute / 60 + longitude / 15) % 24
+    bins = np.digitize(solar, SOLAR_BIN_EDGES)
     frame = pd.DataFrame(
         {
-            "sin1": np.sin(solar),
-            "cos1": np.cos(solar),
-            "sin2": np.sin(2 * solar),
-            "cos2": np.cos(2 * solar),
+            **{f"solar_{b}": (bins == b).astype(float) for b in range(len(SOLAR_BIN_EDGES) + 1)},
             # Issued n hours ago and verified at t, so already known at t.
             "error_same": errors(forecast, current, variable, n).shift(n * STEPS_PER_HOUR),
             "error_1h": errors(forecast, current, variable, 1).shift(STEPS_PER_HOUR),
