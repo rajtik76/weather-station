@@ -57,9 +57,9 @@ too (`base`), so the dashboard can score what the correction adds.
 
 **The service** (`serve.py`) is stateless and has no database. Laravel sends
 it the station's last 60 days after every upload (`App\Jobs\ForecastWeather`),
-none from before `FORECAST_HISTORY_SINCE` when that is set (the shield went up
-on 16 September 2026, so production starts on the 17th), and stores the
-answer in `forecasts`; the dashboard shows the newest one
+with `since` from `FORECAST_HISTORY_SINCE` when that is set (the shield went
+up on 16 September 2026, so production learns from the 17th on), and stores
+the answer in `forecasts`; the dashboard shows the newest one
 while it starts from the current record. Temperature and rain are on the
 page; humidity and pressure are kept in the row. Under it, the last 30 days
 of forecasts are scored as shown and before the correction, on the same
@@ -139,14 +139,17 @@ through `FORECAST_URL`; unset, no forecasts are made.
 
 ```
 POST /forecast
-{"longitude": 13.40,
+{"longitude": 13.40, "since": 1789596000,
  "readings": [{"timestamp": 1790000000, "temperature": 9.7,
                "humidity": 76.0, "pressure": 976.6, "rain": null}, ...]}
 ```
 
 Up to 60 days of readings: °C, %, station pressure in hPa, and rain in mm
 per ten minutes where the station has a source for it (null or absent
-otherwise). The answer:
+otherwise). `since`, optional: the station correction learns only from the
+readings from then on, the base models still read them all - they need 48
+hours behind every forecast, and so do the errors the correction takes as
+inputs. The answer:
 
 ```
 {"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00",

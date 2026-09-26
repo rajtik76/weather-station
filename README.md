@@ -148,9 +148,9 @@ storing a batch, which suits a push monitor that alerts once the pings stop.
 `FORECAST_URL` is optional too: the forecast service's address (locally
 `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`); unset, no
 forecasts are made. `FORECAST_HISTORY_SINCE`, a local date such as
-`2026-09-17`, keeps readings from before it out of what the service learns
-the station correction from - for when the station changed; unset, it gets
-the last 60 days.
+`2026-09-17`, keeps readings from before it out of what the station
+correction learns from - for when the station changed; the base models still
+get the last 60 days. A value that is not a date is reported and ignored.
 
 PostgreSQL everywhere, the same image as production: the dashboard averages
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
