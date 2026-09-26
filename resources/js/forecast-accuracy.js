@@ -14,7 +14,8 @@ echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, Canv
  * forecast is no better than the guess. Two lines: the forecast as shown, in
  * the temperature's amber, and the base model before the station correction,
  * dashed grey, so the gap between them is what the correction has learnt.
- * A day a new model took over gets a dashed upright. A day with nothing
+ * A day a new model or a new version of the correction took over gets a
+ * dashed upright, labelled with which. A day with nothing
  * scored is a gap. The axis stops at -100 %: a calm day with a guess that
  * barely missed can score -1000 % and would flatten every other day; the
  * tooltip still prints the real figure.
@@ -30,7 +31,8 @@ echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, Canv
  * A day row is `[date, forecast hours scored, skill in %, mean miss and mean
  * naive miss in °C, percent in range, mean range width in °C, the base
  * model's skill, mean miss, percent in range and range width, the model that
- * took over or null]`, nulls but the date for a day with none.
+ * took over or null, the correction version that took over or null]`, nulls
+ * but the date and the changes for a day with none.
  */
 const DAY = {
     date: 0,
@@ -45,6 +47,7 @@ const DAY = {
     basePercent: 9,
     baseWidth: 10,
     tookOver: 11,
+    correctionTo: 12,
 };
 
 /** Where the skill axis stops below zero. */
@@ -119,7 +122,8 @@ function versus(skill) {
 
 function dayTooltipHtml(row) {
     const tookOver =
-        row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`;
+        (row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`) +
+        (row[DAY.correctionTo] === null ? "" : `<br>correction ${row[DAY.correctionTo]} took over`);
 
     if (row[DAY.count] === 0) {
         return `${row[DAY.date]}<br>no forecast scored${tookOver}`;
@@ -312,14 +316,14 @@ function daysOption(rows, canvas) {
                         fontFamily: "IBM Plex Mono",
                         fontSize: 10,
                         position: "end",
-                        formatter: "retrained",
                     },
                     data: [
                         { ...zeroLine(colours), label: { show: false } },
                         ...rows
-                            .filter((row) => row[DAY.tookOver] !== null)
+                            .filter((row) => changeLabel(row) !== "")
                             .map((row) => ({
                                 xAxis: row[DAY.date],
+                                label: { formatter: changeLabel(row) },
                                 lineStyle: { color: colours.label, type: "dashed", width: 1 },
                             })),
                     ],
@@ -328,6 +332,16 @@ function daysOption(rows, canvas) {
             },
         ],
     };
+}
+
+/** "retrained", "correction 2", or both when they came the same day; empty for a day of neither. */
+function changeLabel(row) {
+    return [
+        row[DAY.tookOver] === null ? null : "retrained",
+        row[DAY.correctionTo] === null ? null : `correction ${row[DAY.correctionTo]}`,
+    ]
+        .filter(Boolean)
+        .join(", ");
 }
 
 function hoursOption(rows, canvas) {

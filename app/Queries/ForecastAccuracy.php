@@ -42,21 +42,24 @@ use Illuminate\Support\Facades\DB;
  * Each horizon comes over the whole span and by the local day the forecast
  * was made, so the skill reads as a line through time. A day a new model
  * took over carries its name - the moment it was trained, as the service
- * stamps it - so a retrain shows where it happened. The shown forecast also
+ * stamps it - so a retrain shows where it happened; a day the correction's
+ * logic changed carries its new version. A forecast stored before versions
+ * were kept (null) is skipped, not taken for a change. The shown forecast also
  * comes by the local hour it was for, all 24 of them, to show when in the
  * day it misses (the morning sun on the shield).
  *
  * A day is `[date, forecast hours scored, skill in %, mean miss and mean
  * naive miss in °C, percent in range, mean range width in °C, the base
  * model's skill, mean miss, percent in range and range width, the model that
- * took over or null]`, nulls but the date for a day with none. An hour is
+ * took over or null, the correction version that took over or null]`, nulls
+ * but the date and the changes for a day with none. An hour is
  * `[percent in range, forecast hours scored, mean and largest distance of the
  * reading from the middle of the forecast in °C, mean reading minus the
  * middle in °C]` - the last one signed, so a sun that warms the shield shows
  * as the station reading warmer than forecast. Nulls where none was.
  *
  * @phpstan-type Hour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}
- * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string}
+ * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}
  * @phpstan-type Figures array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
  * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, rain: Rain, byHour: list<Hour>}
@@ -85,7 +88,7 @@ final readonly class ForecastAccuracy
             ->where('sensor_id', $this->sensorId)
             ->where('issued_at', '>=', $since)
             ->oldest('issued_at')
-            ->get(['issued_at', 'model', 'data']);
+            ->get(['issued_at', 'model', 'correction', 'data']);
 
         if ($forecasts->isEmpty()) {
             return [];
@@ -97,16 +100,25 @@ final readonly class ForecastAccuracy
 
         /** @var array<int, non-empty-list<Scored>> $tally */
         $tally = [];
-        /** @var array<string, string> $tookOver the model that took over, by the day it did */
+        /** @var array<string, array{model?: string, correction?: int}> $tookOver what took over, by the day it did */
         $tookOver = [];
         $previousModel = null;
+        $previousCorrection = null;
 
         foreach ($forecasts as $forecast) {
             $now = $temperatures[$forecast->issued_at] ?? null;
             $date = LocalTime::of($forecast->issued_at)->date();
 
             if ($previousModel !== null && $forecast->model !== $previousModel) {
-                $tookOver[$date] = $this->modelName($forecast->model);
+                $tookOver[$date]['model'] = $this->modelName($forecast->model);
+            }
+
+            if ($forecast->correction !== null) {
+                if ($previousCorrection !== null && $forecast->correction !== $previousCorrection) {
+                    $tookOver[$date]['correction'] = $forecast->correction;
+                }
+
+                $previousCorrection = $forecast->correction;
             }
 
             $previousModel = $forecast->model;
@@ -240,7 +252,7 @@ final readonly class ForecastAccuracy
      * first forecast comes true.
      *
      * @param  non-empty-list<Scored>  $scored  oldest first
-     * @param  array<string, string>  $tookOver
+     * @param  array<string, array{model?: string, correction?: int}>  $tookOver
      * @return list<Day>
      */
     private function byDay(array $scored, array $tookOver, int $lastIssued): array
@@ -257,7 +269,7 @@ final readonly class ForecastAccuracy
             $date = $day->date();
 
             if (! isset($grouped[$date])) {
-                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date] ?? null];
+                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null];
 
                 continue;
             }
@@ -275,7 +287,8 @@ final readonly class ForecastAccuracy
                 $base['error'] ?? null,
                 $base['inRange'] ?? null,
                 $base['width'] ?? null,
-                $tookOver[$date] ?? null,
+                $tookOver[$date]['model'] ?? null,
+                $tookOver[$date]['correction'] ?? null,
             ];
         }
 
