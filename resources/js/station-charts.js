@@ -1000,6 +1000,88 @@ function rainSeries(width) {
     };
 }
 
+/** The noise rows' own slot width, ms: it is the bucket a waterfall cell stands for. */
+function spectrumSlotWidth() {
+    return stripSteps.get("spectrum") || 600000;
+}
+
+/** Narrowest column outline, px: a week's slot is under a pixel wide on a phone. */
+const COLUMN_MIN_WIDTH = 3;
+
+/** Puts the waterfall's column outline back over its slot; null until the strip is mounted. */
+let replaceSpectrumColumn = null;
+
+/**
+ * The waterfall's crosshair is the slot's whole column, outlined. A line
+ * vanished into the blue ramp, and ECharts' own shadow pointer finds no band
+ * width on a time axis, so it drew a single pixel. It follows the axis
+ * pointer, so a crosshair synced from another strip outlines it too.
+ *
+ * A light line in a dark one: it reads on either end of the ramp without
+ * tinting the cells it frames. On its own zlevel, so the cells' incremental
+ * layer never paints over it and a pointer move repaints the outline alone.
+ */
+function trackSpectrumColumn(chart) {
+    const outline = { fill: "none", lineJoin: "miter" };
+    const column = new echarts.graphic.Group({ silent: true, ignore: true });
+    const outer = new echarts.graphic.Rect({
+        zlevel: 1,
+        style: { ...outline, stroke: "#000000a0", lineWidth: 3 },
+    });
+    const inner = new echarts.graphic.Rect({
+        zlevel: 1,
+        z2: 1,
+        style: { ...outline, stroke: "#ffffff", lineWidth: 1 },
+    });
+
+    column.add(outer);
+    column.add(inner);
+    chart.getZr().add(column);
+
+    let shownTime;
+
+    const place = (time) => {
+        shownTime = time;
+
+        const first = noiseRows[0]?.[NOISE_COLUMN.time];
+        const last = noiseRows[noiseRows.length - 1]?.[NOISE_COLUMN.time];
+
+        if (time === undefined || first === undefined) {
+            column.hide();
+
+            return;
+        }
+
+        const half = spectrumSlotWidth() / 2;
+        const toX = (value) => chart.convertToPixel({ xAxisIndex: 0 }, value);
+        // Band indices run bottom to top; the cells stand half a band past each end.
+        const bottom = chart.convertToPixel({ yAxisIndex: 0 }, 0);
+        const top = chart.convertToPixel({ yAxisIndex: 0 }, NOISE_BANDS.length - 1);
+        const halfBand = (bottom - top) / (NOISE_BANDS.length - 1) / 2;
+        const slot = Math.max(COLUMN_MIN_WIDTH, toX(time + half) - toX(time - half));
+        // Kept inside the axis, where the cells are clipped, and shifted in
+        // rather than cut at either edge, so an end slot stays full width.
+        const axisLeft = toX(first);
+        const axisRight = toX(last);
+        const left = Math.max(axisLeft, Math.min(toX(time) - slot / 2, axisRight - slot));
+        const shape = {
+            x: left,
+            y: top - halfBand,
+            width: Math.min(axisRight, left + slot) - left,
+            height: bottom - top + 2 * halfBand,
+        };
+
+        outer.setShape(shape);
+        inner.setShape(shape);
+        column.show();
+    };
+
+    chart.on("updateAxisPointer", (event) =>
+        place(event.axesInfo?.find((axis) => axis.axisDim === "x")?.value),
+    );
+    replaceSpectrumColumn = () => place(shownTime);
+}
+
 /**
  * The waterfall: one cell per slot and band on the same time axis as the
  * strips above, so zoom and crosshair carry over. A custom series rather
@@ -1007,8 +1089,7 @@ function rainSeries(width) {
  */
 function spectrumOption(strip, colours) {
     const range = spectrumRange();
-    // The noise rows' own slot width: it is the bucket the cells stand for.
-    const width = typicalStep(noiseRows, NOISE_COLUMN.time) || 600000;
+    const width = spectrumSlotWidth();
     // Pinned to the whole window, holes included: the cells alone would
     // stretch the axis over the stretch that has noise and misalign it
     // with every strip above.
@@ -1028,7 +1109,12 @@ function spectrumOption(strip, colours) {
         : [];
 
     return {
-        xAxis: { min: first, max: last },
+        xAxis: {
+            min: first,
+            max: last,
+            // No line: trackSpectrumColumn() lights the column.
+            axisPointer: { lineStyle: { opacity: 0 } },
+        },
         // Room above the cells for the rain markers, only when there is rain to mark.
         grid: rainSlots.length > 0 ? { top: 12 + RAIN_LANE } : {},
         yAxis: {
@@ -1065,6 +1151,11 @@ function spectrumOption(strip, colours) {
                             height: cellHeight,
                         },
                         style: { fill: spectrumColour(api.value(2), range) },
+                        // Past ECharts' hoverLayerThreshold (3000 elements, a day already
+                        // has 26 x 144 cells) highlighted cells move to a layer above
+                        // every zlevel and hide the column outline. The series-level
+                        // emphasis.disabled does not reach a custom series' elements.
+                        emphasisDisabled: true,
                     };
                 },
             },
@@ -1073,7 +1164,8 @@ function spectrumOption(strip, colours) {
             // it would not show: an invisible line through every slot does.
             {
                 type: "line",
-                showSymbol: false,
+                // Not even the dot a hovered point gets: the column is the crosshair.
+                symbol: "none",
                 lineStyle: { opacity: 0 },
                 data: noiseRows.map((row) => [row[NOISE_COLUMN.time], 0]),
             },
@@ -1534,6 +1626,7 @@ function render(payload, force) {
 
             if (strip.key === "spectrum") {
                 trackSpectrumPointer(chart);
+                trackSpectrumColumn(chart);
             }
 
             if (component) {
@@ -1542,6 +1635,7 @@ function render(payload, force) {
         }
 
         chart.setOption(chartOption(strip), { notMerge: true });
+        replaceStaleColumn(strip.key);
     });
 }
 
@@ -1551,10 +1645,20 @@ function render(payload, force) {
  * also sees every window resize, so resize() leaves the strips alone.
  */
 function watchSize(key, chart, element) {
-    const observer = new ResizeObserver(() => chart.resize());
+    const observer = new ResizeObserver(() => {
+        chart.resize();
+        replaceStaleColumn(key);
+    });
 
     observer.observe(element);
     sizeObservers.set(key, observer);
+}
+
+/** The outline is placed in pixels on a pointer move; a resize or repaint moves the cells under it. */
+function replaceStaleColumn(key) {
+    if (key === "spectrum") {
+        replaceSpectrumColumn?.();
+    }
 }
 
 /** A detached element may never get another resize callback; disconnect here, not there. */
