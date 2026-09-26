@@ -14,6 +14,9 @@ POST /forecast
     temperature °C, humidity %, pressure hPa (station level), rain mm in
     the 10 minutes (null or absent when the station has no rain source).
 
+    "since" (optional, UTC Unix seconds): the station correction learns only
+    from the readings from then on; the rest still feed the base models.
+
     -> {"issued_at": 1790000000, "model": "<trained_at>", "corrected": true,
         "correction": 2,
         "horizons": [{"hours": 1,
@@ -84,6 +87,14 @@ class InvalidRequest(ValueError):
     pass
 
 
+def timestamp(value: object, name: str, required: bool) -> pd.Timestamp | None:
+    if value is None and not required:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidRequest(f"{name} must be an integer timestamp")
+    return pd.Timestamp(value, unit="s", tz="UTC")
+
+
 def number(value: object) -> float:
     if value is None:
         return math.nan
@@ -120,12 +131,14 @@ def make_forecast(payload: dict) -> dict:
     if current["SRA10M"].isna().all():
         current = current.drop(columns="SRA10M")
 
+    since = timestamp(payload.get("since"), "since", required=False)
+
     bundle = model.get()
     horizons = bundle["horizons"]
     features = build_features(current, longitude)
     forecast = predict(bundle, features, current)
     # The latest row is the one forecast; every earlier one teaches the correction.
-    corrections = fit(forecast.iloc[:-1], current.iloc[:-1], horizons, longitude)
+    corrections = fit(forecast.iloc[:-1], current.iloc[:-1], horizons, longitude, since)
     latest = apply(corrections, forecast, current, horizons, longitude).iloc[-1]
 
     return {
@@ -151,9 +164,7 @@ def make_base(payload: dict) -> dict:
     longitude = number(payload.get("longitude"))
     if math.isnan(longitude):
         raise InvalidRequest("longitude is required")
-    since = payload.get("since")
-    if isinstance(since, bool) or not isinstance(since, int):
-        raise InvalidRequest("since must be an integer timestamp")
+    since = timestamp(payload.get("since"), "since", required=True)
     current = readings_frame(payload.get("readings"))
     if current["SRA10M"].isna().all():
         current = current.drop(columns="SRA10M")
@@ -161,7 +172,7 @@ def make_base(payload: dict) -> dict:
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
     # A forecast is issued only from a window with all three readings.
-    issued = (forecast.index >= pd.Timestamp(since, unit="s", tz="UTC")) & current[["T", "H", "P"]].notna().all(axis=1)
+    issued = (forecast.index >= since) & current[["T", "H", "P"]].notna().all(axis=1)
 
     return {
         "model": bundle["trained_at"],

@@ -78,15 +78,28 @@ def inputs(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int,
     return frame.fillna(0.0)
 
 
-def fit(forecast: pd.DataFrame, current: pd.DataFrame, horizons: list[int], longitude: float) -> dict:
-    """One Correction per 'T_3h'-style target; empty while the history is short."""
-    if len(forecast) < MIN_HISTORY_ROWS:
+def fit(
+    forecast: pd.DataFrame,
+    current: pd.DataFrame,
+    horizons: list[int],
+    longitude: float,
+    since: pd.Timestamp | None = None,
+) -> dict:
+    """One Correction per 'T_3h'-style target; empty while the history is short.
+
+    Only the rows from since on teach it, when given: readings from before a
+    change at the station would teach it the wrong thing. The frames still
+    reach further back, so the base forecasts and the errors fed in as inputs
+    stay as they were made.
+    """
+    learnable = forecast.index >= since if since is not None else np.full(len(forecast), True)
+    if int(learnable.sum()) < MIN_HISTORY_ROWS:
         return {}
     corrections = {}
     for n in horizons:
         for variable in CORRECTED_VARIABLES:
             target = errors(forecast, current, variable, n)
-            known = target.notna()
+            known = target.notna() & learnable
             x = inputs(forecast, current, variable, n, longitude)[known]
             shift = Ridge(alpha=RIDGE_ALPHA).fit(x, target[known])
 
