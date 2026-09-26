@@ -20,7 +20,7 @@ it('seeds a forecast every seeded station shows on the dashboard', function (str
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
-    // The record ends on the 11:50 slot: hourly forecasts from 12:00 two days back to 11:00, and 11:50's.
+    // The record ends on the 11:50 slot: hourly forecasts from 12:00 two weeks back to 11:00, and 11:50's.
     $this->travelTo(Date::parse('2026-09-24 12:05:00', 'UTC'));
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
@@ -33,12 +33,17 @@ it('seeds six hours in the shape the forecast service answers with', function ()
                     ->and($horizon[$channel]['mid'])->toBeLessThanOrEqual($horizon[$channel]['high']);
             }
 
+            foreach (['temperature', 'humidity'] as $channel) {
+                expect(data_get($horizon, "base.{$channel}.low"))->toBeLessThanOrEqual(data_get($horizon, "base.{$channel}.mid"))
+                    ->and(data_get($horizon, "base.{$channel}.mid"))->toBeLessThanOrEqual(data_get($horizon, "base.{$channel}.high"));
+            }
+
             expect($horizon['humidity']['mid'])->toBeBetween(0, 100)
                 ->and($horizon['rain_probability'])->toBeBetween(0, 1);
         }
     });
 
-    expect(Forecast::query()->count())->toBe(2 * (48 + 1));
+    expect(Forecast::query()->count())->toBe(2 * (14 * 24 + 1));
 });
 
 it('seeds forecasts old enough for the accuracy panel to score', function (): void {
