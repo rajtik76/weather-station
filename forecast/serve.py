@@ -18,8 +18,21 @@ POST /forecast
         "horizons": [{"hours": 1,
                       "temperature": {"low": .., "mid": .., "high": ..},
                       "humidity": {...}, "pressure": {...},
-                      "rain_probability": 0.02}, ...]}
-    issued_at is the latest reading's 10-minute window (UTC Unix seconds).
+                      "rain_probability": 0.02,
+                      "base": {"temperature": {...}, "humidity": {...}}}, ...]}
+    issued_at is the latest reading's 10-minute window (UTC Unix seconds);
+    base is the forecast before the station correction, for the variables
+    it corrects, so the correction's worth can be scored.
+
+POST /base
+    {"longitude": 13.40, "since": 1789400000, "readings": [...]}
+    -> {"model": "<trained_at>",
+        "forecasts": [{"issued_at": 1789400000,
+                       "horizons": [{"hours": 1, "temperature": {...},
+                                     "humidity": {...}}, ...]}, ...]}
+    The forecast before correction for every reading from since on, to fill
+    in base for forecasts stored before it was kept. The base models look
+    48 hours back, so the readings should start that much before since.
 
 GET /health -> {"status": "ok", "model": "<trained_at>"}
 """
@@ -33,7 +46,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-from correction import apply, fit
+from correction import CORRECTED_VARIABLES, apply, fit
 from features import build_features, to_grid
 from forecast import QUANTILES, predict
 
@@ -43,6 +56,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 MAX_READINGS = 60 * 24 * 6
 
 FIELDS = {"temperature": "T", "humidity": "H", "pressure": "P"}
+NAMES = {column: field for field, column in FIELDS.items()}
 
 
 class Model:
@@ -112,9 +126,6 @@ def make_forecast(payload: dict) -> dict:
     corrections = fit(forecast.iloc[:-1], current.iloc[:-1], horizons, longitude)
     latest = apply(corrections, forecast, current, horizons, longitude).iloc[-1]
 
-    def band(variable: str, n: int) -> dict:
-        return {name: round(float(latest[f"{variable}_{n}h_{name}"]), 2) for name in QUANTILES}
-
     return {
         "issued_at": int(latest.name.timestamp()),
         "model": bundle["trained_at"],
@@ -122,14 +133,52 @@ def make_forecast(payload: dict) -> dict:
         "horizons": [
             {
                 "hours": n,
-                "temperature": band("T", n),
-                "humidity": band("H", n),
-                "pressure": band("P", n),
+                "temperature": band(latest, "T", n),
+                "humidity": band(latest, "H", n),
+                "pressure": band(latest, "P", n),
                 "rain_probability": round(float(latest[f"rain_{n}h"]), 3),
+                "base": base_bands(forecast.iloc[-1], n),
             }
             for n in horizons
         ],
     }
+
+
+def make_base(payload: dict) -> dict:
+    longitude = number(payload.get("longitude"))
+    if math.isnan(longitude):
+        raise InvalidRequest("longitude is required")
+    since = payload.get("since")
+    if isinstance(since, bool) or not isinstance(since, int):
+        raise InvalidRequest("since must be an integer timestamp")
+    current = readings_frame(payload.get("readings"))
+    if current["SRA10M"].isna().all():
+        current = current.drop(columns="SRA10M")
+
+    bundle = model.get()
+    forecast = predict(bundle, build_features(current, longitude), current)
+    # A forecast is issued only from a window with all three readings.
+    issued = (forecast.index >= pd.Timestamp(since, unit="s", tz="UTC")) & current[["T", "H", "P"]].notna().all(axis=1)
+
+    return {
+        "model": bundle["trained_at"],
+        "forecasts": [
+            {
+                "issued_at": int(time.timestamp()),
+                "horizons": [{"hours": n, **base_bands(row, n)} for n in bundle["horizons"]],
+            }
+            for time, row in forecast[issued].iterrows()
+        ],
+    }
+
+
+def band(row: pd.Series, variable: str, n: int) -> dict:
+    return {name: round(float(row[f"{variable}_{n}h_{name}"]), 2) for name in QUANTILES}
+
+
+def base_bands(row: pd.Series, n: int) -> dict:
+    """The uncorrected forecast of the variables the station correction touches."""
+    return {NAMES[variable]: band(row, variable, n) for variable in CORRECTED_VARIABLES}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -139,14 +188,15 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, {"status": "ok", "model": model.get()["trained_at"]})
 
     def do_POST(self) -> None:
-        if self.path != "/forecast":
+        endpoints = {"/forecast": make_forecast, "/base": make_base}
+        if self.path not in endpoints:
             return self.reply(404, {"error": "not found"})
         try:
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise InvalidRequest("body must be a JSON object")
-            self.reply(200, make_forecast(payload))
+            self.reply(200, endpoints[self.path](payload))
         except (json.JSONDecodeError, InvalidRequest) as error:
             self.reply(422, {"error": str(error)})
 
