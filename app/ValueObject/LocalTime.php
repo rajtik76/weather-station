@@ -19,6 +19,8 @@ final readonly class LocalTime
 
     private const string CLOCK_FORMAT = 'H:i';
 
+    private const string DATE_FORMAT = 'j.n.Y';
+
     private function __construct(public int $timestamp) {}
 
     public static function of(int $timestamp): self
@@ -36,6 +38,30 @@ final readonly class LocalTime
     public function clock(): string
     {
         return $this->moment()->format(self::CLOCK_FORMAT);
+    }
+
+    /** The day alone, for a figure that covers the whole of it: the stamp without its time. */
+    public function date(): string
+    {
+        return $this->moment()->format(self::DATE_FORMAT);
+    }
+
+    /**
+     * Every local day from this one's through $until's, each as its first
+     * moment; a day of 23 or 25 hours is still one.
+     *
+     * @return list<self>
+     */
+    public function daysThrough(self $until): array
+    {
+        $days = [];
+        $last = $until->moment()->startOfDay();
+
+        for ($day = $this->moment()->startOfDay(); $day->lessThanOrEqualTo($last); $day = $day->addDay()) {
+            $days[] = new self($day->getTimestamp());
+        }
+
+        return $days;
     }
 
     /** Hour of the local day, 0-23. */

@@ -57,6 +57,7 @@ use UnexpectedValueException;
  * @property-read bool $hasSensorChoice
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
  * @property-read list<Score> $forecastAccuracy
+ * @property-read Score|null $accuracyScore
  *
  * Chart rows are positional arrays to keep the JSON payload small. A bucket
  * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
@@ -90,14 +91,14 @@ class Dashboard extends Component
     private const int FORECAST_FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
     /** How far back the forecasts are scored against what came; the panel's label reads it. */
-    public const int ACCURACY_DAYS = 7;
+    public const int ACCURACY_DAYS = 30;
 
     /**
      * Stored with the cached accuracy: bump it when Score changes shape, so a
      * deploy never reads the old one. In the value, not the key - a key per
      * shape would leave the old row behind for good.
      */
-    private const int ACCURACY_CACHE_SHAPE = 3;
+    private const int ACCURACY_CACHE_SHAPE = 5;
 
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;
@@ -129,6 +130,12 @@ class Dashboard extends Component
     #[Locked]
     public array $channels = self::DEFAULT_CHANNELS;
 
+    /**
+     * The horizon the accuracy panel charts, in hours. Livewire state like the
+     * channels, not #[Url], so a reload starts from three hours ahead.
+     */
+    public int $accuracyHorizon = 3;
+
     /** @var array<string, bool> */
     private const array DEFAULT_CHANNELS = ['t' => true, 'h' => true, 'd' => false];
 
@@ -138,8 +145,11 @@ class Dashboard extends Component
         $this->normaliseSensor();
     }
 
+    /** Every render, a poll's included: new scores can take the chosen horizon's away. */
     public function render(): View
     {
+        $this->normaliseAccuracyHorizon();
+
         return view('livewire.dashboard');
     }
 
@@ -548,7 +558,7 @@ class Dashboard extends Component
     }
 
     /**
-     * The last week's forecasts scored against the readings that followed,
+     * The last month's forecasts scored against the readings that followed,
      * per horizon; empty until one has come true. Not the chart window: a
      * score over a zoomed hour would say nothing. Kept until the next
      * forecast: it comes with the upload that completes new scores. Fifteen
@@ -582,6 +592,27 @@ class Dashboard extends Component
         Cache::put($key, ['shape' => self::ACCURACY_CACHE_SHAPE, 'issuedAt' => $newest, 'scores' => $scores], now()->addMinutes(15));
 
         return $scores;
+    }
+
+    /**
+     * The chosen horizon's score, or the first one scored while the chosen
+     * one has not come true yet - three hours ahead needs three hours.
+     * render() then moves the choice onto it.
+     *
+     * @return Score|null
+     */
+    #[Computed]
+    public function accuracyScore(): ?array
+    {
+        $scores = $this->forecastAccuracy;
+
+        foreach ($scores as $score) {
+            if ($score['hours'] === $this->accuracyHorizon) {
+                return $score;
+            }
+        }
+
+        return $scores[0] ?? null;
     }
 
     /**
@@ -813,6 +844,22 @@ class Dashboard extends Component
                 ])
                 ->all()
         );
+    }
+
+    /**
+     * Pins the choice to the horizon the panel shows, so the segmented control
+     * never marks one while the chart draws another.
+     */
+    private function normaliseAccuracyHorizon(): void
+    {
+        // Computed before a sensor switch, they would score the old one.
+        unset($this->forecastAccuracy, $this->accuracyScore);
+
+        $shown = $this->accuracyScore['hours'] ?? null;
+
+        if ($shown !== null && $shown !== $this->accuracyHorizon) {
+            $this->accuracyHorizon = $shown;
+        }
     }
 
     /** The picker is bound to the property, so it must hold a real slug or the select shows blank. */

@@ -44,5 +44,5 @@ it('seeds six hours in the shape the forecast service answers with', function ()
 it('seeds forecasts old enough for the accuracy panel to score', function (): void {
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
-    Livewire::test(Dashboard::class)->assertSee('Accuracy · last 7 days');
+    Livewire::test(Dashboard::class)->assertSee('Accuracy · last 30 days');
 });

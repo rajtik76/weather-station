@@ -206,7 +206,13 @@
 
                 {{-- Inside the forecast's fold, so folding the forecast takes it along.
                      Starts folded: rendered hidden, so nothing flashes before Alpine runs. --}}
-                @if ($this->forecastAccuracy !== [])
+                @if ($this->accuracyScore !== null)
+                    @php($score = $this->accuracyScore)
+                    @php($scoredHours = array_column($this->forecastAccuracy, 'hours'))
+                    @php($figures = array_filter([
+                        ['label' => 'With correction', 'figures' => $score['corrected']],
+                        ['label' => 'Base model', 'figures' => $score['base']],
+                    ], fn (array $row): bool => $row['figures'] !== null))
                     <div class="border-t border-zinc-900/5 dark:border-white/5" x-data="{ collapsed: true }">
                         <div class="flex items-center gap-x-6 px-4 py-3 sm:px-8">
                             <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
@@ -216,71 +222,115 @@
                         </div>
 
                         <div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">
+                            <div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 sm:px-8">
+                                <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                                    <span class="size-1.5 rounded-full bg-amber-600 dark:bg-amber-500" aria-hidden="true"></span>
+                                    With correction
+                                </p>
+                                <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                                    <span class="w-3 border-t border-dashed border-zinc-400" aria-hidden="true"></span>
+                                    Base model
+                                </p>
+                                {{-- Every hour the forecast reaches, so the control never grows under the pointer; one not scored yet is disabled. --}}
+                                <flux:radio.group wire:model.live="accuracyHorizon" variant="segmented" size="sm" aria-label="Hours ahead" class="ml-auto">
+                                    @foreach ($forecast['horizons'] as $horizon)
+                                        <flux:radio :value="$horizon['hours']" label="+{{ $horizon['hours'] }} h" :disabled="! in_array($horizon['hours'], $scoredHours, true)" />
+                                    @endforeach
+                                </flux:radio.group>
+                            </div>
+
+                            {{-- forecast-accuracy.js watches the attribute; Livewire never touches the canvas. --}}
+                            <div
+                                class="px-4 pt-2 sm:px-8"
+                                data-accuracy-chart="days"
+                                data-accuracy-rows="{{ json_encode($score['days']) }}"
+                                aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, with the station correction and without"
+                                role="img"
+                            >
+                                <div wire:ignore data-accuracy-canvas class="h-40 w-full"></div>
+                            </div>
+
                             <div class="overflow-x-auto px-4 sm:px-8">
                                 <table class="w-full font-mono text-xs tabular-nums">
                                     <thead>
                                         <tr class="text-left text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                            <th class="py-2 pr-6 font-medium">Ahead</th>
-                                            <th class="py-2 pr-6 font-medium">Temperature</th>
-                                            <th class="py-2 pr-6 font-medium">Rain chance · rained / dry</th>
-                                            <th class="py-2 pr-6 font-medium">Forecasts</th>
-                                            <th class="py-2 font-medium"><span class="sr-only">By hour</span></th>
+                                            <th class="py-2 pr-6 font-medium">+{{ $score['hours'] }} h</th>
+                                            <th class="py-2 pr-6 font-medium">Better by</th>
+                                            <th class="py-2 pr-6 font-medium">Off by · naive</th>
+                                            <th class="py-2 pr-6 font-medium">In range</th>
+                                            <th class="py-2 pr-6 font-medium">Range width</th>
+                                            <th class="py-2 font-medium">Forecasts</th>
                                         </tr>
                                     </thead>
-                                    {{-- A tbody per horizon, so the row and its chart share one Alpine scope.
-                                         The chart starts closed: rendered hidden, so nothing flashes before Alpine runs. --}}
-                                    @foreach ($this->forecastAccuracy as $score)
-                                        <tbody wire:key="forecast-accuracy-{{ $score['hours'] }}" class="text-zinc-800 dark:text-zinc-200" x-data="{ open: false }">
+                                    <tbody class="text-zinc-800 dark:text-zinc-200">
+                                        @foreach ($figures as $row)
+                                            @php($shown = $row['figures'])
                                             <tr class="border-t border-zinc-900/5 dark:border-white/5">
-                                                <td class="pt-1.5 pr-6">+{{ $score['hours'] }} h</td>
-                                                <td class="pt-1.5 pr-6"><x-accuracy-percent :percent="$score['temperature']" /></td>
-                                                <td class="pt-1.5 pr-6">
-                                                    @if ($score['rainCount'] === 0)
-                                                        <span class="text-zinc-500 dark:text-zinc-400">not listened</span>
+                                                <td class="py-1.5 pr-6 whitespace-nowrap">{{ $row['label'] }}</td>
+                                                <td class="py-1.5 pr-6">{{ $shown['skill'] === null ? 'n/a' : ($shown['skill'] > 0 ? '+' : '').number_format($shown['skill'], 0).' %' }}</td>
+                                                <td class="py-1.5 pr-6 whitespace-nowrap">
+                                                    @if ($shown['error'] === null)
+                                                        n/a
                                                     @else
-                                                        {{ $score['chanceWhenRain'] === null ? 'no rain' : number_format($score['chanceWhenRain'], 0).' %' }}
-                                                        /
-                                                        {{ $score['chanceWhenDry'] === null ? 'no dry spell' : number_format($score['chanceWhenDry'], 0).' %' }}
+                                                        {{ number_format($shown['error'], 1, ',', ' ') }} · {{ number_format($shown['naive'], 1, ',', ' ') }} °C
                                                     @endif
                                                 </td>
-                                                <td class="pt-1.5 pr-6">{{ $score['count'] }}</td>
-                                                <td class="pt-1.5 text-right">
-                                                    <flux:button
-                                                        x-on:click="open = ! open"
-                                                        variant="subtle"
-                                                        size="xs"
-                                                        icon="presentation-chart-line"
-                                                        aria-expanded="false"
-                                                        x-bind:aria-expanded="open ? 'true' : 'false'"
-                                                        aria-controls="forecast-accuracy-{{ $score['hours'] }}"
-                                                        aria-label="Show +{{ $score['hours'] }} h by hour of the day"
-                                                        x-bind:aria-label="(open ? 'Hide' : 'Show') + ' +{{ $score['hours'] }} h by hour of the day'"
-                                                        x-bind:class="{ 'text-zinc-800! dark:text-white!': open }"
-                                                    />
-                                                </td>
+                                                <td class="py-1.5 pr-6">{{ number_format($shown['inRange'], 0) }} %</td>
+                                                <td class="py-1.5 pr-6">{{ number_format($shown['width'], 1, ',', ' ') }} °C</td>
+                                                <td class="py-1.5">{{ $shown['count'] }}</td>
                                             </tr>
-                                            {{-- Hidden, not removed: the chart keeps its instance and resizes once the row has a size. --}}
-                                            <tr id="forecast-accuracy-{{ $score['hours'] }}" class="hidden" x-bind:class="{ hidden: ! open }">
-                                                <td colspan="5" class="pb-1.5">
-                                                    {{-- forecast-accuracy.js watches the attribute; Livewire never touches the canvas. --}}
-                                                    <div
-                                                        data-accuracy-chart="{{ $score['hours'] }}"
-                                                        data-accuracy-hours="{{ json_encode($score['byHour']) }}"
-                                                        aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
-                                                        role="img"
-                                                    >
-                                                        <div wire:ignore data-accuracy-canvas class="h-24 w-full"></div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    @endforeach
+                                        @endforeach
+                                    </tbody>
                                 </table>
                             </div>
+
+                            <p class="px-4 pt-2 font-mono text-xs text-zinc-800 sm:px-8 dark:text-zinc-200">
+                                <span class="text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">Rain chance · rained / dry</span>
+                                <span class="ml-2 tabular-nums">
+                                    @if ($score['rain']['count'] === 0)
+                                        <span class="text-zinc-500 dark:text-zinc-400">not listened</span>
+                                    @else
+                                        {{ $score['rain']['chanceWhenRain'] === null ? 'no rain' : number_format($score['rain']['chanceWhenRain'], 0).' %' }}
+                                        /
+                                        {{ $score['rain']['chanceWhenDry'] === null ? 'no dry spell' : number_format($score['rain']['chanceWhenDry'], 0).' %' }}
+                                    @endif
+                                </span>
+                            </p>
+
+                            {{-- The hour-of-day detail starts closed: rendered hidden, so nothing flashes before Alpine runs. --}}
+                            <div x-data="{ open: false }" class="px-4 pt-3 sm:px-8">
+                                <flux:button
+                                    x-on:click="open = ! open"
+                                    variant="subtle"
+                                    size="xs"
+                                    icon="presentation-chart-line"
+                                    aria-expanded="false"
+                                    x-bind:aria-expanded="open ? 'true' : 'false'"
+                                    aria-controls="forecast-accuracy-hours"
+                                    x-bind:class="{ 'text-zinc-800! dark:text-white!': open }"
+                                >By hour of the day</flux:button>
+
+                                {{-- Hidden, not removed: the chart keeps its instance and resizes once it has a size. --}}
+                                <div id="forecast-accuracy-hours" class="hidden pt-2" x-bind:class="{ hidden: ! open }">
+                                    <div
+                                        data-accuracy-chart="hours"
+                                        data-accuracy-rows="{{ json_encode($score['byHour']) }}"
+                                        aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
+                                        role="img"
+                                    >
+                                        <div wire:ignore data-accuracy-canvas class="h-24 w-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <p class="px-4 pt-2 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
-                                Temperature: how often it landed inside the forecast range.
+                                Better by: how much smaller the forecast's miss was than the naive guess's - the temperature at the time of the forecast, kept for the hours ahead.
+                                Above zero the forecast beats the guess, below zero it does worse.
+                                Base model: the forecast as trained on ČHMÚ records, before the correction this station's own misses teach it;
+                                the gap between the two lines is what the correction has learnt.
+                                In range: a good range holds eight readings in ten, so 80 % is on target and 100 % means it was drawn too wide.
                                 Rain as the microphone heard it: the mean chance given when it rained and when it stayed dry. Drizzle is not heard.
-                                The chart icon opens the row's temperature by the local hour the forecast was for: measured minus the middle of the forecast, above zero warmer than forecast.
+                                By hour of the day: measured minus the middle of the forecast shown, above zero warmer than forecast.
                             </p>
                         </div>
                     </div>
