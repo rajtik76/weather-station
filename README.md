@@ -7,11 +7,11 @@
 
 Can a balcony weather station forecast its own next six hours better than
 assuming nothing changes? That is the question this project asks, and the
-answer is on the page. A small model trained on eight years of ČHMÚ station
-records forecasts temperature and the chance of rain one to six hours ahead
-from the station's own readings alone, and every forecast is scored against
-what the station then measured. The dashboard shows the last 30 days' verdict
-right under the current readings.
+answer is on the page. A small model trained on eight years of station records
+from the Czech Hydrometeorological Institute (ČHMÚ) forecasts temperature and
+the chance of rain one to six hours ahead from the station's own readings
+alone, and every forecast is scored against what the station then measured.
+The dashboard shows the last 30 days' verdict right under the current readings.
 
 The station is how the question gets asked. An ESP32 reads temperature and
 humidity from an SHT41 outside and pressure from a BMP280 indoors every half
