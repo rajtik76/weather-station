@@ -133,6 +133,67 @@
         @endif
     </section>
 
+    {{-- ── Verdict ────────────────────────────────────────────────── --}}
+    {{-- The answer to the hero's question; history, so it stays while a forecast is stale. Dashboard::verdict(). --}}
+    @if ($this->verdict !== null)
+        @php($verdict = $this->verdict)
+        <section aria-label="Verdict" class="border-t border-zinc-900/10 px-4 pt-4 pb-6 sm:px-8 dark:border-white/10">
+            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                Verdict · last {{ $this::ACCURACY_DAYS }} days · {{ $verdict['count'] }} {{ Str::plural('forecast', $verdict['count']) }} scored
+            </p>
+
+            @if (! $verdict['ready'])
+                <p class="font-serif mt-3 text-lg leading-snug italic sm:text-xl">
+                    Too early to say: the verdict waits for a day of forecasts that have come true.
+                </p>
+            @else
+                @php($beats = $verdict['skill'] >= 0)
+                <div class="mt-4 grid gap-x-12 gap-y-6 sm:grid-cols-3">
+                    <div>
+                        <p @class([
+                            'font-display text-6xl leading-none font-bold sm:text-7xl',
+                            'text-rose-600 dark:text-rose-500' => ! $beats,
+                        ])>
+                            {{ number_format(abs($verdict['skill']), 0) }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">%</span>
+                        </p>
+                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ $beats ? 'smaller' : 'larger' }} miss than assuming it stays as warm as now, {{ $verdict['hours'] }} h ahead
+                        </p>
+                    </div>
+                    <div>
+                        <p class="font-display text-6xl leading-none font-bold sm:text-7xl">
+                            {{ number_format($verdict['error'], 1, ',', ' ') }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">°C</span>
+                        </p>
+                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                            off on average · the naive guess {{ number_format($verdict['naive'], 1, ',', ' ') }} °C
+                        </p>
+                    </div>
+                    <div>
+                        <p class="font-display text-6xl leading-none font-bold sm:text-7xl">
+                            {{ number_format($verdict['inRange'], 0) }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">%</span>
+                        </p>
+                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                            inside the forecast range · target 80 %
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Every horizon beside the headline, so six hours is not the only number picked. --}}
+                <ol class="mt-6 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs tabular-nums" aria-label="Smaller miss than the naive guess by hours ahead">
+                    @foreach ($verdict['horizons'] as $horizon)
+                        <li>
+                            <span class="text-zinc-500 dark:text-zinc-400">+{{ $horizon['hours'] }} h</span>
+                            <span @class([
+                                'text-zinc-800 dark:text-zinc-200',
+                                'text-rose-600! dark:text-rose-500!' => $horizon['skill'] !== null && $horizon['skill'] < 0,
+                            ])>{{ $horizon['skill'] === null ? 'n/a' : ($horizon['skill'] > 0 ? '+' : '').number_format($horizon['skill'], 0).' %' }}</span>
+                        </li>
+                    @endforeach
+                </ol>
+            @endif
+        </section>
+    @endif
+
     {{-- ── Forecast ───────────────────────────────────────────────── --}}
     {{-- Only while it starts from the current record; Dashboard::forecast(). --}}
     @if ($this->forecast !== null)
@@ -216,7 +277,7 @@
                     <div class="border-t border-zinc-900/5 dark:border-white/5" x-data="{ collapsed: true }">
                         <div class="flex items-center gap-x-6 px-4 py-3 sm:px-8">
                             <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                Accuracy · last {{ $this::ACCURACY_DAYS }} days
+                                Scoring · last {{ $this::ACCURACY_DAYS }} days
                             </p>
                             <x-fold-button controls="forecast-accuracy" label="Forecast accuracy" :collapsed="true" />
                         </div>

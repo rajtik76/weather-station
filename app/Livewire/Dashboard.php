@@ -58,6 +58,7 @@ use UnexpectedValueException;
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
  * @property-read list<Score> $forecastAccuracy
  * @property-read Score|null $accuracyScore
+ * @property-read array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}|null $verdict
  *
  * Chart rows are positional arrays to keep the JSON payload small. A bucket
  * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
@@ -93,12 +94,18 @@ class Dashboard extends Component
     /** How far back the forecasts are scored against what came; the panel's label reads it. */
     public const int ACCURACY_DAYS = 30;
 
+    /** The horizon the page's question asks about; the verdict falls back to the longest scored until it has come true. */
+    private const int VERDICT_HOURS = 6;
+
+    /** A day of forecasts, one per ten minutes: fewer and the verdict says it is too early. */
+    private const int VERDICT_MIN_FORECASTS = 144;
+
     /**
      * Stored with the cached accuracy: bump it when Score changes shape, so a
      * deploy never reads the old one. In the value, not the key - a key per
      * shape would leave the old row behind for good.
      */
-    private const int ACCURACY_CACHE_SHAPE = 6;
+    private const int ACCURACY_CACHE_SHAPE = 7;
 
     /** A forecast hour this close to the one before it shows no trend. */
     private const float FORECAST_STEADY_CELSIUS = 0.3;
@@ -616,6 +623,34 @@ class Dashboard extends Component
     }
 
     /**
+     * The page's answer: the forecast as shown, six hours ahead, against the
+     * naive guess, and every horizon's skill beside it so the six is not the
+     * only number picked. Independent of the accuracy panel's horizon choice,
+     * so the headline never changes under the reader's pointer.
+     *
+     * @return array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}|null
+     */
+    #[Computed]
+    public function verdict(): ?array
+    {
+        $scores = $this->forecastAccuracy;
+
+        if ($scores === []) {
+            return null;
+        }
+
+        $headline = array_find($scores, fn (array $score): bool => $score['hours'] === self::VERDICT_HOURS) ?? end($scores);
+        $figures = $headline['shown'];
+
+        return [
+            'hours' => $headline['hours'],
+            'ready' => $figures['skill'] !== null && $figures['count'] >= self::VERDICT_MIN_FORECASTS,
+            ...$figures,
+            'horizons' => array_map(fn (array $score): array => ['hours' => $score['hours'], 'skill' => $score['shown']['skill']], $scores),
+        ];
+    }
+
+    /**
      * Temperature and rain only: the service forecasts humidity and pressure
      * too, and they stay in the stored row, but nobody reads them ahead.
      *
@@ -853,7 +888,7 @@ class Dashboard extends Component
     private function normaliseAccuracyHorizon(): void
     {
         // Computed before a sensor switch, they would score the old one.
-        unset($this->forecastAccuracy, $this->accuracyScore);
+        unset($this->forecastAccuracy, $this->accuracyScore, $this->verdict);
 
         $shown = $this->accuracyScore['hours'] ?? null;
 

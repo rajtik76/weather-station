@@ -62,7 +62,7 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}
  * @phpstan-type Figures array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
- * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, rain: Rain, byHour: list<Hour>}
+ * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, shown: Figures, rain: Rain, byHour: list<Hour>}
  * @phpstan-type Miss array{inRange: bool, difference: float, width: float}
  *
  * @phpstan-import-type Band from Forecast
@@ -153,6 +153,8 @@ final readonly class ForecastAccuracy
                 'hours' => $hours,
                 'days' => $this->byDay($scored, $tookOver, $forecasts->last()->issued_at),
                 ...$this->compared($scored),
+                // Every hour scored, not only those with a base: the headline is no comparison.
+                'shown' => $this->figures($scored, 'corrected'),
                 'rain' => $this->rain($scored),
                 'byHour' => $this->byHour($scored),
             ];
