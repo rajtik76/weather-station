@@ -1,17 +1,24 @@
-# Weather station
+# Weather forecast station
 
 [![CI](https://github.com/rajtik76/weather-station/actions/workflows/ci.yml/badge.svg)](https://github.com/rajtik76/weather-station/actions/workflows/ci.yml)
 [![Site](https://status.rajtik.com/api/badge/19/status?label=site)](https://status.rajtik.com)
 [![Readings](https://status.rajtik.com/api/badge/18/status?label=readings)](https://status.rajtik.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.md)
 
-A personal weather station, end to end. An ESP32 reads temperature and
+Can a balcony weather station forecast its own next six hours better than
+assuming nothing changes? That is the question this project asks, and the
+answer is on the page. A small model trained on eight years of ČHMÚ station
+records forecasts temperature and the chance of rain one to six hours ahead
+from the station's own readings alone, and every forecast is scored against
+what the station then measured. The dashboard shows the last 30 days' verdict
+right under the current readings.
+
+The station is how the question gets asked. An ESP32 reads temperature and
 humidity from an SHT41 outside and pressure from a BMP280 indoors every half
 minute, listens to an INMP441 microphone beside the SHT41 all the time, folds
 both into ten-minute windows, and uploads them to a Laravel API that stores
-the windows and draws them. A small model trained on ČHMÚ station records
-forecasts the next six hours from the station's own readings, and the
-microphone's spectrum tells when it rains.
+the windows and draws them. The microphone's spectrum also tells when it
+rains.
 
 ```
 SHT41   --I2C--+
@@ -23,7 +30,43 @@ INMP441 --I2S--+                       |    |
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
-## Accuracy
+## The forecast
+
+The forecast comes from a Python service beside the app. After every upload
+the server sends it the station's last 60 days and stores the answer:
+temperature as a range one to six hours ahead, and the chance of rain - and
+the same temperature as the base model gave it before the station
+correction. The models learnt the weather from eight years of ČHMÚ station
+records and correct themselves for the station from its own history; at
+forecast time they use nothing but the station's readings.
+
+A forecast has to beat the naive guess: the temperature at the time it was
+made, kept for the hours ahead. The temperature changes little in an hour, so
+the guess is hard to beat that close and easier six hours on. The verdict is
+therefore given for six hours ahead, with every shorter horizon beside it, in
+three numbers over the last 30 days:
+
+- **skill** - how much smaller the forecast's miss was than the naive
+  guess's. Below zero the forecast did worse, and the dashboard says so.
+- **mean miss** in °C, beside the naive guess's.
+- **in range** - how often the reading landed inside the forecast range. The
+  range is drawn to hold eight readings in ten, so 80 % is on target and less
+  means it was drawn too narrow.
+
+Until a day of forecasts has come true, the verdict says it is too early.
+
+Folded under the forecast, the same scoring for any hour ahead. A chart shows
+the skill by day, once as shown and once for the base model, on the same
+hours: the gap between the two lines is what the correction has learnt from
+the station's own misses, and a day a newly trained model or a new version of
+the correction took over is marked. Below it how wide the range was, the
+mean rain chance given when it rained and when it did not, and a chart by the
+hour of the day the forecast was for of how much warmer or colder the station
+read than forecast - the morning sun on the shield reads warmer. How it
+works, how well it scores and what it cannot do is in
+[`forecast/README.md`](forecast/README.md).
+
+## Sensor accuracy
 
 This is a hobby station, and the readings should be read as such. The SHT41
 sits in a passive radiation shield on an east-facing balcony, and on a clear
@@ -33,10 +76,11 @@ shows how far the samples inside a window spread. The shield went up in
 September 2026 and took some of it away, not enough.
 
 There is no fix coming. A properly ventilated site or an aspirated shield is
-more than a balcony allows, and the point of the project was the pipeline
-from sensor to chart, not a reference instrument. Overnight and under cloud
-the numbers are as good as an SHT41 gets; on a sunny morning they are not the
-air temperature.
+more than a balcony allows, and the point of the project is the forecast, not
+a reference instrument. The forecast is scored against these same readings,
+sun included, and the chart by the hour of the day shows what that does to
+it. Overnight and under cloud the numbers are as good as an SHT41 gets; on a
+sunny morning they are not the air temperature.
 
 ## What it does
 
@@ -47,7 +91,9 @@ station can report to the same server, and the dashboard switches between
 them.
 
 The dashboard is one Livewire page. At the top the current readings of the
-chosen station, then the forecast for the next six hours, below them temperature and humidity (dew point on request)
+chosen station, then the forecast's verdict and the forecast for the next six
+hours with its scoring folded under it (see [The forecast](#the-forecast)).
+Below them temperature and humidity (dew point on request)
 and sea-level pressure on a strip of its own, over the last week by default,
 with the min-max band behind each line and a strip of the whole record to
 drag any window up to a month through; the bucket width follows the span on
@@ -60,26 +106,6 @@ stored, the station's own report of how it was doing, and the site's
 approximate location - one place, set in the component, so a second station
 is shown on the first one's map. The window and the station are in the URL,
 so a view can be linked to.
-
-The forecast comes from a Python service beside the app. After every upload
-the server sends it the station's last 60 days and stores the answer:
-temperature as a range one to six hours ahead, and the chance of rain - and
-the same temperature as the base model gave it before the station
-correction. Folded under it, the last 30 days of forecasts are scored against
-what the station then measured, for the chosen hour ahead. A chart shows by
-day how much smaller the forecast's miss was than a naive guess's (the
-temperature at the time, kept for the hours ahead), once as shown and once
-for the base model, on the same hours: the gap between the two lines is what
-the correction has learnt from the station's own misses, and a day a newly
-trained model or a new version of the correction took over is marked. Below it how often the temperature
-landed in the range and how wide the range was, the mean rain chance given
-when it rained and when it did not, and a chart by the hour of the day the
-forecast was for of how much warmer or colder the station read than
-forecast - the morning sun on the shield reads warmer.
-The models learnt the weather from eight years of ČHMÚ station records and
-correct themselves for the station from its own history; at forecast time
-they use nothing but the station's readings. How it works, how well it
-scores and what it cannot do is in [`forecast/README.md`](forecast/README.md).
 
 Rain is heard, not measured. Drops from the roof ring the plastic radiation
 shield around 1 kHz while the top of the spectrum goes loud; tyres on a wet
