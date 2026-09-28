@@ -518,7 +518,7 @@ it('holds the verdict back until a day of forecasts has come true', function ():
     Livewire::test(Dashboard::class)->assertSee('Too early to say')->assertDontSee('miss than assuming it stays as warm as now');
 });
 
-it('answers six hours ahead, with every horizon beside it', function (float $offBy, array $headline): void {
+it('answers six hours ahead, with every horizon beside it', function (float $offBy, string $skill, string $direction, string $inRange): void {
     $sensor = Sensor::factory()->create();
     $start = Date::parse('2026-09-23 00:00:00', 'UTC')->getTimestamp();
 
@@ -538,10 +538,16 @@ it('answers six hours ahead, with every horizon beside it', function (float $off
 
     Livewire::test(Dashboard::class)
         ->assertDontSee('Too early to say')
-        ->assertSeeInOrder(['Verdict · last 30 days · 144 forecasts scored', ...$headline, '+1 h', '+50 %', '+6 h']);
+        ->assertSeeInOrder([
+            'Verdict · last 30 days · 144 forecasts scored',
+            $skill, "{$direction} miss than assuming it stays as warm as now, 6 h ahead",
+            number_format($offBy, 1, ',', ' '), 'naive guess 3,6 °C',
+            $inRange, 'target 80 %',
+            '+1 h', '+50 %', '+6 h',
+        ]);
 })->with([
-    'beating the guess' => [0.9, ['75', 'smaller miss than assuming it stays as warm as now, 6 h ahead', '0,9', 'naive guess 3,6 °C', '100', 'target 80 %']],
-    'losing to it' => [5.4, ['50', 'larger miss than assuming it stays as warm as now, 6 h ahead', '5,4', 'naive guess 3,6 °C', '0', 'target 80 %']],
+    'beating the guess' => [0.9, '75', 'smaller', '100'],
+    'losing to it' => [5.4, '50', 'larger', '0'],
 ]);
 
 it('keeps the score until the next forecast arrives', function (): void {
