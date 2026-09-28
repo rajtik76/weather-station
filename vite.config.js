@@ -27,10 +27,10 @@ export default defineConfig({
                 bunny("Bricolage Grotesque", {
                     weights: [700, 800],
                 }),
-                // Italic only; nothing on the page is set upright in it.
+                // Upright too: without it the browser sets upright text in the italic face.
                 bunny("Instrument Serif", {
                     weights: [400],
-                    styles: ["italic"],
+                    styles: ["normal", "italic"],
                 }),
             ],
         }),

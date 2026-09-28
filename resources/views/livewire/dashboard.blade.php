@@ -49,11 +49,15 @@
                     Station<br>Log
                 </flux:heading>
                 {{-- Instrument Serif runs small beside the sans; one step larger. --}}
+                {{-- The question first: the hardware is only how it gets asked. --}}
                 <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
+                    Can a balcony station forecast its own next six hours better than assuming nothing changes?
+                    A model trained on ČHMÚ station records tries, from these readings alone, and every forecast is scored against what the sensor measured next.
+                </flux:text>
+                <flux:text class="font-serif mt-4 max-w-2xl text-base leading-snug text-zinc-500! sm:text-lg dark:text-zinc-400!">
                     An SHT41 outside and a BMP280 indoors are read every thirty seconds by an ESP32, which reports each ten minutes as a mean with its extremes.
                     A microphone beside the SHT41 adds the noise: A-weighted levels and a third-octave spectrum per window.
                     Pressure is measured at 345 m and shown reduced to mean sea level.
-                    A model trained on ČHMÚ station records forecasts the next six hours from these readings alone.
                 </flux:text>
             </div>
 
