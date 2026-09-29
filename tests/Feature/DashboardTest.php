@@ -1603,6 +1603,66 @@ it('picks up a newer forecast on the next poll', function (): void {
     $dashboard->call('$refresh')->assertSee('made 24.9.2026 10:10');
 });
 
+it('refreshes the sky, the tiles, the charts and the footer on a poll', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->subMinute()->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 1800, humidity: 6000, pressure: 97000),
+    ]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
+
+    $dashboard = Livewire::test(Dashboard::class)
+        ->assertSee('Last measurement 24.9.2026 09:59')
+        ->assertSee('18,00')
+        ->assertSee('1 records')
+        ->assertDontSee('dB(A)');
+    /** @var Dashboard $before */
+    $before = $dashboard->instance();
+    $pressureBefore = $before->metrics['p']['now'];
+
+    // Ten minutes on: the station uploads a warmer, drier window with noise, the service answers, the page polls.
+    $this->travel(10)->minutes();
+    Measurement::factory()->v3()->for($sensor)->create([
+        'timestamp' => now()->subMinute()->getTimestamp(),
+        'data' => (string) noisyWindow(laeq: 5230, la10: 5500, la90: 4500, lamax: 6000, band: 3000),
+    ]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
+
+    $dashboard->call('$refresh');
+    /** @var Dashboard $component */
+    $component = $dashboard->instance();
+    $html = $dashboard->html();
+
+    $dashboard
+        ->assertSee('Last measurement 24.9.2026 10:09')
+        ->assertSee('21,50')
+        ->assertSee('48,00')
+        ->assertSee('52,3')
+        ->assertSee('made 24.9.2026 10:10')
+        ->assertSee('2 records');
+
+    // The day's extremes take the new window's samples in, and every chart payload the window.
+    expect($component->metrics['t'])->toMatchArray(['now' => 21.5, 'dayMin' => 18.0, 'dayMax' => 22.0])
+        ->and($component->metrics['p']['now'])->not->toBe($pressureBefore)
+        ->and(array_filter(bucketRows($html), fn (array $row): bool => $row[1] !== null))->toHaveCount(2)
+        ->and($component->overview)->toHaveCount(2)
+        ->and(noiseBuckets($html))->toHaveCount(1);
+});
+
+it('turns the station silent on a poll once the uploads stop', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    Measurement::factory()->create(['timestamp' => now()->subMinute()->getTimestamp()]);
+
+    $dashboard = Livewire::test(Dashboard::class)->assertSee('Station live');
+
+    $this->travel(40)->minutes();
+
+    $dashboard->call('$refresh')
+        ->assertSee('Station silent')
+        ->assertSee('41 minutes ago');
+});
+
 it('dates the forecast by when it arrived, not by the window it starts from', function (): void {
     // The upload at 08:10:20 UTC carries the window 08:00-08:10; the forecast is made from it at once.
     $this->travelTo(Date::parse('2026-09-24 08:10:21', 'UTC'));
