@@ -42,6 +42,7 @@ use UnexpectedValueException;
  * @property-read int $recordCount
  * @property-read list<DayRow> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}> $metrics
+ * @property-read bool $isNoiseCurrent
  * @property-read list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
@@ -531,6 +532,19 @@ class Dashboard extends Component
         $newest = $this->newestPlottedReading();
 
         return $newest === null ? [] : [$newest];
+    }
+
+    /**
+     * Whether the newest reading carries noise. The noise readout summarises
+     * the day, so after the microphone drops out its "now" is the last level
+     * heard, hours old; the sky shows only what is current.
+     */
+    #[Computed]
+    public function isNoiseCurrent(): bool
+    {
+        $newest = $this->lastDay === [] ? null : $this->lastDay[array_key_last($this->lastDay)];
+
+        return $newest !== null && $newest['n'] !== null;
     }
 
     /**

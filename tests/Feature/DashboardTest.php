@@ -634,7 +634,7 @@ it('reads the day\'s extremes off the samples rather than the means', function (
     $this->get('/')
         ->assertOk()
         ->assertSee('21,50')
-        ->assertSee('min 1,05 · max 24,90')
+        ->assertSeeInOrder(['24 h low', '1,05', '24 h high', '24,90'])
         ->assertSee('min 44,00 · max 93,00');
 });
 
@@ -1184,13 +1184,16 @@ it('hands the charts no events when none have been recorded', function (): void 
 });
 
 it('names the sensor it is showing', function (): void {
-    Sensor::factory()->create([
+    $sensor = Sensor::factory()->create([
         'name' => 'bme280-north',
         'description' => 'Under the eaves on the north wall, in a radiation shield.',
     ]);
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(5)->getTimestamp()]);
 
     Livewire::test(Dashboard::class)
-        ->assertSeeInOrder(['Sensor', 'bme280-north', 'Under the eaves on the north wall, in a radiation shield.'])
+        ->assertSeeInOrder(['Sensor', 'bme280-north'])
+        // The sky names it again beside the place, the description under it, both ahead of the temperature.
+        ->assertSeeHtmlInOrder(['data-sensor-name', 'Plzeň-Slovany', 'data-sky-sensor-name', 'data-sensor-description', 'Under the eaves on the north wall, in a radiation shield.', 'aria-label="Temperature"'])
         ->assertDontSee('none registered yet');
 });
 
@@ -1633,6 +1636,68 @@ it('draws the last day under each readout', function (): void {
     expect(Livewire::test(Dashboard::class)->html())
         ->toContain('data-spark="h"')
         ->toContain('data-spark="p"');
+});
+
+it('shows humidity, pressure and noise right under the temperature, ahead of the next hour', function (bool $microphone): void {
+    $data = $microphone
+        ? new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5230, lamax: 6000, la10: 5500, la90: 4500, bands: array_fill(0, 26, 3000)),
+        )
+        : new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389);
+    $sensor = Sensor::factory()->create();
+    ($microphone ? Measurement::factory()->v3() : Measurement::factory())->for($sensor)
+        ->create(['timestamp' => now()->subMinutes(5)->getTimestamp(), 'data' => (string) $data]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(5)->getTimestamp(), 'data' => [forecastHorizon(1, 21.0, 50.0, 0.02)]]);
+
+    $dashboard = Livewire::test(Dashboard::class);
+    /** @var Dashboard $component */
+    $component = $dashboard->instance();
+    $pressure = number_format($component->metrics['p']['now'], 1, ',', ' ');
+    $html = $dashboard->html();
+    $readouts = Str::before(Str::after($html, 'data-sky-readouts'), '</dl>');
+
+    expect($readouts)
+        ->toContain('48,00')
+        ->toContain($pressure)
+        ->toContain('hPa')
+        ->and(str_contains($readouts, 'dB(A)'))->toBe($microphone);
+
+    // Live readings first, the next hour's forecast only after them.
+    $dashboard->assertSeeHtmlInOrder(['data-sky-readouts', 'Next hour:']);
+})->with([
+    'with a microphone' => [true],
+    'without one' => [false],
+]);
+
+it('leaves the noise out of the sky once the newest reading has none', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->v3()->for($sensor)->create([
+        'timestamp' => now()->subHours(3)->getTimestamp(),
+        'data' => (string) new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5230, lamax: 6000, la10: 5500, la90: 4500, bands: array_fill(0, 26, 3000)),
+        ),
+    ]);
+    // The microphone dropped out: the newest window carries no noise.
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(5)->getTimestamp()]);
+
+    $dashboard = Livewire::test(Dashboard::class);
+    /** @var Dashboard $component */
+    $component = $dashboard->instance();
+    $html = $dashboard->html();
+
+    // The tile below still has the day's noise; the sky only what is current.
+    expect($component->metrics)->toHaveKey('n')
+        ->and(Str::before(Str::after($html, 'data-sky-readouts'), '</dl>'))->not->toContain('dB(A)');
 });
 
 it('says in the sky when the microphone hears rain, and nothing otherwise', function (?string $spectrum, bool $raining): void {

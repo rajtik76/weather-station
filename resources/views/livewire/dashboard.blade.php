@@ -119,7 +119,9 @@
                 @endif
 
                 <div class="relative">
-                    <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90">
+                    {{-- Where, which sensor and when, each on a line of its own, so the stamp never breaks mid-phrase
+                         and the description sits under the name it describes. --}}
+                    <p class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[15px] font-bold">
                         <span
                             @class([
                                 'size-[7px] shrink-0 rounded-full',
@@ -130,23 +132,85 @@
                         ></span>
                         {{-- Colour alone carries the state; name it for screen readers. --}}
                         <span class="sr-only">{{ $this->isSilent ? 'Station silent' : 'Station live' }}</span>
-                        Plzeň-Slovany ·
+                        Plzeň-Slovany
+                        @if ($this->selectedSensor)
+                            <span class="font-semibold text-white/60" aria-hidden="true">·</span>
+                            <span class="font-mono text-[13.5px] font-semibold text-white/90" data-sky-sensor-name>{{ $this->selectedSensor->name }}</span>
+                        @endif
+                    </p>
+                    @if ($this->selectedSensor?->description)
+                        <p class="mt-1 max-w-md pl-[15px] text-[13px] leading-snug text-white/80" data-sensor-description>
+                            {{ $this->selectedSensor->description }}
+                        </p>
+                    @endif
+                    <p class="mt-1 pl-[15px] text-[13px] text-white/80 tabular-nums">
                         @if ($this->lastMeasurement)
-                            <span>Last measurement <span class="font-mono text-[13px] tabular-nums">{{ $this->measuredAt }}</span></span>
-                            <span class="text-white/75">({{ $this->measuredAgo }})</span>
+                            Last measurement {{ $this->measuredAt }} · {{ $this->measuredAgo }}
                         @else
-                            <span>No measurement yet</span>
+                            No measurement yet
                         @endif
                     </p>
 
                     @if ($temperature !== null)
-                        <p class="mt-5 mb-7 text-[clamp(4.5rem,11vw,9.5rem)] leading-[0.85] sm:mb-9 font-extrabold tracking-[-0.06em] tabular-nums" aria-label="Temperature">
+                        <p class="mt-6 text-[clamp(4.5rem,11vw,9.5rem)] leading-[0.85] font-extrabold tracking-[-0.06em] tabular-nums" aria-label="Temperature">
                             {{ number_format($temperature['now'], 2, ',', ' ') }}<span class="relative top-[0.35em] ml-1.5 align-top text-[0.32em] font-bold tracking-[-0.01em] text-white/90">°C</span>
                         </p>
 
-                        {{-- Rain only when the microphone hears it; dry is the default and goes unsaid. --}}
+                        {{-- The temperature's own day, tied to the number above it: clear of the comma's
+                             descender, and quieter than the live readings below. --}}
+                        {{-- Three fixed columns, lined up with the live readings under them, so nothing wraps on its own. --}}
+                        <dl class="mt-6 grid max-w-lg grid-cols-3 sm:mt-7" data-sky-temperature-day>
+                            @foreach ([
+                                [
+                                    'label' => 'Last hour',
+                                    'icon' => $temperature['delta'] >= 0.05 ? 'arrow-trending-up' : ($temperature['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus'),
+                                    'value' => ($temperature['delta'] >= 0 ? '+' : '−') . number_format(abs($temperature['delta']), 2, ',', ' '),
+                                    'unit' => '°C',
+                                ],
+                                ['label' => '24 h low', 'icon' => 'arrow-down', 'value' => number_format($temperature['dayMin'], 2, ',', ' '), 'unit' => '°C'],
+                                ['label' => '24 h high', 'icon' => 'arrow-up', 'value' => number_format($temperature['dayMax'], 2, ',', ' '), 'unit' => '°C'],
+                            ] as $item)
+                                <div class="min-w-0 px-3 first:pl-0 sm:px-4">
+                                    <dt class="text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap text-white/70 uppercase">{{ $item['label'] }}</dt>
+                                    <dd class="mt-0.5 flex items-center gap-1 text-[15px] font-bold whitespace-nowrap tabular-nums">
+                                        <flux:icon :icon="$item['icon']" variant="micro" class="size-3.5 shrink-0 text-white/75" aria-hidden="true" />
+                                        {{ $item['value'] }}<span class="text-xs font-semibold text-white/75">{{ $item['unit'] }}</span>
+                                    </dd>
+                                </div>
+                            @endforeach
+                        </dl>
+
+                        {{-- The rest of the reading now, straight under the temperature; the tiles below carry their day.
+                             Noise only while the newest reading has it: a dead microphone leaves the day's last level behind. --}}
+                        @php($liveReadouts = array_filter([
+                            ['key' => 'h', 'label' => 'Humidity', 'icon' => 'droplet', 'unit' => '%', 'dec' => 2],
+                            ['key' => 'p', 'label' => 'Pressure', 'icon' => 'gauge', 'unit' => 'hPa', 'dec' => 1],
+                            ['key' => 'n', 'label' => 'Noise', 'icon' => 'audio-waveform', 'unit' => 'dB(A)', 'dec' => 1],
+                        ], fn (array $readout): bool => isset($this->metrics[$readout['key']]) && ($readout['key'] !== 'n' || $this->isNoiseCurrent)))
+                        <dl
+                            @class([
+                                'mt-5 grid max-w-lg divide-x divide-white/20 border-y border-white/20 py-3',
+                                'grid-cols-3' => count($liveReadouts) === 3,
+                                'grid-cols-2' => count($liveReadouts) === 2,
+                            ])
+                            data-sky-readouts
+                        >
+                            @foreach ($liveReadouts as $readout)
+                                <div class="min-w-0 px-3 first:pl-0 sm:px-4">
+                                    <dt class="flex items-center gap-1 text-[11.5px] font-semibold tracking-[0.06em] text-white/75 uppercase">
+                                        <flux:icon :icon="$readout['icon']" variant="micro" class="size-3.5" aria-hidden="true" />
+                                        {{ $readout['label'] }}
+                                    </dt>
+                                    <dd class="mt-1 text-xl leading-tight font-extrabold tracking-[-0.02em] whitespace-nowrap tabular-nums sm:text-[22px]">
+                                        {{ number_format($this->metrics[$readout['key']]['now'], $readout['dec'], ',', ' ') }}<span class="ml-1 text-xs font-semibold tracking-normal text-white/80">{{ $readout['unit'] }}</span>
+                                    </dd>
+                                </div>
+                            @endforeach
+                        </dl>
+
+                        {{-- After the live readings: rain only when the microphone hears it (dry goes unsaid), then the next hour. --}}
                         @if ($this->rainHeard || $forecast !== null)
-                            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                            <div class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
                                 @if ($this->rainHeard)
                                     <p class="inline-flex items-center gap-2 rounded-full bg-sky-950/35 px-3 py-1.5 text-[15px] font-extrabold ring-1 ring-white/30" data-rain-now>
                                         <flux:icon.cloud-rain variant="mini" class="size-5" aria-hidden="true" />
@@ -163,24 +227,8 @@
                                 @endif
                             </div>
                         @endif
-
-                        <p class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/85">
-                            <span class="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 font-mono text-xs font-medium ring-1 ring-white/20">
-                                <flux:icon
-                                    :icon="$temperature['delta'] >= 0.05 ? 'arrow-trending-up' : ($temperature['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
-                                    variant="micro"
-                                />
-                                {{ ($temperature['delta'] >= 0 ? '+' : '−') . number_format(abs($temperature['delta']), 2, ',', ' ') }}/h
-                            </span>
-                            <span class="font-mono text-[13px] tabular-nums">24 h · min {{ number_format($temperature['dayMin'], 2, ',', ' ') }} · max {{ number_format($temperature['dayMax'], 2, ',', ' ') }}</span>
-                        </p>
                     @endif
 
-                    @if ($this->selectedSensor?->description)
-                        <p class="mt-5 max-w-md text-[13.5px] leading-snug text-white/80" data-sensor-description>
-                            {{ $this->selectedSensor->description }}
-                        </p>
-                    @endif
                 </div>
 
                 {{-- Only while it starts from the current record; Dashboard::forecast(). --}}
