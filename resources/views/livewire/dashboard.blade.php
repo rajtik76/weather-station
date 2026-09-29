@@ -326,15 +326,22 @@
                                 </dl>
                             </div>
 
-                            {{-- Every horizon beside the headline, so six hours is not the only number picked. --}}
+                            {{-- Every horizon beside the headline, so six hours is not the only number picked.
+                                 Each hour ahead has its own hue, near to far; a loss still reads rose in its figure. --}}
+                            @php($horizonTones = [
+                                1 => ['bg-emerald-500/15', 'text-emerald-700 dark:text-emerald-300'],
+                                2 => ['bg-teal-500/15', 'text-teal-700 dark:text-teal-300'],
+                                3 => ['bg-cyan-500/15', 'text-cyan-700 dark:text-cyan-300'],
+                                4 => ['bg-sky-500/15', 'text-sky-700 dark:text-sky-300'],
+                                5 => ['bg-indigo-500/15', 'text-indigo-700 dark:text-indigo-300'],
+                                6 => ['bg-violet-500/15', 'text-violet-700 dark:text-violet-300'],
+                            ])
                             <ol class="grid grid-cols-3 gap-1.5 sm:col-span-2 sm:grid-cols-6" aria-label="Smaller miss than the naive guess by hours ahead">
                                 @foreach ($verdict['horizons'] as $horizon)
                                     @php($skill = $horizon['skill'])
-                                    <li
-                                        class="rounded-xl px-1.5 py-2 text-center"
-                                        style="background: color-mix(in srgb, var(--color-{{ $skill !== null && $skill < 0 ? 'rose' : 'emerald' }}-500) {{ $skill === null ? 4 : round(4 + min(100, abs($skill)) * 0.3) }}%, transparent)"
-                                    >
-                                        <span class="block font-mono text-[11.5px] text-slate-500 dark:text-slate-400">+{{ $horizon['hours'] }} h</span>
+                                    @php([$horizonBackground, $horizonInk] = $horizonTones[$horizon['hours']] ?? ['bg-slate-900/[0.04] dark:bg-white/[0.04]', 'text-slate-500 dark:text-slate-400'])
+                                    <li class="{{ $horizonBackground }} rounded-xl px-1.5 py-2 text-center">
+                                        <span class="{{ $horizonInk }} block font-mono text-[11.5px]">+{{ $horizon['hours'] }} h</span>
                                         <span @class([
                                             'block text-sm font-extrabold tabular-nums',
                                             'text-rose-600 dark:text-rose-400' => $skill !== null && $skill < 0,
