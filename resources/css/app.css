@@ -115,6 +115,7 @@
 .leaflet-container {
     background: var(--color-slate-100);
     font-family: var(--font-mono);
+    cursor: default;
 }
 
 .dark .leaflet-container {
@@ -130,26 +131,16 @@
     filter: grayscale(1) invert(1) hue-rotate(180deg) brightness(0.88) contrast(0.85);
 }
 
-.leaflet-bar a,
 .leaflet-control-attribution {
     border-color: --alpha(var(--color-zinc-900) / 10%);
     background: var(--color-white);
     color: var(--color-zinc-600);
 }
 
-.dark .leaflet-bar a,
 .dark .leaflet-control-attribution {
     border-color: --alpha(var(--color-white) / 10%);
     background: var(--color-zinc-900);
     color: var(--color-zinc-400);
-}
-
-.leaflet-bar a:hover {
-    background: var(--color-zinc-100);
-}
-
-.dark .leaflet-bar a:hover {
-    background: var(--color-zinc-800);
 }
 
 .leaflet-control-attribution {

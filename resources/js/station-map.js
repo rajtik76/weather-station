@@ -1,17 +1,17 @@
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const OSM_ATTRIBUTION =
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 const INK = {
-    light: '#18181b',
-    dark: '#e4e4e7',
+    light: "#18181b",
+    dark: "#e4e4e7",
 };
 
-const isDark = () => document.documentElement.classList.contains('dark');
+const isDark = () => document.documentElement.classList.contains("dark");
 
 /**
  * Render the area the station reports from, as a circle and nothing else.
@@ -32,10 +32,14 @@ function createStationMap(el) {
     const map = L.map(el, {
         center: [lat, lng],
         zoom: 13,
-        // Let the page scroll past the map; zoom stays on the controls.
+        // A static picture: the circle is the whole message, nothing to explore.
+        dragging: false,
+        touchZoom: false,
+        doubleClickZoom: false,
         scrollWheelZoom: false,
-        zoomControl: true,
-        keyboard: true,
+        boxZoom: false,
+        keyboard: false,
+        zoomControl: false,
     });
 
     L.tileLayer(OSM_TILES, {
@@ -43,7 +47,7 @@ function createStationMap(el) {
         attribution: OSM_ATTRIBUTION,
     }).addTo(map);
 
-    const ink = () => INK[isDark() ? 'dark' : 'light'];
+    const ink = () => INK[isDark() ? "dark" : "light"];
 
     const area = L.circle([lat, lng], {
         radius,
@@ -52,7 +56,8 @@ function createStationMap(el) {
         opacity: 1,
         fillColor: ink(),
         fillOpacity: 0.14,
-        dashArray: '5 4',
+        dashArray: "5 4",
+        interactive: false,
     }).addTo(map);
 
     map.fitBounds(area.getBounds(), { padding: [24, 24] });
@@ -64,7 +69,7 @@ function createStationMap(el) {
     const themeWatcher = new MutationObserver(repaint);
     themeWatcher.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ['class'],
+        attributeFilter: ["class"],
     });
 
     return () => {
@@ -76,7 +81,7 @@ function createStationMap(el) {
 const teardowns = new WeakMap();
 
 function mountStationMaps() {
-    document.querySelectorAll('[data-station-map]').forEach((el) => {
+    document.querySelectorAll("[data-station-map]").forEach((el) => {
         if (teardowns.has(el)) {
             return;
         }
@@ -89,5 +94,5 @@ function mountStationMaps() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', mountStationMaps);
-document.addEventListener('livewire:navigated', mountStationMaps);
+document.addEventListener("DOMContentLoaded", mountStationMaps);
+document.addEventListener("livewire:navigated", mountStationMaps);
