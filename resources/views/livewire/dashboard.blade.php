@@ -245,9 +245,20 @@
 
                         @php($curve = $this->forecastCurve)
                         @if ($curve !== null)
-                            {{-- Now, then each hour's median over its range. One column per point, as in the list below. --}}
-                            <div class="relative mt-4 h-28 sm:h-36" data-forecast-curve aria-hidden="true">
+                            {{-- Now, then each hour's median over its range. One column per point, as in the list below;
+                                 both sit right of the same gutter, which holds the y-axis labels. --}}
+                            <div class="relative mt-4 ml-10 h-28 sm:h-36" data-forecast-curve aria-hidden="true">
+                                @foreach ($curve['ticks'] as $tick)
+                                    <span
+                                        class="absolute right-full mr-2 -translate-y-1/2 font-mono text-[11px] whitespace-nowrap text-white/75 tabular-nums"
+                                        style="top: {{ $tick['y'] }}%"
+                                        data-forecast-tick
+                                    >{{ number_format($tick['value'], 1, ',', ' ') }}°</span>
+                                @endforeach
                                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="absolute inset-0 size-full overflow-visible">
+                                    @foreach ($curve['ticks'] as $tick)
+                                        <line x1="0" x2="100" y1="{{ $tick['y'] }}" y2="{{ $tick['y'] }}" class="stroke-white/25" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" />
+                                    @endforeach
                                     <path d="{{ $curve['band'] }}" class="fill-white/20" />
                                     <path d="{{ $curve['line'] }}" class="fill-none stroke-white" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
                                 </svg>
@@ -265,7 +276,7 @@
                         @endif
 
                         {{-- As many columns as the curve has points, so each label sits under its own. --}}
-                        <ol class="mt-2 grid text-center" style="grid-template-columns: repeat({{ count($forecast['horizons']) + 1 }}, minmax(0, 1fr))">
+                        <ol @class(['mt-2 grid text-center', 'ml-10' => $curve !== null]) style="grid-template-columns: repeat({{ count($forecast['horizons']) + 1 }}, minmax(0, 1fr))">
                             <li class="flex flex-col items-center gap-1 px-0.5">
                                 <span class="text-xs font-bold">now</span>
                                 <span class="font-mono text-[11px] text-white/75 tabular-nums">{{ $this->lastMeasurement?->clock() }}</span>

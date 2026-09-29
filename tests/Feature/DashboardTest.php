@@ -1630,6 +1630,24 @@ it('draws the forecast curve through now and every hour ahead', function (): voi
         ->and($dashboard->html())->toContain('data-forecast-curve');
 });
 
+it('labels the forecast curve with a temperature axis', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 1200, humidity: 5000, pressure: 97000),
+    ]);
+    // 12.0 now, the ranges shown as 11.1 to 15.2: 0.82 in from either end, then a tenth down so the middle lands on one.
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => now()->getTimestamp(),
+        'data' => [forecastHorizon(1, 12.5, 80.0, 0.0), forecastHorizon(2, 13.5, 80.0, 0.0)],
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+    preg_match_all('/data-forecast-tick\s*>([^<]*)</', $html, $ticks);
+
+    expect($ticks[1])->toBe(['14,2°', '13,1°', '12,0°']);
+});
+
 it('draws the last day under each readout', function (): void {
     Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 

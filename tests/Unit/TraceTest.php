@@ -35,3 +35,22 @@ it('bands between an upper and a lower line', function (): void {
     // Out along the top, back along the bottom.
     expect($high->band($low))->toBe('M25,50L75,8L75,92L25,50Z');
 });
+
+it('labels the axis a fifth of the range inside the data, on the scale the trace is laid on', function (): void {
+    $axis = Trace::axis(10.64, 14.21);
+
+    // 0.714 in from either end, in to the tenths: 11.4 and 13.4.
+    expect($axis)->toMatchArray(['low' => 10.64, 'high' => 14.21])
+        ->and(array_column($axis['ticks'], 'value'))->toBe([13.4, 12.4, 11.4])
+        ->and($axis['ticks'][2]['y'])->toBe(Trace::centred([11.4], 10.64, 14.21)->points[0]['y']);
+});
+
+it('narrows the axis by a tenth when its middle would fall between two', function (): void {
+    // 12.9 to 17.9 labels 13.9 to 16.9; 12.9 to 17.8 reaches 16.8, whose middle would be 15.35.
+    expect(array_column(Trace::axis(12.9, 17.9)['ticks'], 'value'))->toBe([16.9, 15.4, 13.9])
+        ->and(array_column(Trace::axis(12.9, 17.8)['ticks'], 'value'))->toBe([16.7, 15.3, 13.9]);
+});
+
+it('labels a flat range once, in the middle', function (): void {
+    expect(Trace::axis(12.0, 12.0)['ticks'])->toBe([['value' => 12.0, 'y' => 50.0]]);
+});

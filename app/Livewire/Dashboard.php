@@ -645,8 +645,9 @@ class Dashboard extends Component
     /**
      * The sky's curve: the reading now, then each forecast hour's median over
      * its range, one column each so the hour labels line up under the points.
+     * The ticks label the y-axis on the same scale: the band's bottom, middle and top.
      *
-     * @return array{line: string, band: string, points: non-empty-list<array{x: float, y: float}>}|null
+     * @return array{line: string, band: string, points: non-empty-list<array{x: float, y: float}>, ticks: non-empty-list<array{value: float, y: float}>}|null
      */
     #[Computed]
     public function forecastCurve(): ?array
@@ -661,14 +662,14 @@ class Dashboard extends Component
         $middles = [$now, ...array_column($horizons, 't')];
         $lows = [$now, ...array_column($horizons, 'tLow')];
         $highs = [$now, ...array_column($horizons, 'tHigh')];
-        $low = min($lows);
-        $high = max($highs);
+        ['low' => $low, 'high' => $high, 'ticks' => $ticks] = Trace::axis(min($lows), max($highs));
         $line = Trace::centred($middles, $low, $high);
 
         return [
             'line' => $line->line(),
             'band' => Trace::centred($highs, $low, $high)->band(Trace::centred($lows, $low, $high)),
             'points' => $line->points,
+            'ticks' => $ticks,
         ];
     }
 
