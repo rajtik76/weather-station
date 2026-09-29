@@ -501,11 +501,16 @@ function spreadOf(row, channel) {
     return channel.band.map((column) => row[COLUMN[column]] ?? null);
 }
 
-function labelsEvents(strip) {
-    return strip === STRIPS[0] && events.length > 0;
+/** The temperature strip alone carries the event icons; every strip draws the lines. */
+function marksEvents(strip) {
+    return strip === STRIPS[0] && eventsInWindow().length > 0;
 }
 
-const EVENT_LABEL_ROOM = 30;
+/** The lane above the temperature strip's grid the event icons sit in. */
+const EVENT_LANE = 26;
+
+/** Lucide's info, pinned to its 24x24 grid like RAIN_ICON. */
+const EVENT_ICON = "M0 0M24 24M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20M12 16v-4M12 8h.01";
 
 /** Titles are hand-typed and land in innerHTML. */
 function escapeHtml(text) {
@@ -598,23 +603,99 @@ function eventTooltipHtml(strip, event) {
 }
 
 /**
- * Event lines on every strip, title on the top one only. Label at `end`:
- * every `inside*` position lays the text along the line, sideways.
+ * The events every strip gets from the frame, so no strip draws its own: the
+ * lines on each, unlabelled - written-out titles ran into each other side by
+ * side - and the icons on the temperature strip. The title is in the shared
+ * tooltip (eventTooltipHtml).
  */
-function eventMarks(strip) {
-    return {
-        animation: false,
-        symbol: "none",
-        emphasis: { disabled: true },
-        tooltip: { show: false },
-        label: {
-            show: labelsEvents(strip),
-            position: "end",
-            distance: 4,
-            fontSize: 12,
-            formatter: (mark) => mark.name,
+function eventLayer(strip, colours) {
+    return [
+        // No data of its own: it only carries the lines, and would stretch or crosshair nothing.
+        {
+            type: "line",
+            data: [],
+            markLine: {
+                animation: false,
+                symbol: "none",
+                emphasis: { disabled: true },
+                tooltip: { show: false },
+                label: { show: false },
+                data: eventLines(),
+            },
         },
-        data: eventLines(),
+        ...(marksEvents(strip) ? [eventIconSeries(strip, colours)] : []),
+    ];
+}
+
+/** Events on the strips' rows; an icon off them would stretch the time axis. */
+function eventsInWindow() {
+    const first = rows[0]?.[COLUMN.time];
+    const last = rows[rows.length - 1]?.[COLUMN.time];
+
+    return first === undefined
+        ? []
+        : events.filter((event) => event[EVENT.time] >= first && event[EVENT.time] <= last);
+}
+
+/**
+ * An icon over each event line in the lane above the grid, the title in its
+ * tooltip. Outside the grid the axis tooltip does not fire, so the icons carry
+ * an item tooltip of their own - the same frame and the same content a hovered
+ * line gets.
+ */
+function eventIconSeries(strip, colours) {
+    const icons = eventsInWindow().map((event) => ({
+        value: [event[EVENT.time]],
+        name: event[EVENT.title],
+        colour: eventColour(event[EVENT.colour]),
+    }));
+
+    return {
+        type: "custom",
+        clip: false,
+        cursor: "default",
+        emphasis: { disabled: true },
+        data: icons,
+        encode: { x: 0 },
+        tooltip: {
+            trigger: "item",
+            formatter: (params) =>
+                eventTooltipHtml(strip, {
+                    name: params.name,
+                    time: params.value[0],
+                    colour: params.data.colour,
+                }),
+        },
+        renderItem: (params, api) => {
+            const grid = params.coordSys;
+            const x = api.coord([api.value(0), 0])[0];
+
+            if (x < grid.x || x > grid.x + grid.width) {
+                return null;
+            }
+
+            return {
+                type: "path",
+                x: x - ICON_HALF,
+                y: grid.y - ICON_HALF * 2 - 4,
+                shape: {
+                    pathData: EVENT_ICON,
+                    x: 0,
+                    y: 0,
+                    width: 2 * ICON_HALF,
+                    height: 2 * ICON_HALF,
+                },
+                style: {
+                    // Filled with the ground, so the whole disc takes the pointer.
+                    fill: colours.surface,
+                    stroke: icons[params.dataIndex].colour,
+                    lineWidth: 1.6,
+                    lineCap: "round",
+                    lineJoin: "round",
+                },
+                emphasisDisabled: true,
+            };
+        },
     };
 }
 
@@ -647,7 +728,6 @@ function weatherOption(strip, colours) {
         .map(channelFor);
 
     return {
-        grid: { top: labelsEvents(strip) ? EVENT_LABEL_ROOM : 12 },
         yAxis: axes.map((entry, index) => ({
             type: "value",
             scale: true,
@@ -667,7 +747,7 @@ function weatherOption(strip, colours) {
                     axes.findIndex((axis) => axis.key === entry.axis),
                 ),
             ),
-            ...channels.map((entry, index) => ({
+            ...channels.map((entry) => ({
                 type: "line",
                 name: entry.label,
                 yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
@@ -680,7 +760,6 @@ function weatherOption(strip, colours) {
                 },
                 itemStyle: { color: colourFor(entry.key) },
                 data: rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
-                markLine: index === 0 ? eventMarks(strip) : undefined,
             })),
         ],
     };
@@ -705,10 +784,24 @@ function chartOption(strip) {
         // Stamps already carry the local offset; UTC keeps the axis on station time for every viewer.
         useUTC: true,
         ...own,
-        grid: { ...GRID_SIDES, top: 12, bottom: 28, ...own.grid },
+        grid: frameGrid(strip, own.grid),
+        // Last, so the lines sit over the waterfall's cells.
+        series: [...own.series, ...eventLayer(strip, colours)],
         tooltip: tooltipFor(strip, colours),
         axisPointer: { snap: true },
         xAxis: { ...timeAxis(colours), ...own.xAxis },
+    };
+}
+
+/** The shared sides under the strip's own grid, and the icon lane on top when the strip carries it. */
+function frameGrid(strip, own = {}) {
+    const top = own.top ?? 12;
+
+    return {
+        ...GRID_SIDES,
+        bottom: 28,
+        ...own,
+        top: marksEvents(strip) ? top + EVENT_LANE : top,
     };
 }
 
