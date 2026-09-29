@@ -11,7 +11,7 @@ from pathlib import Path
 import schemdraw
 import schemdraw.elements as elm
 
-from schematic import PIN, chip, decoupling, ground, i2c_bus, key, mic_power, pin, side_label, supply
+from schematic import PIN, chip, ground, i2c_bus, key, mic_power, pin, side_label, supply
 
 OUT = Path(__file__).with_suffix('.svg')
 
@@ -70,9 +70,13 @@ def draw(d: schemdraw.Drawing) -> None:
     d += elm.Line().to(pin(mic, 'SD'))
     mic_power(d, mic)
 
-    # At the cable end: filters what comes down the 4 m; every module has its own 100n at the chip
+    # At the cable end: the 10 µF capacitor filters the 4 m supply cable.
     xc, yc = x_mic, ends['3V3'][0][1] + 0.4
-    decoupling(d, xc, yc)
+    d += elm.Vdd().theta(0).at((xc, yc)).label('3V3')
+    capacitor = elm.Capacitor(polar=True).at((xc, yc)).down(1.8)
+    d += capacitor
+    d += elm.Ground().theta(0)
+    side_label(d, capacitor, 'C2\n10µ')
 
 
 def main() -> None:

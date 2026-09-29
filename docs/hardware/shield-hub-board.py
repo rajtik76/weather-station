@@ -8,7 +8,7 @@ Run with .venv/bin/python docs/hardware/shield-hub-board.py [--svg]; writes docs
 
 from pathlib import Path
 
-from layout import Board, Cable, Capacitor, Resistor, Tie
+from layout import Board, Cable, Capacitor, Jumper, Resistor, Tie
 from breakouts import INMP441, SHT45, VEML7700
 
 board = Board(
@@ -28,14 +28,15 @@ board = Board(
         'SCK': '#2ca02c',
         'WS': '#ff7f0e',
     },
-    footer='Bottom runs: tinned wire along the holes. Both FTP grounds tied through column 4. '
+    footer='Bottom runs: tinned wire along the holes; top links: insulated wire. '
+           'Both FTP grounds tied through column 4. '
            'I2C pull-ups on the indoor base, module pull-ups stay. '
            'Mask the SHT45 tongue, the VEML window and the mic port before Plastik 70.',
 )
 
-# Every module plugs into Dupont sockets: 8.5 mm female header + 2.5 mm spacer of the male pins.
-# Check with the real parts; parts under a module must stand at least 1 mm lower.
-STANDOFF = 11.0
+# Male header long tails are soldered through the perfboard; short tails are
+# soldered to the modules. Check the actual plastic spacer height before assembly.
+STANDOFF = 4.0
 
 # FTP wire colours; the other end lands on Dupont pins on the ESP32 board
 ftp = Cable('FTP', [
@@ -57,11 +58,13 @@ board.add(
                    note_at=(19, 5), note_va='bottom', standoff=STANDOFF),
     INMP441.place('U5', (10, 9), 'left', nets={'SD': 'SD_MIC'}, note_at=(-7.5, 3.81), note_va='top',
                   standoff=STANDOFF),
-    Resistor('R5', '47 Ω', (12, 5), (12, 9), 'SD', 'SD_MIC'),
-    # At the cable end, next to the FTP 3V3 and GND pads: they filter what comes down the 4 m;
-    # each module carries its own 100n at the chip. C1 sits under the rim of the mic, C2 is too tall for that.
-    Capacitor('C1', '100n', (6, 10), (6, 9), '3V3', 'GND'),
-    Capacitor('C2', '10µ', (2, 10), (2, 9), '3V3', 'GND', electrolytic=True),
+    # Lies diagonally, partly under the mic; a standard 1/4 W body fits the 9.2 mm span.
+    Resistor('R5', '47 Ω', (11, 5), (8, 7), 'SD', 'SD_MIC'),
+    # 3V3 to the mic VDD: over the GND run, between the mic header rows.
+    Jumper('W1', (8, 10), (8, 8), '3V3'),
+    # At the cable end, next to the FTP 3V3 and GND pads; the modules have
+    # their own local decoupling capacitors.
+    Capacitor('C2', '10µ', (3, 10), (3, 9), '3V3', 'GND', electrolytic=True),
 )
 
 board.run('SDA', (5, 2), (20, 2))
@@ -69,14 +72,17 @@ board.run('SCL', (5, 3), (20, 3))
 board.run('GND', (5, 4), (20, 4))
 board.run('GND', (5, 4), (4, 4), (4, 9), (5, 9))
 board.run('GND', (5, 9), (10, 9))
-board.run('GND', (4, 9), (2, 9))
-board.run('3V3', (2, 10), (19, 10), (19, 5), (20, 5))
+board.run('GND', (4, 9), (3, 9))
+board.run('3V3', (3, 10), (19, 10), (19, 5), (20, 5))
 board.run('3V3', (19, 6), (18, 6))
-board.run('3V3', (10, 8), (11, 8), (11, 10))
-board.run('SD', (5, 5), (12, 5))
-board.run('SD_MIC', (10, 7), (12, 7), (12, 9))
-board.run('SCK', (5, 7), (7, 7))
-board.run('WS', (5, 8), (7, 8))
+board.run('SD', (5, 5), (11, 5))
+board.run('SD_MIC', (7, 7), (8, 7))
+board.run('3V3', (7, 8), (8, 8))
+board.run('SCK', (5, 7), (5, 6), (10, 6), (10, 7))
+# Top wire ends sit in free holes; bridges on the bottom reach the FTP pad and the mic pin.
+board.run('WS', (5, 8), (6, 8))
+board.top_wire('WS', (6, 8), (6, 5.89), (11.31, 5.89), (11.31, 8), (11, 8))
+board.run('WS', (10, 8), (11, 8))
 
 if __name__ == '__main__':
     board.main()

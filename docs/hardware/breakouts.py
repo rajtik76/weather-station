@@ -135,25 +135,25 @@ def _veml7700() -> Spec:
 def _inmp441() -> Spec:
     # Rows 7.62 mm apart and a 14 mm round board, as in github.com/barafael/inmp441-breakout-kicad; the photos agree.
     # That footprint has the pin order mirrored against the shop photos; the photos win until checked on the module.
-    # Back silkscreen reads SCK WS L/R over SD VDD GND; seen from the front the rows run mirrored.
+    # Back silkscreen reads SCK WS L/R over SD VDD GND. Mount the port side up;
+    # flipping the breakout over its long axis swaps the two header rows.
     black = {'fc': '#1b1b1b', 'ec': '#555555', 'lw': 1.2, 'alpha': 0.95}
     return Spec(
         name='INMP441 module',
         source='shop photos (round black board, 2 x 3 pins)',
-        pins=[('GND', 0, 0, 'GND'), ('VDD', 2.54, 0, '3V3'), ('SD', 5.08, 0, 'SD'),
-              ('L/R', 0, 7.62, 'GND'), ('WS', 2.54, 7.62, 'WS'), ('SCK', 5.08, 7.62, 'SCK')],
+        pins=[('GND', 0, 7.62, 'GND'), ('VDD', 2.54, 7.62, '3V3'), ('SD', 5.08, 7.62, 'SD'),
+              ('L/R', 0, 0, 'GND'), ('WS', 2.54, 0, 'WS'), ('SCK', 5.08, 0, 'SCK')],
         shapes=[
             {'circle': (2.54, 3.81, 7.0), **black},
-            {'rect': (2.5, 6.4, 2.9, 4.7), 'fc': '#c8c8c8', 'ec': '#888888', 'lw': 0.6},
-            {'circle': (2.54, 3.81, 0.5), 'fc': 'none', 'ec': '#ffcc00', 'lw': 1, 'ls': ':'},
+            {'circle': (2.54, 3.81, 0.5), 'fc': '#111111', 'ec': '#ffcc00', 'lw': 1},
         ],
-        note='INMP441, sound port faces the board:\nkeep it on sockets, no tall parts under the port',
+        note='INMP441, sound port faces out:\nheader rows are mirrored; verify pin labels before soldering',
         note_at=(2.54, -5.5),
-        label_dir={'GND': (0, -1.3), 'VDD': (0, -1.3), 'SD': (0, -1.3),
-                   'L/R': (0, 1.3), 'WS': (0, 1.3), 'SCK': (0, 1.3)},
+        label_dir={'GND': (0, 1.3), 'VDD': (0, 1.3), 'SD': (0, 1.3),
+                   'L/R': (0, -1.3), 'WS': (0, -1.3), 'SCK': (0, -1.3)},
         facts=[
             'VDD 1.8-3.3 V, 1.4 mA; L/R low = left slot (strap to GND)',
-            'mic can on the front, bottom port through the board to the back, centre of the module',
+            'mic can faces the perfboard; the acoustic port faces out at the module centre',
             'round board 14 mm across (the shop lists 14 x 22 mm), check with a caliper',
         ],
     )

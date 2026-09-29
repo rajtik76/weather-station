@@ -239,6 +239,14 @@ class Resistor(TwoLead):
         if y1 == y2:
             box(ax, (min(x1, x2) + 2.2, y1 - 1), (max(x1, x2) - 2.2, y1 + 1), **style)
             self.label(ax, (x1 + x2) / 2, y1 - 2.6, ha='center')
+        elif x1 != x2:
+            # Diagonal: a 6.3 x 2 mm body centred between the leads
+            length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+            ux, uy = (x2 - x1) / length, (y2 - y1) / length
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            corners = [(cx + a * 3.15 * ux - b * uy, cy + a * 3.15 * uy + b * ux) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            ax.add_patch(Polygon(corners, closed=True, **style))
+            self.label(ax, cx + 2.2, cy + 1.6, ha='left', va='center')
         else:
             box(ax, (x1 - 1, min(y1, y2) + 2.2), (x1 + 1, max(y1, y2) - 2.2), **style)
             self.label(ax, x1 + 1.6, (y1 + y2) / 2, ha='left', va='center')
@@ -412,6 +420,7 @@ class Board:
         self.my = (height - (rows - 1) * P) / 2
         self.parts: list[Part] = []
         self.runs: list[tuple[str, list[Hole]]] = []
+        self.top_wires: list[tuple[str, list[tuple[float, float]]]] = []
 
     def add(self, *parts: Part) -> None:
         self.parts.extend(parts)
@@ -419,6 +428,10 @@ class Board:
     def run(self, net: str, *holes: Hole) -> None:
         """Bottom-side run (tinned wire or solder bridge) through the given corner holes."""
         self.runs.append((net, list(holes)))
+
+    def top_wire(self, net: str, *positions: tuple[float, float]) -> None:
+        """Insulated top-side wire; only its endpoint holes are soldered."""
+        self.top_wires.append((net, list(positions)))
 
     def colour(self, net: str | None) -> str:
         return self.nets.get(net, '#888888') if net else '#888888'
@@ -497,6 +510,8 @@ class Board:
         for part in self.parts:
             for a, b in part.links:
                 union(a, b)
+        for _, positions in self.top_wires:
+            union(positions[0], positions[-1])
 
         groups: dict[Hole, dict[str | None, set[str]]] = {}
         for label, pin in pins:
@@ -622,6 +637,9 @@ class Board:
         out.append('')
         for part in self.parts:
             out.append(f'{part.ref:8} {part.describe()}')
+        for net, positions in self.top_wires:
+            a, b = positions[0], positions[-1]
+            out.append(f'TOP WIRE {net:8} {hole_name(a)} to {hole_name(b)}')
         return '\n'.join(out)
 
     def ascii_bodies(self, width: int, header: list[str]) -> list[str]:
@@ -673,6 +691,10 @@ class Board:
                         zorder=5)
             else:
                 ax.plot(xs, ys, color=self.colour(net), lw=1.4, ls=(0, (2, 1.5)), zorder=4, alpha=0.8)
+        for net, pts in self.top_wires:
+            xs, ys = zip(*[self.xy(c, r, mirror) for c, r in pts])
+            ax.plot(xs, ys, color=self.colour(net), lw=2.2 if not mirror else 0.9,
+                    zorder=8 if not mirror else 4, alpha=1 if not mirror else 0.35)
         solder = {p for _, pts in self.runs for p in pts} | {p.hole for part in self.parts for p in part.pins}
         for hole in solder:
             ax.add_patch(Circle(self.xy(*hole, mirror), 0.9, fc='#b8b8b8', ec='#777777', lw=0.5, zorder=6))
