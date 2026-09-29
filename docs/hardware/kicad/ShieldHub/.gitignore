@@ -1,0 +1,6 @@
+*.kicad_prl
+~*.lck
+__pycache__/
+.history/
+output/
+ShieldHub_assembly.step
