@@ -18,19 +18,11 @@ export default defineConfig({
             input: ["resources/css/app.css", "resources/js/app.js"],
             refresh: true,
             fonts: [
-                bunny("Instrument Sans", {
-                    weights: [400, 500, 600],
+                bunny("Manrope", {
+                    weights: [400, 500, 600, 700, 800],
                 }),
                 bunny("IBM Plex Mono", {
                     weights: [400, 500, 600],
-                }),
-                bunny("Bricolage Grotesque", {
-                    weights: [700, 800],
-                }),
-                // Upright too: without it the browser sets upright text in the italic face.
-                bunny("Instrument Serif", {
-                    weights: [400],
-                    styles: ["normal", "italic"],
                 }),
             ],
         }),

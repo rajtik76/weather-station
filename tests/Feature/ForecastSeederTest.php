@@ -16,7 +16,7 @@ it('seeds a forecast every seeded station shows on the dashboard', function (str
 
     Livewire::withQueryParams(['sensor' => $sensor])
         ->test(Dashboard::class)
-        ->assertSee('Forecast · next 6 hours');
+        ->assertSee('Next six hours');
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
@@ -49,5 +49,5 @@ it('seeds six hours in the shape the forecast service answers with', function ()
 it('seeds forecasts old enough for the accuracy panel to score', function (): void {
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
-    Livewire::test(Dashboard::class)->assertSee('Scoring · last 30 days');
+    Livewire::test(Dashboard::class)->assertSee('How the forecast scores');
 });

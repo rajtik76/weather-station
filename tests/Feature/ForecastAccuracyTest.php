@@ -398,14 +398,14 @@ it('folds the accuracy into the forecast, closed until asked', function (): void
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     // Nothing has come true yet.
-    Livewire::test(Dashboard::class)->assertSee('Forecast · next 6 hours')->assertDontSee('Scoring · last 30 days');
+    Livewire::test(Dashboard::class)->assertSee('Next six hours')->assertDontSee('How the forecast scores');
 
     measuredAt($sensor, $issued + 3600, 1300);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
     $dashboard = Livewire::test(Dashboard::class);
     $dashboard->assertSeeInOrder([
-        'id="forecast"', 'Scoring · last 30 days', 'With correction', 'Base model', 'data-accuracy-chart="days"',
+        'id="forecast"', 'How the forecast scores', 'With correction', 'Base model', 'data-accuracy-chart="days"',
         '+1 h', 'With correction', '+80 %', '0,2 · 1,0 °C', '100 %', '1,5 °C', '<td class="py-1.5">1</td>',
         'Rain chance · rained / dry', 'not listened', 'By hour of the day', 'data-accuracy-chart="hours"',
     ], false);
@@ -492,7 +492,7 @@ it('says which side of the rain score it has no case for', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 11.0, 12.0, 13.0, 0.47)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
-    Livewire::test(Dashboard::class)->assertSeeInOrder(['Scoring · last 30 days', '+1 h', '47 %', '/', 'no dry spell']);
+    Livewire::test(Dashboard::class)->assertSeeInOrder(['How the forecast scores', '+1 h', '47 %', '/', 'no dry spell']);
 });
 
 it('shows no accuracy without a current forecast to fold it into', function (): void {
@@ -504,8 +504,8 @@ it('shows no accuracy without a current forecast to fold it into', function (): 
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     // The verdict is history: it stays while the forecast is stale.
-    Livewire::test(Dashboard::class)->assertDontSee('Forecast · next 6 hours')->assertDontSee('Scoring · last 30 days')
-        ->assertSee('Verdict · last 30 days · 1 forecast scored');
+    Livewire::test(Dashboard::class)->assertDontSee('Next six hours')->assertDontSee('How the forecast scores')
+        ->assertSee('Last 30 days, 1 forecast scored');
 });
 
 it('holds the verdict back until a day of forecasts has come true', function (): void {
@@ -539,7 +539,7 @@ it('answers six hours ahead, with every horizon beside it', function (float $off
     Livewire::test(Dashboard::class)
         ->assertDontSee('Too early to say')
         ->assertSeeInOrder([
-            'Verdict · last 30 days · 144 forecasts scored',
+            'Last 30 days, 144 forecasts scored',
             $skill, "{$direction} miss than assuming it stays as warm as now, 6 h ahead",
             number_format($offBy, 1, ',', ' '), 'naive guess 3,6 °C',
             $inRange, 'target 80 %',

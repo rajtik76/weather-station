@@ -77,6 +77,17 @@ function noisyWindow(int $laeq, int $la10, int $la90, int $lamax, int $band, int
 }
 
 /**
+ * A spectrum RainDetector hears as rain, in hundredths of dB: loud at 8 kHz,
+ * with the shield ringing at 1 kHz above both its neighbours.
+ *
+ * @return list<int>
+ */
+function rainyBands(): array
+{
+    return array_replace(array_fill(0, 26, 3000), [15 => 4000, 16 => 4500, 17 => 4000, 25 => 5000]);
+}
+
+/**
  * Only the buckets a reading landed in, keyed by their epoch.
  *
  * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
@@ -921,7 +932,7 @@ it('folds the tail down to the newest transmission', function (): void {
         ->toMatch('/aria-expanded="false"[^>]*aria-controls="transmissions"/')
         ->toContain('Last measurement · when it arrived')
         ->toContain('<span class="hidden" x-bind:class="{ hidden: ! all }">Last 3 measurements')
-        ->and(preg_match_all('/dark:border-white\/10 hidden"\s+x-bind:class="\{ hidden: ! all \}"/', $html))->toBe(2);
+        ->and(preg_match_all('/dark:bg-black\/25 hidden"\s+x-bind:class="\{ hidden: ! all \}"/', $html))->toBe(2);
 });
 
 it('disables the tail fold with a single transmission', function (): void {
@@ -1324,7 +1335,7 @@ it('shows what the station last reported about itself', function (): void {
 
     $this->get('/')
         ->assertOk()
-        ->assertSee('Station · as reported with the last upload')
+        ->assertSee('as reported with the last upload')
         // 12:00 UTC is 14:00 in Prague in September.
         ->assertSee('17.9.2026 14:00')
         ->assertSeeInOrder(['firmware', '2.3.0'])
@@ -1362,7 +1373,7 @@ it('shows no clock drift before the station has re-synced once', function (): vo
 
         $this->get('/')
             ->assertOk()
-            ->assertSee('Station · as reported')
+            ->assertSee('as reported with the last upload')
             ->assertDontSee('clock drift')
             ->assertDontSee('clock synced');
     }
@@ -1377,7 +1388,7 @@ it('shows no board before firmware 2.3 reported one', function (): void {
 
     $this->get('/')
         ->assertOk()
-        ->assertSee('Station · as reported')
+        ->assertSee('as reported with the last upload')
         // The word is all over the page ("dashboard"); the label is what must be missing.
         ->assertDontSee('>board</dt>', false);
 });
@@ -1387,7 +1398,7 @@ it('shows no station block before the firmware has reported', function (): void 
 
     $this->get('/')
         ->assertOk()
-        ->assertDontSee('Station · as reported');
+        ->assertDontSee('as reported with the last upload');
 });
 
 it('shows the selected sensor\'s report, not another station\'s', function (): void {
@@ -1433,7 +1444,7 @@ it('shows the forecast issued from the newest reading', function (): void {
 
     $this->get('/')
         ->assertOk()
-        ->assertSee('Forecast · next 6 hours')
+        ->assertSee('Next six hours')
         // 08:00 UTC is 10:00 in Prague in September.
         ->assertSeeInOrder(['made 24.9.2026 10:00', 'fitted to this station'])
         ->assertSeeInOrder(['+1 h', '11:00', 'Dry.', '13,8', '12,4 to 15,6', 'rain', '2 %'])
@@ -1460,7 +1471,7 @@ it('hides a forecast that no longer starts from the current record', function ()
 
     $this->get('/')
         ->assertOk()
-        ->assertDontSee('Forecast · next 6 hours');
+        ->assertDontSee('Next six hours');
 });
 
 it('shows the selected sensor\'s forecast, not another station\'s', function (): void {
@@ -1472,7 +1483,7 @@ it('shows the selected sensor\'s forecast, not another station\'s', function ():
 
     $this->get('/?sensor=north')
         ->assertOk()
-        ->assertDontSee('Forecast · next 6 hours');
+        ->assertDontSee('Next six hours');
 });
 
 it('pictures each forecast hour by its rain chance and the real sunrise', function (string $issuedUtc, float $rain, string $icon, string $tone): void {
@@ -1602,12 +1613,143 @@ it('dates the forecast by when it arrived, not by the window it starts from', fu
         ->assertDontSee('made 24.9.2026 10:00');
 });
 
-it('folds the forecast like the strips', function (): void {
+it('draws the forecast curve through now and every hour ahead', function (): void {
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp()]);
 
+    $dashboard = Livewire::test(Dashboard::class);
+    $hours = count($dashboard->instance()->forecast['horizons'] ?? []);
+
+    // The reading now first, then one point per hour, each over its column in the list below.
+    expect($hours)->toBeGreaterThan(0)
+        ->and($dashboard->instance()->forecastCurve['points'] ?? [])->toHaveCount($hours + 1)
+        ->and($dashboard->html())->toContain('data-forecast-curve');
+});
+
+it('draws the last day under each readout', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
     expect(Livewire::test(Dashboard::class)->html())
-        ->toMatch('/aria-expanded="true"[^>]*aria-controls="forecast"[^>]*aria-label="Collapse Forecast"/')
-        ->toContain('<div id="forecast" x-bind:class="{ hidden: collapsed }">');
+        ->toContain('data-spark="h"')
+        ->toContain('data-spark="p"');
+});
+
+it('says in the sky when the microphone hears rain, and nothing otherwise', function (?string $spectrum, bool $raining): void {
+    $bands = match ($spectrum) {
+        'rain' => rainyBands(),
+        'dry' => array_fill(0, 26, 3000),
+        default => null,
+    };
+    $data = $bands === null
+        ? new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389)
+        : new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
+        );
+    ($bands === null ? Measurement::factory() : Measurement::factory()->v3())
+        ->create(['timestamp' => now()->subMinutes(5)->getTimestamp(), 'data' => (string) $data]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    expect(str_contains($html, 'data-rain-now'))->toBe($raining)
+        ->and(str_contains($html, 'Raining now'))->toBe($raining);
+})->with([
+    // Drips loud at 8 kHz with the shield ringing at 1 kHz, as RainDetector hears rain.
+    'rain' => ['rain', true],
+    // Dry is the sky's default and goes unsaid.
+    'dry' => ['dry', false],
+    'no microphone' => [null, false],
+]);
+
+it('pictures the sky by the rain heard now, then the next hour\'s rain chance', function (string $measuredUtc, ?float $rain, ?string $scene): void {
+    $this->travelTo(Date::parse($measuredUtc, 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+
+    if ($rain !== null) {
+        Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, $rain)]]);
+    }
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    expect($scene === null ? ! str_contains($html, 'data-sky-scene') : str_contains($html, "data-sky-scene=\"{$scene}\""))->toBeTrue()
+        // The pictures' credit stays whatever the sky shows.
+        ->and($html)->toContain('Sky image generated with OpenAI');
+})->with([
+    // 08:00 UTC is 10:00 in Prague in September, 20:00 UTC after sunset.
+    'dry day' => ['2026-09-24 08:00:00', 0.02, 'clear-day'],
+    'dry night' => ['2026-09-24 20:00:00', 0.02, 'clear-night'],
+    'slight chance' => ['2026-09-24 08:00:00', 0.15, 'partly-day'],
+    'possible' => ['2026-09-24 20:00:00', 0.3, 'drizzle-night'],
+    'likely' => ['2026-09-24 08:00:00', 0.6, 'rain-day'],
+    // Without a forecast there is nothing to picture: no claim of a clear sky.
+    'no forecast' => ['2026-09-24 08:00:00', null, null],
+]);
+
+it('pictures rain the microphone hears over a dry forecast', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $bands = rainyBands();
+    Measurement::factory()->v3()->for($sensor)->create([
+        'timestamp' => now()->getTimestamp(),
+        'data' => (string) new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
+        ),
+    ]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
+
+    expect(Livewire::test(Dashboard::class)->html())->toContain('data-sky-scene="rain-day"');
+});
+
+it('keeps quiet about rain and the sky once the station has gone silent', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $bands = rainyBands();
+    // Rain heard two hours ago, then nothing: the shower is not the sky now.
+    Measurement::factory()->v3()->for($sensor)->create([
+        'timestamp' => now()->subHours(2)->getTimestamp(),
+        'data' => (string) new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
+        ),
+    ]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subHours(2)->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.6)]]);
+
+    expect(Livewire::test(Dashboard::class)->html())
+        ->toContain('Station silent')
+        ->not->toContain('data-rain-now')
+        ->not->toContain('data-sky-scene')
+        // The pictures' credit does not depend on the station being on the air.
+        ->toContain('Sky image generated with OpenAI');
+});
+
+it('lays the hours out in as many columns as the curve has points', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
+
+    // Now and one hour: two columns, under the curve's two points.
+    expect(Livewire::test(Dashboard::class)->html())->toContain('repeat(2, minmax(0, 1fr))');
+});
+
+it('shows no forecast for a row without hours', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => []]);
+
+    $this->get('/')->assertOk()->assertDontSee('Next six hours');
 });

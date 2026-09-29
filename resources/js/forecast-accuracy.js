@@ -85,21 +85,21 @@ function isDark() {
 function palette() {
     return isDark()
         ? {
-              axis: "#52525b",
-              label: "#a1a1aa",
-              grid: "#ffffff14",
-              surface: "#27272a",
-              border: "#3f3f46",
-              text: "#e4e4e7",
+              axis: "#475569",
+              label: "#94a3b8",
+              grid: "#ffffff12",
+              surface: "rgba(20, 30, 52, 0.82)",
+              border: "#ffffff14",
+              text: "#e2e8f0",
               temperature: "#f59e0b",
           }
         : {
-              axis: "#d4d4d8",
-              label: "#a1a1aa",
-              grid: "#0000000d",
-              surface: "#ffffff",
-              border: "#e4e4e7",
-              text: "#27272a",
+              axis: "#cbd5e1",
+              label: "#94a3b8",
+              grid: "#0f1c2e0f",
+              surface: "rgba(255, 255, 255, 0.86)",
+              border: "#ffffff",
+              text: "#1e293b",
               temperature: "#d97706",
           };
 }
@@ -244,6 +244,9 @@ function tooltip(colours, canvas, formatter) {
         axisPointer: { type: "line", lineStyle: { color: colours.axis } },
         backgroundColor: colours.surface,
         borderColor: colours.border,
+        // Frosted like the tiles the charts sit on.
+        extraCssText:
+            "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);",
         textStyle: { color: colours.text, fontFamily: "IBM Plex Mono", fontSize: 11 },
         // Both series share the day: one tooltip for the row, whichever line the pointer is on.
         formatter: ([point]) => formatter(point.dataIndex),

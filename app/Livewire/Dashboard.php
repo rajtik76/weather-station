@@ -14,9 +14,11 @@ use App\Queries\MeasurementBuckets;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
 use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
+use App\ValueObject\Trace;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -39,7 +41,7 @@ use UnexpectedValueException;
  * @property-read bool $hasReadings
  * @property-read int $recordCount
  * @property-read list<DayRow> $lastDay
- * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float}> $metrics
+ * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}> $metrics
  * @property-read list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
@@ -56,6 +58,9 @@ use UnexpectedValueException;
  * @property-read Sensor|null $selectedSensor
  * @property-read bool $hasSensorChoice
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
+ * @property-read array{line: string, band: string, points: non-empty-list<array{x: float, y: float}>}|null $forecastCurve
+ * @property-read bool|null $rainHeard
+ * @property-read string|null $skyScene
  * @property-read list<Score> $forecastAccuracy
  * @property-read Score|null $accuracyScore
  * @property-read array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}|null $verdict
@@ -333,6 +338,64 @@ class Dashboard extends Component
     }
 
     /**
+     * Whether the microphone hears rain in the newest window, by the rule the
+     * waterfall marks with. Null when that window carries no spectrum: a dead
+     * microphone or an older firmware must not read as a dry sky. Null while
+     * the station is silent too: a shower it heard before going quiet would
+     * otherwise read as rain now for the rest of the day.
+     */
+    #[Computed]
+    public function rainHeard(): ?bool
+    {
+        if ($this->isSilent) {
+            return null;
+        }
+
+        $data = $this->measurements()->orderByDesc('timestamp')->first()?->data;
+
+        if (! $data instanceof MeasurementDataV3 || ! $data->noise instanceof NoiseWindow) {
+            return null;
+        }
+
+        return RainDetector::hears(array_map(fn (int $level): float => $level / 100, $data->noise->bands));
+    }
+
+    /**
+     * The photograph behind the sky, `{condition}-{day|night}` as named in
+     * public/images/weather-backgrounds. Rain the microphone hears wins;
+     * otherwise the next hour's rain chance on the thresholds the forecast
+     * icons use, day or night by the real sunrise. The models forecast rain,
+     * not cloud, so a clear picture only means a dry hour ahead and the
+     * overcast pictures wait for a cloud reading. Null with neither: the
+     * plain sky gradient stays rather than claim a weather it knows nothing
+     * about, and so it does while the station is silent.
+     */
+    #[Computed]
+    public function skyScene(): ?string
+    {
+        // A silent station says nothing about the sky now, and its last forecast even less.
+        if ($this->isSilent) {
+            return null;
+        }
+
+        $time = $this->isDaylight(now()->getTimestamp()) ? 'day' : 'night';
+
+        if ($this->rainHeard === true) {
+            return "rain-{$time}";
+        }
+
+        $rain = $this->forecast['horizons'][0]['rain'] ?? null;
+
+        return match (true) {
+            $rain === null => null,
+            $rain >= 60 => "rain-{$time}",
+            $rain >= 30 => "drizzle-{$time}",
+            $rain >= 10 => "partly-{$time}",
+            default => "clear-{$time}",
+        };
+    }
+
+    /**
      * The whole record for the navigator, thinned to one reading per six
      * hours once it is large enough to need it. The newest reading always
      * stays: the slider's axis ends on the last row, and without it the
@@ -474,7 +537,7 @@ class Dashboard extends Component
      * Noise (`n`) only when the day holds some: older rows and a dead
      * microphone carry none.
      *
-     * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float}>
+     * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}>
      */
     #[Computed]
     public function metrics(): array
@@ -542,7 +605,8 @@ class Dashboard extends Component
             ->latest('issued_at')
             ->first();
 
-        if ($forecast === null || $forecast->issued_at < $this->lastMeasurement->timestamp - self::FORECAST_FRESH_SECONDS) {
+        // A row without hours has nothing to show, and the sky reads its first hour.
+        if ($forecast === null || $forecast->data === [] || $forecast->issued_at < $this->lastMeasurement->timestamp - self::FORECAST_FRESH_SECONDS) {
             return null;
         }
 
@@ -561,6 +625,36 @@ class Dashboard extends Component
             ...LocalTime::of($forecast->created_at?->getTimestamp() ?? $forecast->issued_at)->forHumans(),
             'corrected' => $forecast->corrected,
             'horizons' => $horizons,
+        ];
+    }
+
+    /**
+     * The sky's curve: the reading now, then each forecast hour's median over
+     * its range, one column each so the hour labels line up under the points.
+     *
+     * @return array{line: string, band: string, points: non-empty-list<array{x: float, y: float}>}|null
+     */
+    #[Computed]
+    public function forecastCurve(): ?array
+    {
+        $now = $this->metrics['t']['now'] ?? null;
+
+        if ($this->forecast === null || $now === null) {
+            return null;
+        }
+
+        $horizons = $this->forecast['horizons'];
+        $middles = [$now, ...array_column($horizons, 't')];
+        $lows = [$now, ...array_column($horizons, 'tLow')];
+        $highs = [$now, ...array_column($horizons, 'tHigh')];
+        $low = min($lows);
+        $high = max($highs);
+        $line = Trace::centred($middles, $low, $high);
+
+        return [
+            'line' => $line->line(),
+            'band' => Trace::centred($highs, $low, $high)->band(Trace::centred($lows, $low, $high)),
+            'points' => $line->points,
         ];
     }
 
@@ -690,9 +784,7 @@ class Dashboard extends Component
      */
     private function sky(int $timestamp, int $rain): array
     {
-        $sun = date_sun_info($timestamp, self::LATITUDE, self::LONGITUDE);
-        $isDay = $timestamp >= (int) $sun['sunrise'] && $timestamp < (int) $sun['sunset'];
-
+        $isDay = $this->isDaylight($timestamp);
         $tone = $isDay ? 'day' : 'night';
 
         return match (true) {
@@ -701,6 +793,14 @@ class Dashboard extends Component
             $rain >= 10 => ['icon' => $isDay ? 'cloud-sun' : 'cloud-moon', 'label' => 'slight chance of rain', 'tone' => $tone],
             default => ['icon' => $isDay ? 'sun' : 'moon', 'label' => 'dry', 'tone' => $tone],
         };
+    }
+
+    /** Between the real sunrise and sunset over the station. */
+    private function isDaylight(int $timestamp): bool
+    {
+        $sun = date_sun_info($timestamp, self::LATITUDE, self::LONGITUDE);
+
+        return $timestamp >= (int) $sun['sunrise'] && $timestamp < (int) $sun['sunset'];
     }
 
     /**
@@ -1026,7 +1126,7 @@ class Dashboard extends Component
      * coldest sample sits below the coldest ten-minute mean.
      *
      * @param  't'|'h'|'p'  $field
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float}
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}
      */
     private function figures(string $field): array
     {
@@ -1045,7 +1145,7 @@ class Dashboard extends Component
      * The day's LAeq, its extremes included: a window has no quietest
      * sample, and LAmax is a single door slam, not the loudest ten minutes.
      *
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float}|null
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}|null
      */
     private function noiseFigures(): ?array
     {
@@ -1064,7 +1164,7 @@ class Dashboard extends Component
      * @param  non-empty-list<float>  $day
      * @param  non-empty-list<float>  $lows
      * @param  non-empty-list<float>  $highs
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float}
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}
      */
     private function summary(array $day, array $lows, array $highs): array
     {
@@ -1076,6 +1176,8 @@ class Dashboard extends Component
             'delta' => $now - (float) $day[max(0, count($day) - 7)],
             'dayMin' => min($lows),
             'dayMax' => max($highs),
+            // The day's means, oldest first, for the readout's sparkline.
+            'trace' => $day,
         ];
     }
 }

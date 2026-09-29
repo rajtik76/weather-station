@@ -3,79 +3,399 @@
      back identical and the charts are not redrawn under the reader. --}}
 <div
     wire:poll.60s
-    class="min-h-screen bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
+    class="sky-page min-h-screen font-sans font-medium text-slate-900 dark:text-slate-100"
 >
+    @php($tones = [
+        't' => 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+        'h' => 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
+        'p' => 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+        'n' => 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+        'spectrum' => 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+        'good' => 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+        'rain' => 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+    ])
 
-    {{-- ── Top bar ────────────────────────────────────────────────── --}}
-    <div class="flex items-center justify-between gap-4 border-b border-zinc-900/10 px-4 py-3 font-mono text-[11px] font-medium tracking-[0.25em] text-zinc-500 uppercase sm:px-8 dark:border-white/10 dark:text-zinc-400">
-        <span class="hidden sm:inline">{{ config('app.name') }}</span>
-        <span class="flex items-center gap-2 normal-case tracking-normal">
-            <span
-                @class([
-                    'size-1.5 shrink-0 rounded-full',
-                    'bg-emerald-500 animate-breathe motion-reduce:animate-none' => ! $this->isSilent,
-                    'bg-amber-500' => $this->isSilent,
-                ])
-                aria-hidden="true"
-            ></span>
-            {{-- Colour alone carries the state; name it for screen readers. --}}
-            <span class="sr-only">{{ $this->isSilent ? 'Station silent' : 'Station live' }}</span>
-            @if ($this->lastMeasurement)
-                <span class="tracking-[0.25em] uppercase">Last measurement</span>
-                <span class="text-zinc-800 tabular-nums dark:text-zinc-200">{{ $this->measuredAt }}</span>
-                <span class="hidden sm:inline">({{ $this->measuredAgo }})</span>
-            @else
-                <span class="tracking-[0.25em] uppercase">No measurement yet</span>
-            @endif
-        </span>
-        <flux:button
-            x-data
-            x-on:click="$flux.dark = ! $flux.dark"
-            variant="subtle"
-            size="sm"
-            icon="moon"
-            aria-label="Toggle dark mode"
-        />
-    </div>
+    <div class="mx-auto max-w-[1320px] px-3 pt-4 pb-16 sm:px-6">
 
-    {{-- ── Hero: title + giant readouts ───────────────────────────── --}}
-    <header class="border-zinc-900/10 px-4 pt-12 pb-10 sm:px-8 dark:border-white/10">
-        {{-- One breakpoint for layout and alignment: with `flex-wrap` the
-             row broke at ~1115px while `lg:` right-aligned at 1024px, and
-             between the two the readouts hung off the right of their block. --}}
-        <div class="flex flex-col gap-x-16 gap-y-10 min-[1120px]:flex-row min-[1120px]:items-start min-[1120px]:justify-between">
+        {{-- ── Top bar ────────────────────────────────────────────── --}}
+        {{-- Everything below is one sensor's record. The picker appears with a
+             second sensor and sits beside the name, so it shifts nothing else. --}}
+        <nav aria-label="Station" class="flex flex-wrap items-center gap-3 px-1">
+            <span class="text-[17px] font-extrabold tracking-[-0.02em]">{{ config('app.name') }}</span>
+            <span class="flex-1"></span>
+
+            <section aria-label="Sensor" class="pill">
+                <span class="text-slate-500 dark:text-slate-400">Sensor</span>
+                @if ($this->hasSensorChoice)
+                    {{-- The pill is the control's shape: the native select inside it loses its own
+                         box and keeps only its text and chevron. --}}
+                    <flux:select
+                        wire:model.live="sensor"
+                        size="sm"
+                        class="h-7! w-auto! rounded-full! border-0! bg-transparent! py-0! ps-0! pe-6! text-[13.5px]! font-bold! text-slate-900! shadow-none! bg-position-[right_center]! bg-size-[1.25em]! focus-visible:outline-2 focus-visible:outline-offset-4 dark:bg-transparent! dark:text-slate-100!"
+                        aria-label="Choose a sensor"
+                    >
+                        @foreach ($this->sensors as $option)
+                            <flux:select.option :value="$option->slug">{{ $option->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                @elseif ($this->selectedSensor)
+                    <span class="font-bold" data-sensor-name>{{ $this->selectedSensor->name }}</span>
+                @else
+                    <span class="text-slate-500 dark:text-slate-400">none registered yet</span>
+                @endif
+            </section>
+
+            <button
+                type="button"
+                x-data
+                x-on:click="$flux.dark = ! $flux.dark"
+                class="pill size-[34px] justify-center p-0!"
+                aria-label="Toggle dark mode"
+            >
+                <flux:icon.moon variant="mini" class="size-4 dark:hidden" />
+                <flux:icon.sun variant="mini" class="hidden size-4 dark:block" />
+            </button>
+        </nav>
+
+        {{-- ── Story ──────────────────────────────────────────────── --}}
+        {{-- The question first: the sky below answers it for right now, the verdict for the last month. --}}
+        <header class="grid items-end gap-x-14 gap-y-5 px-1 pt-7 pb-6 sm:pt-10 sm:pb-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+            <h1 class="max-w-[18ch] text-[clamp(2rem,4.2vw,3.5rem)] leading-[1.04] font-extrabold tracking-[-0.04em] text-balance">
+                Can a balcony station forecast its own next six hours better than assuming nothing changes?
+            </h1>
             <div>
-                <flux:heading level="1" class="font-display text-[clamp(3.5rem,12.5vw,11.5rem)]! leading-[0.78] font-extrabold! tracking-[-0.03em] uppercase">
-                    Station<br>Log
-                </flux:heading>
-                {{-- Instrument Serif runs small beside the sans; one step larger. --}}
-                {{-- The question first: the hardware is only how it gets asked. --}}
-                <flux:text class="font-serif mt-6 max-w-2xl text-lg leading-snug italic sm:text-2xl">
-                    Can a balcony station forecast its own next six hours better than assuming nothing changes?
+                <p class="max-w-[58ch] text-[16.5px] leading-normal font-semibold sm:text-lg">
                     A model trained on station records from the Czech Hydrometeorological Institute (ČHMÚ) tries, from these readings alone, and every forecast is scored against what the sensor measured next.
-                </flux:text>
-                <flux:text class="font-serif mt-4 max-w-2xl text-base leading-snug text-zinc-500! sm:text-lg dark:text-zinc-400!">
+                </p>
+                <p class="mt-3 max-w-[58ch] text-[15.5px] leading-relaxed text-slate-500 dark:text-slate-400">
                     An SHT41 outside and a BMP280 indoors are read every thirty seconds by an ESP32, which reports each ten minutes as a mean with its extremes.
-                    A microphone beside the SHT41 adds the noise: A-weighted levels and a third-octave spectrum per window.
+                    An INMP441 microphone beside the SHT41 adds the noise: A-weighted levels and a third-octave spectrum per window.
                     Pressure is measured at 345 m and shown reduced to mean sea level.
-                </flux:text>
+                </p>
+                @if ($this->verdict !== null && $this->verdict['ready'])
+                    @php($beats = $this->verdict['skill'] >= 0)
+                    <a
+                        href="#verdict"
+                        @class([
+                            'mt-5 inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-[13.5px] font-extrabold focus-visible:outline-2 focus-visible:outline-offset-2',
+                            'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400' => $beats,
+                            'bg-rose-500/15 text-rose-700 hover:bg-rose-500/25 dark:text-rose-400' => ! $beats,
+                        ])
+                    >
+                        <flux:icon.circle-check variant="mini" class="size-4" />
+                        So far: a {{ number_format(abs($this->verdict['skill']), 0) }} % {{ $beats ? 'smaller' : 'larger' }} miss than the naive guess
+                        <flux:icon.chevron-down variant="micro" />
+                    </a>
+                @endif
             </div>
+        </header>
 
+        <div class="grid grid-cols-12 gap-3 sm:gap-3.5">
+
+            {{-- ── Sky: now and the next six hours ────────────────── --}}
+            @php($forecast = $this->forecast)
+            @php($temperature = $this->metrics['t'] ?? null)
+            <section
+                aria-label="Now and the next six hours"
+                @class([
+                    'sky relative isolate col-span-12 grid gap-x-10 gap-y-6 overflow-hidden rounded-[22px] px-5 pt-6 pb-5 text-white shadow-[0_24px_50px_-30px_rgb(20_50_100/0.6)] [text-shadow:0_1px_8px_rgb(0_0_0/0.25)] sm:rounded-[28px] sm:px-8 sm:pt-7',
+                    'lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]' => $forecast !== null,
+                ])
+            >
+                @if ($this->skyScene !== null)
+                    {{-- The sky as it is, generated for this page (public/images/weather-backgrounds/README.md).
+                         Over the plain gradient, which shows while it loads. On a phone the crop keeps the
+                         sun's side; dimmed under the reading and the forecast alike. --}}
+                    <img
+                        src="{{ asset('images/weather-backgrounds/'.$this->skyScene.'.webp') }}"
+                        srcset="{{ asset('images/weather-backgrounds/'.$this->skyScene.'-768.webp') }} 768w, {{ asset('images/weather-backgrounds/'.$this->skyScene.'.webp') }} 1536w"
+                        sizes="(min-width: 1320px) 1320px, 100vw"
+                        alt=""
+                        class="pointer-events-none absolute inset-0 -z-20 size-full object-cover object-[72%_50%] lg:object-center"
+                        data-sky-scene="{{ $this->skyScene }}"
+                    >
+                    <div class="pointer-events-none absolute inset-0 -z-10 bg-linear-to-b from-slate-950/50 via-slate-950/40 to-slate-950/50 lg:bg-linear-to-r lg:from-slate-950/55 lg:via-slate-950/40 lg:to-slate-950/50" aria-hidden="true"></div>
+                @endif
+
+                <div class="relative">
+                    <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90">
+                        <span
+                            @class([
+                                'size-[7px] shrink-0 rounded-full',
+                                'bg-emerald-300 shadow-[0_0_0_4px_rgb(110_231_183/0.25)] animate-breathe motion-reduce:animate-none' => ! $this->isSilent,
+                                'bg-amber-300 shadow-[0_0_0_4px_rgb(252_211_77/0.25)]' => $this->isSilent,
+                            ])
+                            aria-hidden="true"
+                        ></span>
+                        {{-- Colour alone carries the state; name it for screen readers. --}}
+                        <span class="sr-only">{{ $this->isSilent ? 'Station silent' : 'Station live' }}</span>
+                        Plzeň-Slovany ·
+                        @if ($this->lastMeasurement)
+                            <span>Last measurement <span class="font-mono text-[13px] tabular-nums">{{ $this->measuredAt }}</span></span>
+                            <span class="text-white/75">({{ $this->measuredAgo }})</span>
+                        @else
+                            <span>No measurement yet</span>
+                        @endif
+                    </p>
+
+                    @if ($temperature !== null)
+                        <p class="mt-5 mb-7 text-[clamp(4.5rem,11vw,9.5rem)] leading-[0.85] sm:mb-9 font-extrabold tracking-[-0.06em] tabular-nums" aria-label="Temperature">
+                            {{ number_format($temperature['now'], 2, ',', ' ') }}<span class="relative top-[0.35em] ml-1.5 align-top text-[0.32em] font-bold tracking-[-0.01em] text-white/90">°C</span>
+                        </p>
+
+                        {{-- Rain only when the microphone hears it; dry is the default and goes unsaid. --}}
+                        @if ($this->rainHeard || $forecast !== null)
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                @if ($this->rainHeard)
+                                    <p class="inline-flex items-center gap-2 rounded-full bg-sky-950/35 px-3 py-1.5 text-[15px] font-extrabold ring-1 ring-white/30" data-rain-now>
+                                        <flux:icon.cloud-rain variant="mini" class="size-5" aria-hidden="true" />
+                                        Raining now
+                                        <span class="text-xs font-semibold text-white/75">heard by the INMP441 microphone</span>
+                                    </p>
+                                @endif
+                                @if ($forecast !== null)
+                                    @php($next = $forecast['horizons'][0])
+                                    <p class="flex items-center gap-2 text-[15px] font-bold">
+                                        <flux:icon :icon="$next['sky']['icon']" variant="mini" class="size-5" aria-hidden="true" />
+                                        Next hour: {{ $next['sky']['label'] }}, {{ $next['trend'] }}
+                                    </p>
+                                @endif
+                            </div>
+                        @endif
+
+                        <p class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/85">
+                            <span class="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 font-mono text-xs font-medium ring-1 ring-white/20">
+                                <flux:icon
+                                    :icon="$temperature['delta'] >= 0.05 ? 'arrow-trending-up' : ($temperature['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
+                                    variant="micro"
+                                />
+                                {{ ($temperature['delta'] >= 0 ? '+' : '−') . number_format(abs($temperature['delta']), 2, ',', ' ') }}/h
+                            </span>
+                            <span class="font-mono text-[13px] tabular-nums">24 h · min {{ number_format($temperature['dayMin'], 2, ',', ' ') }} · max {{ number_format($temperature['dayMax'], 2, ',', ' ') }}</span>
+                        </p>
+                    @endif
+
+                    @if ($this->selectedSensor?->description)
+                        <p class="mt-5 max-w-md text-[13.5px] leading-snug text-white/80" data-sensor-description>
+                            {{ $this->selectedSensor->description }}
+                        </p>
+                    @endif
+                </div>
+
+                {{-- Only while it starts from the current record; Dashboard::forecast(). --}}
+                @if ($forecast !== null)
+                    {{-- A hairline between the reading now and the hours ahead: beside it on a wide screen, above it once stacked. --}}
+                    <div id="forecast" class="relative flex min-w-0 flex-col border-t border-white/30 pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-10 dark:border-white/15" aria-label="Forecast">
+                        <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                            <h2 class="text-[15px] font-bold">Next six hours</h2>
+                            <p class="text-[13px] text-white/80">
+                                made {{ $forecast['at'] }} · {{ $forecast['ago'] }} ·
+                                {{ $forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}
+                            </p>
+                        </div>
+
+                        @php($curve = $this->forecastCurve)
+                        @if ($curve !== null)
+                            {{-- Now, then each hour's median over its range. One column per point, as in the list below. --}}
+                            <div class="relative mt-4 h-28 sm:h-36" data-forecast-curve aria-hidden="true">
+                                <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="absolute inset-0 size-full overflow-visible">
+                                    <path d="{{ $curve['band'] }}" class="fill-white/20" />
+                                    <path d="{{ $curve['line'] }}" class="fill-none stroke-white" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                                </svg>
+                                @foreach ($curve['points'] as $point)
+                                    <span
+                                        @class([
+                                            'absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white',
+                                            'bg-white' => $loop->first,
+                                            'bg-sky-500 dark:bg-indigo-900' => ! $loop->first,
+                                        ])
+                                        style="left: {{ $point['x'] }}%; top: {{ $point['y'] }}%"
+                                    ></span>
+                                @endforeach
+                            </div>
+                        @endif
+
+                        {{-- As many columns as the curve has points, so each label sits under its own. --}}
+                        <ol class="mt-2 grid text-center" style="grid-template-columns: repeat({{ count($forecast['horizons']) + 1 }}, minmax(0, 1fr))">
+                            <li class="flex flex-col items-center gap-1 px-0.5">
+                                <span class="text-xs font-bold">now</span>
+                                <span class="font-mono text-[11px] text-white/75 tabular-nums">{{ $this->lastMeasurement?->clock() }}</span>
+                                @if ($temperature !== null)
+                                    <span class="mt-7 text-[15px] font-extrabold tabular-nums">{{ number_format($temperature['now'], 1, ',', ' ') }}°</span>
+                                @endif
+                            </li>
+                            @foreach ($forecast['horizons'] as $hour)
+                                <li class="flex min-w-0 flex-col items-center gap-1 px-0.5">
+                                    <span class="text-xs font-bold">+{{ $hour['hours'] }} h</span>
+                                    <span class="font-mono text-[11px] text-white/75 tabular-nums">{{ $hour['clock'] }}</span>
+                                    <flux:icon :icon="$hour['sky']['icon']" class="size-6" title="{{ ucfirst($hour['sky']['label']) }}" aria-hidden="true" />
+                                    <span class="sr-only">{{ ucfirst($hour['sky']['label']) }}.</span>
+                                    <span class="flex items-center gap-0.5 text-[15px] font-extrabold tabular-nums">
+                                        {{ number_format($hour['t'], 1, ',', ' ') }}°
+                                        <flux:icon
+                                            :icon="match ($hour['trend']) { 'rising' => 'arrow-trending-up', 'falling' => 'arrow-trending-down', default => 'minus' }"
+                                            variant="micro"
+                                            class="text-white/80"
+                                            title="{{ ucfirst($hour['trend']) }}"
+                                            aria-hidden="true"
+                                        />
+                                        <span class="sr-only">{{ ucfirst($hour['trend']) }}.</span>
+                                    </span>
+                                    <span class="hidden font-mono text-[10.5px] leading-tight text-white/80 tabular-nums sm:block">{{ number_format($hour['tLow'], 1, ',', ' ') }} to {{ number_format($hour['tHigh'], 1, ',', ' ') }}</span>
+                                    <span class="inline-flex items-center gap-0.5 font-mono text-[11px] text-white/85 tabular-nums">
+                                        <flux:icon.umbrella variant="micro" class="size-3" aria-hidden="true" />
+                                        <span class="sr-only">rain</span>
+                                        {{ $hour['rain'] }} %
+                                    </span>
+                                </li>
+                            @endforeach
+                        </ol>
+
+                        {{-- CC BY 4.0 asks for the attribution. --}}
+                        <p class="mt-4 text-[12.5px] leading-snug text-white/80">
+                            Range: eight readings in ten land inside it. Rain: the chance of at least 0.1 mm by then.
+                            Trained on ČHMÚ station records (CC BY 4.0), run from this station's readings alone.
+                        </p>
+                    </div>
+                @endif
+            </section>
+
+            {{-- Credit for the sky pictures, under the widget as a photo's would be. Always shown:
+                 it belongs to the pictures, not to whether the station is on the air. --}}
+            <p class="col-span-12 -mt-1.5 px-2 text-right text-xs text-slate-500 sm:-mt-2 dark:text-slate-400" data-sky-credit>
+                Sky image generated with OpenAI
+            </p>
+
+            {{-- ── Verdict ────────────────────────────────────────── --}}
+            {{-- The answer to the story's question; history, so it stays while a forecast is stale. Dashboard::verdict(). --}}
+            @if ($this->verdict !== null)
+                @php($verdict = $this->verdict)
+                <x-tile
+                    id="verdict"
+                    title="Is it working?"
+                    icon="circle-check"
+                    :tone="$tones['good']"
+                    hint="Last {{ $this::ACCURACY_DAYS }} days, {{ $verdict['count'] }} {{ Str::plural('forecast', $verdict['count']) }} scored"
+                    aria-label="Verdict"
+                    class="col-span-12 scroll-mt-4 lg:col-span-5"
+                >
+                    @if (! $verdict['ready'])
+                        <p class="text-[15px] leading-normal font-semibold">
+                            Too early to say: the verdict waits for a day of forecasts that have come true.
+                        </p>
+                    @else
+                        @php($beats = $verdict['skill'] >= 0)
+                        {{-- The ring fills with the share the miss shrank by; a loss draws in rose from the same start. --}}
+                        @php($filled = min(100, abs($verdict['skill'])))
+                        <div class="grid items-center gap-x-5 gap-y-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+                            <div class="relative size-[132px]">
+                                <svg viewBox="0 0 120 120" class="size-full -rotate-90" aria-hidden="true">
+                                    <circle cx="60" cy="60" r="54" fill="none" stroke-width="11" @class(['stroke-emerald-500/15' => $beats, 'stroke-rose-500/15' => ! $beats]) />
+                                    <circle
+                                        cx="60" cy="60" r="54" fill="none" stroke-width="11" stroke-linecap="round"
+                                        @class(['stroke-emerald-500' => $beats, 'stroke-rose-500' => ! $beats])
+                                        stroke-dasharray="339.29"
+                                        stroke-dashoffset="{{ round(339.29 * (1 - $filled / 100), 2) }}"
+                                    />
+                                </svg>
+                                <div class="absolute inset-0 grid place-content-center text-center">
+                                    <span @class([
+                                        'text-[34px] leading-none font-extrabold tracking-[-0.04em]',
+                                        'text-rose-600 dark:text-rose-400' => ! $beats,
+                                    ])>{{ number_format(abs($verdict['skill']), 0) }} %</span>
+                                    <span class="text-[11.5px] text-slate-500 dark:text-slate-400">{{ $beats ? 'smaller' : 'larger' }} miss</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <p class="text-[15px] leading-normal font-semibold">
+                                    A {{ number_format(abs($verdict['skill']), 0) }} % {{ $beats ? 'smaller' : 'larger' }} miss than assuming it stays as warm as now, {{ $verdict['hours'] }} h ahead.
+                                </p>
+                                <dl class="mt-3 grid grid-cols-2 gap-2.5">
+                                    <div class="rounded-[14px] bg-slate-900/[0.04] px-3 py-2.5 dark:bg-white/[0.04]">
+                                        <dt class="sr-only">Off on average</dt>
+                                        <dd class="text-[22px] leading-tight font-extrabold tracking-[-0.03em]">{{ number_format($verdict['error'], 1, ',', ' ') }} °C</dd>
+                                        <dd class="text-[12.5px] text-slate-500 dark:text-slate-400">off on average, the naive guess {{ number_format($verdict['naive'], 1, ',', ' ') }} °C</dd>
+                                    </div>
+                                    <div class="rounded-[14px] bg-slate-900/[0.04] px-3 py-2.5 dark:bg-white/[0.04]">
+                                        <dt class="sr-only">Inside the forecast range</dt>
+                                        <dd class="text-[22px] leading-tight font-extrabold tracking-[-0.03em]">{{ number_format($verdict['inRange'], 0) }} %</dd>
+                                        <dd class="text-[12.5px] text-slate-500 dark:text-slate-400">inside the forecast range, target 80 %</dd>
+                                    </div>
+                                </dl>
+                            </div>
+
+                            {{-- Every horizon beside the headline, so six hours is not the only number picked. --}}
+                            <ol class="grid grid-cols-3 gap-1.5 sm:col-span-2 sm:grid-cols-6" aria-label="Smaller miss than the naive guess by hours ahead">
+                                @foreach ($verdict['horizons'] as $horizon)
+                                    @php($skill = $horizon['skill'])
+                                    <li
+                                        class="rounded-xl px-1.5 py-2 text-center"
+                                        style="background: color-mix(in srgb, var(--color-{{ $skill !== null && $skill < 0 ? 'rose' : 'emerald' }}-500) {{ $skill === null ? 4 : round(4 + min(100, abs($skill)) * 0.3) }}%, transparent)"
+                                    >
+                                        <span class="block font-mono text-[11.5px] text-slate-500 dark:text-slate-400">+{{ $horizon['hours'] }} h</span>
+                                        <span @class([
+                                            'block text-sm font-extrabold tabular-nums',
+                                            'text-rose-600 dark:text-rose-400' => $skill !== null && $skill < 0,
+                                        ])>{{ $skill === null ? 'n/a' : ($skill > 0 ? '+' : '').number_format($skill, 0).' %' }}</span>
+                                    </li>
+                                @endforeach
+                            </ol>
+                        </div>
+                    @endif
+                </x-tile>
+            @endif
+
+            {{-- ── How it works ───────────────────────────────────── --}}
+            {{-- A real sequence, so it is numbered. --}}
+            <x-tile
+                title="How the forecast is made"
+                icon="activity"
+                :tone="$tones['rain']"
+                aria-label="How it works"
+                :class="\Illuminate\Support\Arr::toCssClasses(['col-span-12', 'lg:col-span-7' => $this->verdict !== null])"
+            >
+                <ol class="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                    @foreach ([
+                        ['Measure', 'An SHT41 and an INMP441 microphone outside, a BMP280 indoors, read every 30 seconds.'],
+                        ['Upload', 'The ESP32 sends each ten minutes as a mean with its extremes.'],
+                        ['Forecast', 'A model trained on ČHMÚ records looks six hours ahead, corrected by this station\'s own misses.'],
+                        ['Score', 'When the hour comes, the forecast is checked against what the sensor measured.'],
+                    ] as [$step, $text])
+                        <li class="rounded-2xl bg-slate-900/[0.04] p-3.5 dark:bg-white/[0.04]">
+                            <span class="grid size-[22px] place-items-center rounded-full bg-slate-900 text-xs font-extrabold text-white dark:bg-slate-100 dark:text-slate-900">{{ $loop->iteration }}</span>
+                            <h3 class="mt-2.5 text-[14.5px] font-extrabold">{{ $step }}</h3>
+                            <p class="mt-1 text-[12.5px] leading-normal text-slate-500 dark:text-slate-400">{{ $text }}</p>
+                        </li>
+                    @endforeach
+                </ol>
+            </x-tile>
+
+            {{-- ── Readouts ───────────────────────────────────────── --}}
+            {{-- Temperature is the sky's; noise only when the last day holds some. --}}
             @if ($this->hasReadings)
-            <div class="flex flex-col items-start gap-8 min-[1120px]:items-end min-[1120px]:text-right" aria-label="Current conditions">
-                @foreach ([
-                    ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 2, 'accent' => 'text-amber-600'],
-                    ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600'],
-                    ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-500'],
-                    ['key' => 'n', 'label' => 'Noise, LAeq', 'unit' => 'dB(A)', 'dec' => 1, 'accent' => 'text-emerald-600 dark:text-emerald-400'],
-                ] as $readout)
-                    {{-- Noise only when the last day holds some. --}}
-                    @continue(! isset($this->metrics[$readout['key']]))
+                @php($readouts = array_filter([
+                    ['key' => 'h', 'label' => 'Humidity', 'icon' => 'droplet', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600 dark:text-cyan-400'],
+                    ['key' => 'p', 'label' => 'Pressure, MSL', 'icon' => 'gauge', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-400'],
+                    ['key' => 'n', 'label' => 'Noise, LAeq', 'icon' => 'audio-waveform', 'unit' => 'dB(A)', 'dec' => 1, 'accent' => 'text-emerald-600 dark:text-emerald-400'],
+                ], fn (array $readout): bool => isset($this->metrics[$readout['key']])))
+                @foreach ($readouts as $readout)
                     @php($m = $this->metrics[$readout['key']])
-                    <div>
-                        <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase min-[1120px]:justify-end dark:text-zinc-400">
-                            {{ $readout['label'] }}
-                            <span class="{{ $readout['accent'] }} flex items-center gap-2">
+                    @php($trace = \App\ValueObject\Trace::spanning($m['trace']))
+                    <x-tile
+                        :title="$readout['label']"
+                        :icon="$readout['icon']"
+                        :tone="$tones[$readout['key']]"
+                        aria-label="{{ $readout['label'] }} now"
+                        :class="\Illuminate\Support\Arr::toCssClasses(['col-span-12 flex flex-col', 'md:col-span-4' => count($readouts) === 3, 'md:col-span-6' => count($readouts) === 2])"
+                    >
+                        <p class="text-[44px] leading-none font-extrabold tracking-[-0.045em] tabular-nums">
+                            {{ number_format($m['now'], $readout['dec'], ',', ' ') }}<span class="{{ $readout['accent'] }} ml-1 text-base font-bold tracking-normal">{{ $readout['unit'] }}</span>
+                        </p>
+                        <p class="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[13px] text-slate-500 dark:text-slate-400">
+                            <span class="font-mono tabular-nums">24 h · min {{ number_format($m['dayMin'], $readout['dec'], ',', ' ') }} · max {{ number_format($m['dayMax'], $readout['dec'], ',', ' ') }}</span>
+                            <span class="{{ $readout['accent'] }} inline-flex items-center gap-1 font-mono font-medium">
                                 <flux:icon
                                     :icon="$m['delta'] >= 0.05 ? 'arrow-trending-up' : ($m['delta'] <= -0.05 ? 'arrow-trending-down' : 'minus')"
                                     variant="micro"
@@ -83,663 +403,510 @@
                                 {{ ($m['delta'] >= 0 ? '+' : '−') . number_format(abs($m['delta']), $readout['dec'], ',', ' ') }}/h
                             </span>
                         </p>
-                        <p class="font-display mt-1 text-6xl leading-none font-bold sm:text-7xl">
-                            {{ number_format($m['now'], $readout['dec'], ',', ' ') }}<span class="{{ $readout['accent'] }} ml-1 align-baseline text-2xl font-bold sm:text-3xl">{{ $readout['unit'] }}</span>
-                        </p>
-                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                            24 h · min {{ number_format($m['dayMin'], $readout['dec'], ',', ' ') }} · max {{ number_format($m['dayMax'], $readout['dec'], ',', ' ') }}
-                        </p>
-                    </div>
+                        {{-- The last day's means, drawn on the server: a canvas for one line would be overkill. --}}
+                        <svg
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                            class="{{ $readout['accent'] }} -mx-4 -mb-4 mt-auto h-14 w-[calc(100%+2rem)] overflow-visible pt-3 sm:-mx-5 sm:-mb-[18px] sm:w-[calc(100%+2.5rem)]"
+                            data-spark="{{ $readout['key'] }}"
+                            aria-hidden="true"
+                        >
+                            <defs>
+                                <linearGradient id="spark-{{ $readout['key'] }}" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0" stop-color="currentColor" stop-opacity="0.25" />
+                                    <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+                                </linearGradient>
+                            </defs>
+                            <path d="{{ $trace->area() }}" fill="url(#spark-{{ $readout['key'] }})" />
+                            <path d="{{ $trace->line() }}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                        </svg>
+                    </x-tile>
                 @endforeach
-            </div>
             @endif
-        </div>
-    </header>
 
-    {{-- ── Sensor ─────────────────────────────────────────────────── --}}
-    {{-- Everything below is one sensor's record. The picker appears with a
-         second sensor and stands alone on the right, so it shifts nothing. --}}
-    <section
-        aria-label="Sensor"
-        class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
-    >
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Sensor
-            </p>
-            @if ($this->selectedSensor)
-                <p class="font-mono text-xs text-zinc-800 dark:text-zinc-200" data-sensor-name>
-                    {{ $this->selectedSensor->name }}
-                </p>
-                @if ($this->selectedSensor->description)
-                    <p class="font-serif text-base leading-snug text-zinc-600 italic dark:text-zinc-400" data-sensor-description>
-                        {{ $this->selectedSensor->description }}
-                    </p>
-                @endif
-            @else
-                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    none registered yet
-                </p>
-            @endif
-        </div>
+            {{-- ── Scoring ────────────────────────────────────────── --}}
+            {{-- With the forecast: gone while it is stale, like the sky's hours. Starts folded:
+                 rendered hidden, so nothing flashes before Alpine runs. --}}
+            @if ($forecast !== null && $this->accuracyScore !== null)
+                @php($score = $this->accuracyScore)
+                @php($scoredHours = array_column($this->forecastAccuracy, 'hours'))
+                @php($figures = array_filter([
+                    ['label' => 'With correction', 'figures' => $score['corrected']],
+                    ['label' => 'Base model', 'figures' => $score['base']],
+                ], fn (array $row): bool => $row['figures'] !== null))
+                <x-tile
+                    title="How the forecast scores"
+                    icon="presentation-chart-line"
+                    :tone="$tones['t']"
+                    hint="Last {{ $this::ACCURACY_DAYS }} days, hour by hour ahead"
+                    aria-label="Forecast accuracy"
+                    class="col-span-12"
+                    x-data="{ collapsed: true }"
+                >
+                    <x-slot:actions>
+                        <x-fold-button controls="forecast-accuracy" label="Forecast accuracy" :collapsed="true" />
+                    </x-slot:actions>
 
-        @if ($this->hasSensorChoice)
-            <flux:select
-                wire:model.live="sensor"
-                size="sm"
-                class="w-auto! min-w-48"
-                aria-label="Choose a sensor"
-            >
-                @foreach ($this->sensors as $option)
-                    <flux:select.option :value="$option->slug">{{ $option->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        @endif
-    </section>
-
-    {{-- ── Verdict ────────────────────────────────────────────────── --}}
-    {{-- The answer to the hero's question; history, so it stays while a forecast is stale. Dashboard::verdict(). --}}
-    @if ($this->verdict !== null)
-        @php($verdict = $this->verdict)
-        <section aria-label="Verdict" class="border-t border-zinc-900/10 px-4 pt-4 pb-6 sm:px-8 dark:border-white/10">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Verdict · last {{ $this::ACCURACY_DAYS }} days · {{ $verdict['count'] }} {{ Str::plural('forecast', $verdict['count']) }} scored
-            </p>
-
-            @if (! $verdict['ready'])
-                <p class="font-serif mt-3 text-lg leading-snug italic sm:text-xl">
-                    Too early to say: the verdict waits for a day of forecasts that have come true.
-                </p>
-            @else
-                @php($beats = $verdict['skill'] >= 0)
-                <div class="mt-4 grid gap-x-12 gap-y-6 sm:grid-cols-3">
-                    <div>
-                        <p @class([
-                            'font-display text-6xl leading-none font-bold sm:text-7xl',
-                            'text-rose-600 dark:text-rose-500' => ! $beats,
-                        ])>
-                            {{ number_format(abs($verdict['skill']), 0) }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">%</span>
-                        </p>
-                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                            {{ $beats ? 'smaller' : 'larger' }} miss than assuming it stays as warm as now, {{ $verdict['hours'] }} h ahead
-                        </p>
-                    </div>
-                    <div>
-                        <p class="font-display text-6xl leading-none font-bold sm:text-7xl">
-                            {{ number_format($verdict['error'], 1, ',', ' ') }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">°C</span>
-                        </p>
-                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                            off on average · the naive guess {{ number_format($verdict['naive'], 1, ',', ' ') }} °C
-                        </p>
-                    </div>
-                    <div>
-                        <p class="font-display text-6xl leading-none font-bold sm:text-7xl">
-                            {{ number_format($verdict['inRange'], 0) }}<span class="ml-1 align-baseline text-2xl font-bold text-amber-600 sm:text-3xl">%</span>
-                        </p>
-                        <p class="mt-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                            inside the forecast range · target 80 %
-                        </p>
-                    </div>
-                </div>
-
-                {{-- Every horizon beside the headline, so six hours is not the only number picked. --}}
-                <ol class="mt-6 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs tabular-nums" aria-label="Smaller miss than the naive guess by hours ahead">
-                    @foreach ($verdict['horizons'] as $horizon)
-                        <li>
-                            <span class="text-zinc-500 dark:text-zinc-400">+{{ $horizon['hours'] }} h</span>
-                            <span @class([
-                                'text-zinc-800 dark:text-zinc-200',
-                                'text-rose-600! dark:text-rose-500!' => $horizon['skill'] !== null && $horizon['skill'] < 0,
-                            ])>{{ $horizon['skill'] === null ? 'n/a' : ($horizon['skill'] > 0 ? '+' : '').number_format($horizon['skill'], 0).' %' }}</span>
-                        </li>
-                    @endforeach
-                </ol>
-            @endif
-        </section>
-    @endif
-
-    {{-- ── Forecast ───────────────────────────────────────────────── --}}
-    {{-- Only while it starts from the current record; Dashboard::forecast(). --}}
-    @if ($this->forecast !== null)
-        @php($forecast = $this->forecast)
-        {{-- Folds like the strips: Alpine state, so a poll keeps it and a reload opens it again. --}}
-        <section aria-label="Forecast" class="border-t border-zinc-900/10 dark:border-white/10" x-data="{ collapsed: false }">
-            <div
-                class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8"
-                x-bind:class="{ 'pb-2': ! collapsed, 'pb-4': collapsed }"
-            >
-                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    Forecast · next 6 hours
-                </p>
-                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    made {{ $forecast['at'] }} · {{ $forecast['ago'] }} ·
-                    {{ $forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}
-                </p>
-                <x-fold-button controls="forecast" label="Forecast" />
-            </div>
-
-            <div id="forecast" x-bind:class="{ hidden: collapsed }">
-                <ol class="grid grid-cols-2 gap-x-8 gap-y-6 px-4 pt-2 pb-4 sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
-                    @foreach ($forecast['horizons'] as $hour)
-                        <li>
-                            <p class="font-mono text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                +{{ $hour['hours'] }} h · <span class="tabular-nums">{{ $hour['clock'] }}</span>
+                    <div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">
+                        <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                            <p class="flex items-center gap-2 text-[13px] font-semibold text-slate-500 dark:text-slate-400">
+                                <span class="size-2 rounded-full bg-amber-600 dark:bg-amber-500" aria-hidden="true"></span>
+                                With correction
                             </p>
-                            <div class="mt-2 flex items-center gap-3">
-                                <flux:icon
-                                    :icon="$hour['sky']['icon']"
-                                    @class([
-                                        'size-9',
-                                        'text-sky-600 dark:text-sky-400' => $hour['sky']['tone'] === 'rain',
-                                        'text-amber-500' => $hour['sky']['tone'] === 'day',
-                                        'text-indigo-400 dark:text-indigo-300' => $hour['sky']['tone'] === 'night',
-                                    ])
-                                    title="{{ ucfirst($hour['sky']['label']) }}"
-                                    aria-hidden="true"
-                                />
-                                <span class="sr-only">{{ ucfirst($hour['sky']['label']) }}.</span>
-                                <p class="font-display text-4xl leading-none font-bold">
-                                    {{ number_format($hour['t'], 1, ',', ' ') }}<span class="ml-1 align-baseline text-lg font-bold text-amber-600">°C</span>
-                                </p>
-                                <flux:icon
-                                    :icon="match ($hour['trend']) { 'rising' => 'arrow-trending-up', 'falling' => 'arrow-trending-down', default => 'minus' }"
-                                    variant="mini"
-                                    class="text-amber-600"
-                                    title="{{ ucfirst($hour['trend']) }}"
-                                    aria-hidden="true"
-                                />
-                                <span class="sr-only">{{ ucfirst($hour['trend']) }}.</span>
-                            </div>
-                            <p class="mt-2 flex items-center gap-1.5 font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                                <flux:icon.thermometer variant="micro" class="text-amber-600" aria-hidden="true" />
-                                {{ number_format($hour['tLow'], 1, ',', ' ') }} to {{ number_format($hour['tHigh'], 1, ',', ' ') }}
+                            <p class="flex items-center gap-2 text-[13px] font-semibold text-slate-500 dark:text-slate-400">
+                                <span class="w-3 border-t border-dashed border-slate-400" aria-hidden="true"></span>
+                                Base model
                             </p>
-                            <p class="mt-1 flex items-center gap-1.5 font-mono text-xs tabular-nums">
-                                <flux:icon.umbrella variant="micro" class="text-sky-600 dark:text-sky-400" aria-hidden="true" />
-                                <span class="text-zinc-500 dark:text-zinc-400">rain</span>
-                                <span class="text-zinc-800 dark:text-zinc-200">{{ $hour['rain'] }} %</span>
-                            </p>
-                        </li>
-                    @endforeach
-                </ol>
-
-                {{-- CC BY 4.0 asks for the attribution. --}}
-                <p class="px-4 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
-                    Range: eight readings in ten land inside it. Rain: the chance of at least 0.1 mm by then.
-                    Trained on ČHMÚ station records (CC BY 4.0), run from this station's readings alone.
-                </p>
-
-                {{-- Inside the forecast's fold, so folding the forecast takes it along.
-                     Starts folded: rendered hidden, so nothing flashes before Alpine runs. --}}
-                @if ($this->accuracyScore !== null)
-                    @php($score = $this->accuracyScore)
-                    @php($scoredHours = array_column($this->forecastAccuracy, 'hours'))
-                    @php($figures = array_filter([
-                        ['label' => 'With correction', 'figures' => $score['corrected']],
-                        ['label' => 'Base model', 'figures' => $score['base']],
-                    ], fn (array $row): bool => $row['figures'] !== null))
-                    <div class="border-t border-zinc-900/5 dark:border-white/5" x-data="{ collapsed: true }">
-                        <div class="flex items-center gap-x-6 px-4 py-3 sm:px-8">
-                            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                Scoring · last {{ $this::ACCURACY_DAYS }} days
-                            </p>
-                            <x-fold-button controls="forecast-accuracy" label="Forecast accuracy" :collapsed="true" />
+                            {{-- Every hour the forecast reaches, so the control never grows under the pointer; one not scored yet is disabled. --}}
+                            <flux:radio.group wire:model.live="accuracyHorizon" variant="segmented" size="sm" aria-label="Hours ahead" class="ml-auto">
+                                @foreach ($forecast['horizons'] as $horizon)
+                                    <flux:radio :value="$horizon['hours']" label="+{{ $horizon['hours'] }} h" :disabled="! in_array($horizon['hours'], $scoredHours, true)" />
+                                @endforeach
+                            </flux:radio.group>
                         </div>
 
-                        <div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">
-                            <div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 sm:px-8">
-                                <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                    <span class="size-1.5 rounded-full bg-amber-600 dark:bg-amber-500" aria-hidden="true"></span>
-                                    With correction
-                                </p>
-                                <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                    <span class="w-3 border-t border-dashed border-zinc-400" aria-hidden="true"></span>
-                                    Base model
-                                </p>
-                                {{-- Every hour the forecast reaches, so the control never grows under the pointer; one not scored yet is disabled. --}}
-                                <flux:radio.group wire:model.live="accuracyHorizon" variant="segmented" size="sm" aria-label="Hours ahead" class="ml-auto">
-                                    @foreach ($forecast['horizons'] as $horizon)
-                                        <flux:radio :value="$horizon['hours']" label="+{{ $horizon['hours'] }} h" :disabled="! in_array($horizon['hours'], $scoredHours, true)" />
-                                    @endforeach
-                                </flux:radio.group>
-                            </div>
+                        {{-- forecast-accuracy.js watches the attribute; Livewire never touches the canvas. --}}
+                        <div
+                            class="pt-2"
+                            data-accuracy-chart="days"
+                            data-accuracy-rows="{{ json_encode($score['days']) }}"
+                            aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, with the station correction and without"
+                            role="img"
+                        >
+                            <div wire:ignore data-accuracy-canvas class="h-40 w-full"></div>
+                        </div>
 
-                            {{-- forecast-accuracy.js watches the attribute; Livewire never touches the canvas. --}}
-                            <div
-                                class="px-4 pt-2 sm:px-8"
-                                data-accuracy-chart="days"
-                                data-accuracy-rows="{{ json_encode($score['days']) }}"
-                                aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, with the station correction and without"
-                                role="img"
-                            >
-                                <div wire:ignore data-accuracy-canvas class="h-40 w-full"></div>
-                            </div>
-
-                            <div class="overflow-x-auto px-4 sm:px-8">
-                                <table class="w-full font-mono text-xs tabular-nums">
-                                    <thead>
-                                        <tr class="text-left text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                                            <th class="py-2 pr-6 font-medium">+{{ $score['hours'] }} h</th>
-                                            <th class="py-2 pr-6 font-medium">Better by</th>
-                                            <th class="py-2 pr-6 font-medium">Off by · naive</th>
-                                            <th class="py-2 pr-6 font-medium">In range</th>
-                                            <th class="py-2 pr-6 font-medium">Range width</th>
-                                            <th class="py-2 font-medium">Forecasts</th>
+                        <div class="overflow-x-auto">
+                            <table class="w-full font-mono text-xs tabular-nums">
+                                <thead>
+                                    <tr class="text-left font-sans text-[12.5px] text-slate-500 dark:text-slate-400">
+                                        <th class="py-2 pr-6 font-semibold">+{{ $score['hours'] }} h</th>
+                                        <th class="py-2 pr-6 font-semibold">Better by</th>
+                                        <th class="py-2 pr-6 font-semibold">Off by · naive</th>
+                                        <th class="py-2 pr-6 font-semibold">In range</th>
+                                        <th class="py-2 pr-6 font-semibold">Range width</th>
+                                        <th class="py-2 font-semibold">Forecasts</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-slate-800 dark:text-slate-200">
+                                    @foreach ($figures as $row)
+                                        @php($shown = $row['figures'])
+                                        <tr class="border-t border-slate-900/5 dark:border-white/5">
+                                            <td class="py-1.5 pr-6 whitespace-nowrap">{{ $row['label'] }}</td>
+                                            <td class="py-1.5 pr-6">{{ $shown['skill'] === null ? 'n/a' : ($shown['skill'] > 0 ? '+' : '').number_format($shown['skill'], 0).' %' }}</td>
+                                            <td class="py-1.5 pr-6 whitespace-nowrap">
+                                                @if ($shown['error'] === null)
+                                                    n/a
+                                                @else
+                                                    {{ number_format($shown['error'], 1, ',', ' ') }} · {{ number_format($shown['naive'], 1, ',', ' ') }} °C
+                                                @endif
+                                            </td>
+                                            <td class="py-1.5 pr-6">{{ number_format($shown['inRange'], 0) }} %</td>
+                                            <td class="py-1.5 pr-6">{{ number_format($shown['width'], 1, ',', ' ') }} °C</td>
+                                            <td class="py-1.5">{{ $shown['count'] }}</td>
                                         </tr>
-                                    </thead>
-                                    <tbody class="text-zinc-800 dark:text-zinc-200">
-                                        @foreach ($figures as $row)
-                                            @php($shown = $row['figures'])
-                                            <tr class="border-t border-zinc-900/5 dark:border-white/5">
-                                                <td class="py-1.5 pr-6 whitespace-nowrap">{{ $row['label'] }}</td>
-                                                <td class="py-1.5 pr-6">{{ $shown['skill'] === null ? 'n/a' : ($shown['skill'] > 0 ? '+' : '').number_format($shown['skill'], 0).' %' }}</td>
-                                                <td class="py-1.5 pr-6 whitespace-nowrap">
-                                                    @if ($shown['error'] === null)
-                                                        n/a
-                                                    @else
-                                                        {{ number_format($shown['error'], 1, ',', ' ') }} · {{ number_format($shown['naive'], 1, ',', ' ') }} °C
-                                                    @endif
-                                                </td>
-                                                <td class="py-1.5 pr-6">{{ number_format($shown['inRange'], 0) }} %</td>
-                                                <td class="py-1.5 pr-6">{{ number_format($shown['width'], 1, ',', ' ') }} °C</td>
-                                                <td class="py-1.5">{{ $shown['count'] }}</td>
-                                            </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
-                            </div>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
 
-                            <p class="px-4 pt-2 font-mono text-xs text-zinc-800 sm:px-8 dark:text-zinc-200">
-                                <span class="text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">Rain chance · rained / dry</span>
-                                <span class="ml-2 tabular-nums">
-                                    @if ($score['rain']['count'] === 0)
-                                        <span class="text-zinc-500 dark:text-zinc-400">not listened</span>
-                                    @else
-                                        {{ $score['rain']['chanceWhenRain'] === null ? 'no rain' : number_format($score['rain']['chanceWhenRain'], 0).' %' }}
-                                        /
-                                        {{ $score['rain']['chanceWhenDry'] === null ? 'no dry spell' : number_format($score['rain']['chanceWhenDry'], 0).' %' }}
-                                    @endif
-                                </span>
-                            </p>
+                        <p class="pt-2 font-mono text-xs text-slate-800 dark:text-slate-200">
+                            <span class="font-sans text-[12.5px] font-semibold text-slate-500 dark:text-slate-400">Rain chance · rained / dry</span>
+                            <span class="ml-2 tabular-nums">
+                                @if ($score['rain']['count'] === 0)
+                                    <span class="text-slate-500 dark:text-slate-400">not listened</span>
+                                @else
+                                    {{ $score['rain']['chanceWhenRain'] === null ? 'no rain' : number_format($score['rain']['chanceWhenRain'], 0).' %' }}
+                                    /
+                                    {{ $score['rain']['chanceWhenDry'] === null ? 'no dry spell' : number_format($score['rain']['chanceWhenDry'], 0).' %' }}
+                                @endif
+                            </span>
+                        </p>
 
-                            {{-- The hour-of-day detail starts closed: rendered hidden, so nothing flashes before Alpine runs. --}}
-                            <div x-data="{ open: false }" class="px-4 pt-3 sm:px-8">
-                                <flux:button
-                                    x-on:click="open = ! open"
-                                    variant="subtle"
-                                    size="xs"
-                                    icon="presentation-chart-line"
-                                    aria-expanded="false"
-                                    x-bind:aria-expanded="open ? 'true' : 'false'"
-                                    aria-controls="forecast-accuracy-hours"
-                                    x-bind:class="{ 'text-zinc-800! dark:text-white!': open }"
-                                >By hour of the day</flux:button>
+                        {{-- The hour-of-day detail starts closed: rendered hidden, so nothing flashes before Alpine runs. --}}
+                        <div x-data="{ open: false }" class="pt-3">
+                            <flux:button
+                                x-on:click="open = ! open"
+                                variant="subtle"
+                                size="xs"
+                                icon="presentation-chart-line"
+                                aria-expanded="false"
+                                x-bind:aria-expanded="open ? 'true' : 'false'"
+                                aria-controls="forecast-accuracy-hours"
+                                x-bind:class="{ 'text-slate-800! dark:text-white!': open }"
+                            >By hour of the day</flux:button>
 
-                                {{-- Hidden, not removed: the chart keeps its instance and resizes once it has a size. --}}
-                                <div id="forecast-accuracy-hours" class="hidden pt-2" x-bind:class="{ hidden: ! open }">
-                                    <div
-                                        data-accuracy-chart="hours"
-                                        data-accuracy-rows="{{ json_encode($score['byHour']) }}"
-                                        aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
-                                        role="img"
-                                    >
-                                        <div wire:ignore data-accuracy-canvas class="h-24 w-full"></div>
-                                    </div>
+                            {{-- Hidden, not removed: the chart keeps its instance and resizes once it has a size. --}}
+                            <div id="forecast-accuracy-hours" class="hidden pt-2" x-bind:class="{ hidden: ! open }">
+                                <div
+                                    data-accuracy-chart="hours"
+                                    data-accuracy-rows="{{ json_encode($score['byHour']) }}"
+                                    aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
+                                    role="img"
+                                >
+                                    <div wire:ignore data-accuracy-canvas class="h-24 w-full"></div>
                                 </div>
                             </div>
-
-                            <p class="px-4 pt-2 pb-4 font-mono text-[11px] text-zinc-500 sm:px-8 dark:text-zinc-400">
-                                Better by: how much smaller the forecast's miss was than the naive guess's - the temperature at the time of the forecast, kept for the hours ahead.
-                                Above zero the forecast beats the guess, below zero it does worse.
-                                Base model: the forecast as trained on ČHMÚ records, before the correction this station's own misses teach it;
-                                the gap between the two lines is what the correction has learnt.
-                                In range: a good range holds eight readings in ten, so 80 % is on target and 100 % means it was drawn too wide.
-                                Rain as the microphone heard it: the mean chance given when it rained and when it stayed dry. Drizzle is not heard.
-                                By hour of the day: measured minus the middle of the forecast shown, above zero warmer than forecast.
-                            </p>
                         </div>
+
+                        <p class="pt-3 text-[12.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+                            Better by: how much smaller the forecast's miss was than the naive guess's - the temperature at the time of the forecast, kept for the hours ahead.
+                            Above zero the forecast beats the guess, below zero it does worse.
+                            Base model: the forecast as trained on ČHMÚ records, before the correction this station's own misses teach it;
+                            the gap between the two lines is what the correction has learnt.
+                            In range: a good range holds eight readings in ten, so 80 % is on target and 100 % means it was drawn too wide.
+                            Rain as the INMP441 microphone heard it: the mean chance given when it rained and when it stayed dry. Drizzle is not heard.
+                            By hour of the day: measured minus the middle of the forecast shown, above zero warmer than forecast.
+                        </p>
                     </div>
-                @endif
-            </div>
-        </section>
-    @endif
+                </x-tile>
+            @endif
 
-    {{-- ── Range switcher ─────────────────────────────────────────── --}}
-    <section
-        aria-label="Chart range"
-        class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-y border-zinc-900/10 px-4 py-4 sm:px-8 dark:border-white/10"
-    >
-        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Range
-            </p>
-            <p class="font-mono text-xs whitespace-nowrap text-zinc-500 tabular-nums dark:text-zinc-400">
-                {{ $this->window['from'] }} → {{ $this->window['to'] }}
-            </p>
-        </div>
-
-        <div class="flex items-center gap-2">
-            {{-- Always rendered, only disabled, so the first zoom does not shift the row mid-click. --}}
-            <flux:button
-                wire:click="resetZoom"
-                :disabled="! $this->isZoomed"
-                variant="subtle"
-                size="sm"
-            >Reset zoom</flux:button>
-
-        </div>
-    </section>
-
-    {{-- ── Navigator ──────────────────────────────────────────────── --}}
-    {{-- Above the strips: below them a drag moved a chart that was off screen. --}}
-    <section
-        aria-label="Whole record"
-        class="border-b border-zinc-900/10 px-4 pb-3 sm:px-8 dark:border-white/10"
-    >
-        <div
-            wire:ignore
-            data-navigator
-            class="h-20 w-full"
-            role="img"
-            aria-label="The whole record, with the shown window marked. Drag its edges to move through time."
-        ></div>
-    </section>
-
-    {{-- ── Channel strips ─────────────────────────────────────────── --}}
-    @unless ($this->hasReadings)
-        <section aria-label="No data" class="border-b border-zinc-900/10 px-4 py-12 text-center sm:px-8 dark:border-white/10">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Nothing in this range
-            </p>
-            <flux:text class="mx-auto mt-4 max-w-sm text-sm">
-                No reading was recorded between {{ $this->window['from'] }} and
-                {{ $this->window['to'] }}. Pick a wider range, or reset the zoom.
-            </flux:text>
-        </section>
-    @endunless
-
-    {{-- Pressure has its own strip: a 40 hPa spread is a flat line beside
-         the others. The dew point is derived, so it starts off. --}}
-    @php($strips = [
-        [
-            'key' => 'th',
-            'label' => 'Temperature & humidity',
-            'height' => 'h-72 sm:h-80',
-            'channels' => [
-                ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'accent' => 'bg-amber-600 dark:bg-amber-500', 'toggle' => true],
-                ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'accent' => 'bg-cyan-600 dark:bg-cyan-400', 'toggle' => true],
-                ['key' => 'd', 'label' => 'Dew point', 'unit' => '°C', 'accent' => 'bg-pink-600 dark:bg-pink-400', 'toggle' => true],
-            ],
-        ],
-        [
-            'key' => 'p',
-            'label' => 'Pressure, MSL',
-            'height' => 'h-48 sm:h-56',
-            'channels' => [
-                ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'accent' => 'bg-violet-600 dark:bg-violet-500'],
-            ],
-        ],
-    ])
-
-    {{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
-    <div
-        data-chart-rows="{{ json_encode($this->readings) }}"
-        data-navigator-rows="{{ json_encode($this->overview) }}"
-        data-chart-events="{{ json_encode($this->stationEvents) }}"
-        data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
-        data-noise-rows="{{ json_encode($this->noise) }}"
-        data-noise-rain="{{ json_encode($this->rainSlots) }}"
-        data-window-from="{{ $this->windowMs['from'] }}"
-        data-window-to="{{ $this->windowMs['to'] }}"
-        data-chart-component="{{ $this->getId() }}"
-        hidden
-    ></div>
-
-    @foreach ($strips as $strip)
-        <x-strip :key="$strip['key']" :label="$strip['label']" :height="$strip['height']">
-            @foreach ($strip['channels'] as $channel)
-                @if (isset($channel['toggle']))
-                    {{-- The label is the switch; the last one on is disabled instead. --}}
-                    @php($shown = $this->channels[$channel['key']] ?? false)
-                    @php($last = $this->isLastChannel($channel['key']))
-                    <button
-                        type="button"
-                        wire:click="toggleChannel('{{ $channel['key'] }}')"
-                        aria-pressed="{{ $shown ? 'true' : 'false' }}"
-                        @disabled($last)
-                        @class([
-                            'flex items-center gap-2 rounded-sm font-mono text-[11px] font-medium tracking-[0.2em] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:focus-visible:outline-zinc-100',
-                            'cursor-pointer' => ! $last,
-                            'cursor-default' => $last,
-                            'text-zinc-500 dark:text-zinc-400' => $shown,
-                            'hover:text-zinc-800 dark:hover:text-zinc-200' => $shown && ! $last,
-                            'text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400' => ! $shown,
-                        ])
-                    >
-                        <span
-                            @class([
-                                'size-1.5 rounded-full',
-                                $channel['accent'] => $shown,
-                                'bg-zinc-300 dark:bg-zinc-600' => ! $shown,
-                            ])
-                            aria-hidden="true"
-                        ></span>
-                        {{ $channel['label'] }} ({{ $channel['unit'] }})
-                    </button>
-                @else
-                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                        <span class="{{ $channel['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
-                        {{ $channel['label'] }} ({{ $channel['unit'] }})
+            {{-- ── Range and navigator ────────────────────────────── --}}
+            <x-tile
+                title="History"
+                icon="clock"
+                aria-label="Chart range"
+                class="col-span-12"
+            >
+                <x-slot:actions>
+                    <p class="font-mono text-xs whitespace-nowrap text-slate-500 tabular-nums dark:text-slate-400">
+                        <span class="sr-only">Range</span>
+                        {{ $this->window['from'] }} → {{ $this->window['to'] }}
                     </p>
-                @endif
-            @endforeach
-        </x-strip>
-    @endforeach
+                    {{-- Always rendered, only disabled, so the first zoom does not shift the row mid-click. --}}
+                    <flux:button
+                        wire:click="resetZoom"
+                        :disabled="! $this->isZoomed"
+                        variant="subtle"
+                        size="sm"
+                        icon="arrow-path"
+                    >Reset zoom</flux:button>
+                </x-slot:actions>
 
-    {{-- ── Noise ──────────────────────────────────────────────────── --}}
-    {{-- Protocol 3 only: a window of older rows has no noise, and no strips. --}}
-    @if ($this->noise !== [])
-        @php($noiseStrips = [
-            [
-                'key' => 'noise',
-                'label' => 'Noise',
-                'height' => 'h-48 sm:h-56',
-                'legend' => [
-                    ['label' => 'LAeq', 'accent' => 'bg-emerald-600 dark:bg-emerald-400'],
-                    ['label' => 'LA90 to LA10', 'accent' => 'bg-emerald-600/25 dark:bg-emerald-400/25'],
-                    ['label' => 'LAmax', 'accent' => 'bg-emerald-600/60 dark:bg-emerald-400/60'],
+                {{-- Above the strips: below them a drag moved a chart that was off screen. --}}
+                <section aria-label="Whole record">
+                    <div
+                        wire:ignore
+                        data-navigator
+                        class="h-20 w-full"
+                        role="img"
+                        aria-label="The whole record, with the shown window marked. Drag its edges to move through time."
+                    ></div>
+                </section>
+            </x-tile>
+
+            {{-- ── Channel strips ─────────────────────────────────── --}}
+            @unless ($this->hasReadings)
+                <section aria-label="No data" class="tile col-span-12 py-12 text-center">
+                    <p class="text-[17px] font-extrabold">Nothing in this range</p>
+                    <flux:text class="mx-auto mt-3 max-w-sm text-sm">
+                        No reading was recorded between {{ $this->window['from'] }} and
+                        {{ $this->window['to'] }}. Pick a wider range, or reset the zoom.
+                    </flux:text>
+                </section>
+            @endunless
+
+            {{-- Pressure has its own strip: a 40 hPa spread is a flat line beside
+                 the others. The dew point is derived, so it starts off. --}}
+            @php($hasNoise = $this->noise !== [])
+            @php($strips = [
+                [
+                    'key' => 'th',
+                    'label' => 'Temperature & humidity',
+                    'title' => 'Temperature and humidity',
+                    'icon' => 'thermometer',
+                    'tone' => $tones['t'],
+                    'hint' => 'means with the spread of the samples',
+                    'height' => 'h-72 sm:h-80',
+                    'span' => 'col-span-12',
+                    'channels' => [
+                        ['key' => 't', 'label' => 'Temperature', 'unit' => '°C', 'dot' => 'bg-amber-600 dark:bg-amber-500', 'chip' => 'bg-amber-500/15 text-amber-700 dark:text-amber-400', 'toggle' => true],
+                        ['key' => 'h', 'label' => 'Humidity', 'unit' => '%', 'dot' => 'bg-cyan-600 dark:bg-cyan-400', 'chip' => 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400', 'toggle' => true],
+                        ['key' => 'd', 'label' => 'Dew point', 'unit' => '°C', 'dot' => 'bg-pink-600 dark:bg-pink-400', 'chip' => 'bg-pink-500/15 text-pink-700 dark:text-pink-400', 'toggle' => true],
+                    ],
                 ],
-                'unit' => 'dB(A)',
-            ],
-            [
-                'key' => 'spectrum',
-                'label' => 'Noise spectrum',
-                'height' => 'h-72 sm:h-80',
-                'legend' => [],
-                'unit' => 'dB, third octaves 25 Hz to 8 kHz',
-            ],
-        ])
+                [
+                    'key' => 'p',
+                    'label' => 'Pressure, MSL',
+                    'title' => 'Pressure',
+                    'icon' => 'gauge',
+                    'tone' => $tones['p'],
+                    'hint' => 'reduced to sea level',
+                    'height' => 'h-48 sm:h-56',
+                    'span' => $hasNoise ? 'col-span-12 lg:col-span-6' : 'col-span-12',
+                    'channels' => [
+                        ['key' => 'p', 'label' => 'Pressure, MSL', 'unit' => 'hPa', 'dot' => 'bg-violet-600 dark:bg-violet-500', 'chip' => 'bg-violet-500/15 text-violet-700 dark:text-violet-400'],
+                    ],
+                ],
+            ])
 
-        @foreach ($noiseStrips as $strip)
-            <x-strip :key="$strip['key']" :label="$strip['label']" :height="$strip['height']">
-                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    {{ $strip['label'] }} ({{ $strip['unit'] }})
-                </p>
-                @foreach ($strip['legend'] as $entry)
-                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                        <span class="{{ $entry['accent'] }} size-1.5 rounded-full" aria-hidden="true"></span>
-                        {{ $entry['label'] }}
+            {{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
+            <div
+                data-chart-rows="{{ json_encode($this->readings) }}"
+                data-navigator-rows="{{ json_encode($this->overview) }}"
+                data-chart-events="{{ json_encode($this->stationEvents) }}"
+                data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
+                data-noise-rows="{{ json_encode($this->noise) }}"
+                data-noise-rain="{{ json_encode($this->rainSlots) }}"
+                data-window-from="{{ $this->windowMs['from'] }}"
+                data-window-to="{{ $this->windowMs['to'] }}"
+                data-chart-component="{{ $this->getId() }}"
+                hidden
+            ></div>
+
+            @foreach ($strips as $strip)
+                <x-strip
+                    :key="$strip['key']"
+                    :label="$strip['label']"
+                    :title="$strip['title']"
+                    :icon="$strip['icon']"
+                    :tone="$strip['tone']"
+                    :hint="$strip['hint']"
+                    :height="$strip['height']"
+                    :span="$strip['span']"
+                >
+                    @foreach ($strip['channels'] as $channel)
+                        @if (isset($channel['toggle']))
+                            {{-- The chip is the switch; the last one on is disabled instead. --}}
+                            @php($shown = $this->channels[$channel['key']] ?? false)
+                            @php($last = $this->isLastChannel($channel['key']))
+                            <button
+                                type="button"
+                                wire:click="toggleChannel('{{ $channel['key'] }}')"
+                                aria-pressed="{{ $shown ? 'true' : 'false' }}"
+                                @disabled($last)
+                                @class([
+                                    'chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:focus-visible:outline-slate-100',
+                                    $channel['chip'] => $shown,
+                                    'cursor-pointer' => ! $last,
+                                    'cursor-default' => $last,
+                                    'bg-slate-900/[0.04] text-slate-400 hover:text-slate-600 dark:bg-white/[0.04] dark:text-slate-500 dark:hover:text-slate-300' => ! $shown,
+                                ])
+                            >
+                                <span
+                                    @class([
+                                        'size-2 rounded-full',
+                                        $channel['dot'] => $shown,
+                                        'bg-slate-400/50' => ! $shown,
+                                    ])
+                                    aria-hidden="true"
+                                ></span>
+                                {{ $channel['label'] }} ({{ $channel['unit'] }})
+                            </button>
+                        @else
+                            <p class="chip {{ $channel['chip'] }}">
+                                <span class="{{ $channel['dot'] }} size-2 rounded-full" aria-hidden="true"></span>
+                                {{ $channel['label'] }} ({{ $channel['unit'] }})
+                            </p>
+                        @endif
+                    @endforeach
+                </x-strip>
+            @endforeach
+
+            {{-- ── Noise ──────────────────────────────────────────── --}}
+            {{-- Protocol 3 only: a window of older rows has no noise, and no strips. --}}
+            @if ($hasNoise)
+                <x-strip
+                    key="noise"
+                    label="Noise"
+                    title="Noise"
+                    icon="audio-waveform"
+                    :tone="$tones['n']"
+                    hint="dB(A)"
+                    height="h-48 sm:h-56"
+                    span="col-span-12 lg:col-span-6"
+                >
+                    <p class="chip bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                        <span class="size-2 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden="true"></span>
+                        LAeq
                     </p>
-                @endforeach
-                @if ($strip['key'] === 'spectrum')
+                    <p class="chip bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                        <span class="size-2 rounded-full bg-emerald-600/25 dark:bg-emerald-400/25" aria-hidden="true"></span>
+                        LA90 to LA10
+                    </p>
+                    <p class="chip bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                        <span class="size-2 rounded-full bg-emerald-600/60 dark:bg-emerald-400/60" aria-hidden="true"></span>
+                        LAmax
+                    </p>
+                </x-strip>
+
+                <x-strip
+                    key="spectrum"
+                    label="Noise spectrum"
+                    title="Noise spectrum"
+                    icon="audio-waveform"
+                    :tone="$tones['spectrum']"
+                    hint="dB, third octaves 25 Hz to 8 kHz"
+                    height="h-72 sm:h-80"
+                >
                     {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
-                    <p class="flex items-center gap-2 font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
+                    <p class="flex items-center gap-2 font-mono text-xs text-slate-500 dark:text-slate-400">
                         <span data-spectrum-low wire:ignore></span>
-                        <span data-spectrum-scale wire:ignore class="h-1.5 w-24 rounded-full" aria-hidden="true"></span>
+                        <span data-spectrum-scale wire:ignore class="h-2 w-24 rounded-full" aria-hidden="true"></span>
                         <span data-spectrum-high wire:ignore></span>
                     </p>
-                @endif
-            </x-strip>
-        @endforeach
-    @endif
+                </x-strip>
+            @endif
 
-    {{-- ── Payload tail ───────────────────────────────────────────── --}}
-    @if ($this->recentTransmissions !== [])
-        @php($transmissionCount = count($this->recentTransmissions))
-        <section
-            aria-label="Last transmissions"
-            class="border-b border-zinc-900/10 dark:border-white/10"
-            x-data="{ all: false }"
-        >
-            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
-                {{-- Counts what is on screen: folded, that is the newest one alone. --}}
-                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    <span x-bind:class="{ hidden: all }">Last measurement · when it arrived</span>
-                    @if ($transmissionCount > 1)
-                        <span class="hidden" x-bind:class="{ hidden: ! all }">Last {{ $transmissionCount }} measurements · when they arrived</span>
-                    @endif
-                </p>
-                <div class="flex items-center gap-x-4">
-                    <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+            {{-- ── Payload tail ───────────────────────────────────── --}}
+            @php($hasReport = $this->stationReport !== null)
+            @if ($this->recentTransmissions !== [])
+                @php($transmissionCount = count($this->recentTransmissions))
+                <x-tile
+                    title="Last transmission"
+                    icon="code-xml"
+                    aria-label="Last transmissions"
+                    :class="\Illuminate\Support\Arr::toCssClasses(['col-span-12', 'lg:col-span-7' => $hasReport])"
+                    x-data="{ all: false }"
+                >
+                    <x-slot:actions>
+                        {{-- Counts what is on screen: folded, that is the newest one alone. --}}
+                        <p class="text-[13px] font-medium text-slate-500 dark:text-slate-400">
+                            <span x-bind:class="{ hidden: all }">Last measurement · when it arrived</span>
+                            @if ($transmissionCount > 1)
+                                <span class="hidden" x-bind:class="{ hidden: ! all }">Last {{ $transmissionCount }} measurements · when they arrived</span>
+                            @endif
+                        </p>
+                        {{-- Folded, the newest transmission still shows; only the older ones go. Nothing to unfold with one. --}}
+                        <flux:button
+                            x-on:click="all = ! all"
+                            variant="subtle"
+                            size="xs"
+                            icon="chevron-down"
+                            aria-expanded="false"
+                            x-bind:aria-expanded="all ? 'true' : 'false'"
+                            aria-controls="transmissions"
+                            aria-label="Show all transmissions"
+                            x-bind:aria-label="all ? 'Show the last transmission only' : 'Show all transmissions'"
+                            x-bind:class="{ '[&_svg]:rotate-180': all }"
+                            :disabled="$transmissionCount < 2"
+                        />
+                    </x-slot:actions>
+
+                    <p class="mb-2 font-mono text-xs text-slate-500 dark:text-slate-400">
                         POST /api/v1/measurement · 0,01 °C · 0,01 % · Pa · UTC unix · samples
                     </p>
-                    {{-- Folded, the newest transmission still shows; only the older ones go. Nothing to unfold with one. --}}
-                    <flux:button
-                        x-on:click="all = ! all"
-                        variant="subtle"
-                        size="xs"
-                        icon="chevron-down"
-                        aria-expanded="false"
-                        x-bind:aria-expanded="all ? 'true' : 'false'"
-                        aria-controls="transmissions"
-                        aria-label="Show all transmissions"
-                        x-bind:aria-label="all ? 'Show the last transmission only' : 'Show all transmissions'"
-                        x-bind:class="{ '[&_svg]:rotate-180': all }"
-                        :disabled="$transmissionCount < 2"
-                    />
-                </div>
-            </div>
 
-            <div id="transmissions">
-                @foreach ($this->recentTransmissions as $packet)
-                    <div
-                        @class([
-                            'grid gap-x-8 gap-y-1 border-t border-zinc-900/10 px-4 py-2 sm:px-8 xl:grid-cols-[minmax(0,1fr)_auto] dark:border-white/10',
-                            'border-t-0 bg-zinc-900/5 dark:bg-white/5' => $loop->first,
-                            'hidden' => ! $loop->first,
-                        ])
-                        @unless ($loop->first)
-                            x-bind:class="{ hidden: ! all }"
-                        @endunless
-                    >
-                        {{-- The blob as stored, one field per line: a V2 packet on
-                             one line outruns a desktop. Coloured by the key's first word.
-                             V3's "noise" object stays on its line as JSON. --}}
-                        <p class="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
-                            <span class="block text-zinc-400 dark:text-zinc-600">{</span>
-                            <span class="block pl-4">"timestamp": <span class="text-zinc-700 dark:text-zinc-300">{{ $packet['timestamp'] }}</span><span class="text-zinc-400 dark:text-zinc-600">,</span></span>
-                            @foreach ($packet['packet'] as $field => $value)
-                                @php($accent = match (strtok($field, '_')) {
-                                    'temperature' => 'text-amber-600',
-                                    'humidity' => 'text-cyan-600',
-                                    'pressure' => 'text-violet-600 dark:text-violet-500',
-                                    default => 'text-zinc-700 dark:text-zinc-300',
-                                })
-                                <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}{{ is_array($value) ? ' break-all' : '' }}">{{ is_array($value) ? json_encode($value) : $value }}</span>@unless ($loop->last)<span class="text-zinc-400 dark:text-zinc-600">,</span>@endunless</span>
-                            @endforeach
-                            <span class="block text-zinc-400 dark:text-zinc-600">}</span>
-                        </p>
+                    <div id="transmissions" class="grid gap-2">
+                        @foreach ($this->recentTransmissions as $packet)
+                            <div
+                                @class([
+                                    'grid gap-x-8 gap-y-2 rounded-2xl bg-slate-900/[0.04] px-4 py-3 dark:bg-black/25',
+                                    'hidden' => ! $loop->first,
+                                ])
+                                @unless ($loop->first)
+                                    x-bind:class="{ hidden: ! all }"
+                                @endunless
+                            >
+                                {{-- The blob as stored, one field per line: a V2 packet on
+                                     one line outruns a desktop. Coloured by the key's first word.
+                                     V3's "noise" object stays on its line as JSON. --}}
+                                <p class="overflow-x-auto font-mono text-xs leading-relaxed text-slate-500 tabular-nums dark:text-slate-400">
+                                    <span class="block text-slate-400 dark:text-slate-600">{</span>
+                                    <span class="block pl-4">"timestamp": <span class="text-slate-700 dark:text-slate-300">{{ $packet['timestamp'] }}</span><span class="text-slate-400 dark:text-slate-600">,</span></span>
+                                    @foreach ($packet['packet'] as $field => $value)
+                                        @php($accent = match (strtok($field, '_')) {
+                                            'temperature' => 'text-amber-600',
+                                            'humidity' => 'text-cyan-600',
+                                            'pressure' => 'text-violet-600 dark:text-violet-500',
+                                            default => 'text-zinc-700 dark:text-zinc-300',
+                                        })
+                                        <span class="block pl-4">"{{ $field }}": <span class="{{ $accent }}{{ is_array($value) ? ' break-all' : '' }}">{{ is_array($value) ? json_encode($value) : $value }}</span>@unless ($loop->last)<span class="text-slate-400 dark:text-slate-600">,</span>@endunless</span>
+                                    @endforeach
+                                    <span class="block text-slate-400 dark:text-slate-600">}</span>
+                                </p>
 
-                        <p class="flex flex-wrap gap-x-4 font-mono text-xs text-zinc-500 tabular-nums xl:justify-end dark:text-zinc-400">
-                            <span>{{ $packet['at'] }}</span>
-                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
-                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
-                            <span><span class="text-zinc-800 dark:text-zinc-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa MSL</span>
-                            <span class="hidden md:inline">{{ $packet['ago'] }}</span>
-                        </p>
+                                <p class="flex flex-wrap gap-x-4 border-t border-slate-900/5 pt-2 font-mono text-xs text-slate-500 tabular-nums dark:border-white/5 dark:text-slate-400">
+                                    <span>{{ $packet['at'] }}</span>
+                                    <span><span class="text-slate-800 dark:text-slate-200">{{ number_format($packet['t'], 2, ',', ' ') }}</span> °C</span>
+                                    <span><span class="text-slate-800 dark:text-slate-200">{{ number_format($packet['h'], 2, ',', ' ') }}</span> %</span>
+                                    <span><span class="text-slate-800 dark:text-slate-200">{{ number_format($packet['p'], 1, ',', ' ') }}</span> hPa MSL</span>
+                                    <span class="hidden md:inline">{{ $packet['ago'] }}</span>
+                                </p>
+                            </div>
+                        @endforeach
                     </div>
-                @endforeach
-            </div>
-        </section>
-    @endif
+                </x-tile>
+            @endif
 
-    {{-- ── Station report ─────────────────────────────────────────── --}}
-    @if ($this->stationReport !== null)
-        @php($report = $this->stationReport)
-        <section aria-label="Station report" class="border-b border-zinc-900/10 dark:border-white/10">
-            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-4 pb-2 sm:px-8">
-                <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                    Station · as reported with the last upload
-                </p>
-                <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ $report['at'] }} · {{ $report['ago'] }}
-                </p>
-            </div>
+            {{-- ── Station report ─────────────────────────────────── --}}
+            @if ($hasReport)
+                @php($report = $this->stationReport)
+                <x-tile
+                    title="Station"
+                    icon="cpu"
+                    hint="as reported with the last upload"
+                    aria-label="Station report"
+                    :class="\Illuminate\Support\Arr::toCssClasses(['col-span-12', 'lg:col-span-5' => $this->recentTransmissions !== []])"
+                >
+                    <x-slot:actions>
+                        <p class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ $report['at'] }} · {{ $report['ago'] }}</p>
+                    </x-slot:actions>
 
-            {{-- Board only from firmware 2.3, clock rows only once the board has measured a drift. --}}
-            <dl class="grid grid-cols-2 gap-x-8 gap-y-3 px-4 pb-4 font-mono text-xs tabular-nums sm:grid-cols-3 sm:px-8 lg:grid-cols-6">
-                @foreach ([
-                    'firmware' => $report['firmware'],
-                    ...($report['board'] === null ? [] : ['board' => $report['board']]),
-                    'uptime' => $report['uptime'],
-                    'last reset' => $report['resetReason'],
-                    'network' => $report['network'],
-                    'rssi' => $report['rssi'].' dBm',
-                    'heap free' => number_format($report['heapFree'] / 1024, 0, ',', ' ').' kB',
-                    'heap lowest' => number_format($report['heapMin'] / 1024, 0, ',', ' ').' kB',
-                    'buffered' => $report['buffered'].' '.($report['buffered'] === 1 ? 'window' : 'windows'),
-                    'failed uploads' => $report['uploadFailures'].' in a row',
-                    'network switches' => $report['switches'],
-                    ...($report['clockDrift'] === null ? [] : [
-                        'clock drift' => $report['clockDrift'],
-                        'clock drift worst' => $report['clockDriftWorst'],
-                        'clock synced' => $report['clockSynced'],
-                    ]),
-                ] as $label => $value)
-                    <div>
-                        <dt class="text-[11px] tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">{{ $label }}</dt>
-                        <dd class="text-zinc-800 dark:text-zinc-200">{{ $value }}</dd>
-                    </div>
-                @endforeach
-            </dl>
-        </section>
-    @endif
+                    {{-- Board only from firmware 2.3, clock rows only once the board has measured a drift. --}}
+                    <dl class="grid grid-cols-2 gap-2">
+                        @foreach ([
+                            'firmware' => $report['firmware'],
+                            ...($report['board'] === null ? [] : ['board' => $report['board']]),
+                            'uptime' => $report['uptime'],
+                            'last reset' => $report['resetReason'],
+                            'network' => $report['network'],
+                            'rssi' => $report['rssi'].' dBm',
+                            'heap free' => number_format($report['heapFree'] / 1024, 0, ',', ' ').' kB',
+                            'heap lowest' => number_format($report['heapMin'] / 1024, 0, ',', ' ').' kB',
+                            'buffered' => $report['buffered'].' '.($report['buffered'] === 1 ? 'window' : 'windows'),
+                            'failed uploads' => $report['uploadFailures'].' in a row',
+                            'network switches' => $report['switches'],
+                            ...($report['clockDrift'] === null ? [] : [
+                                'clock drift' => $report['clockDrift'],
+                                'clock drift worst' => $report['clockDriftWorst'],
+                                'clock synced' => $report['clockSynced'],
+                            ]),
+                        ] as $label => $value)
+                            <div class="min-w-0 rounded-[14px] bg-slate-900/[0.04] px-3 py-2.5 dark:bg-white/[0.04]">
+                                <dt class="text-xs text-slate-500 first-letter:uppercase dark:text-slate-400">{{ $label }}</dt>
+                                <dd class="mt-0.5 truncate font-mono text-[13px] font-medium tabular-nums">{{ $value }}</dd>
+                            </div>
+                        @endforeach
+                    </dl>
+                </x-tile>
+            @endif
 
-    {{-- ── Site location ──────────────────────────────────────────── --}}
-    <section aria-label="Station location" class="border-b border-zinc-900/10 dark:border-white/10">
-        <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-5 pb-4 sm:px-8">
-            <p class="font-mono text-[11px] font-medium tracking-[0.2em] text-zinc-500 uppercase dark:text-zinc-400">
-                Site · Plzeň-Slovany, CZ
-            </p>
-            <p class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                approximate location · {{ number_format($this->approximateLocation['radius']) }} m radius
-            </p>
+            {{-- ── Site location ──────────────────────────────────── --}}
+            <x-tile
+                title="Where it is"
+                icon="map-pin"
+                :tone="$tones['rain']"
+                hint="Plzeň-Slovany, CZ, approximate location within {{ number_format($this->approximateLocation['radius']) }} m"
+                aria-label="Station location"
+                class="col-span-12"
+            >
+                <div
+                    wire:ignore
+                    data-station-map
+                    data-lat="{{ $this->approximateLocation['lat'] }}"
+                    data-lng="{{ $this->approximateLocation['lng'] }}"
+                    data-radius="{{ $this->approximateLocation['radius'] }}"
+                    class="-mx-4 -mb-4 h-64 overflow-hidden rounded-b-[18px] sm:-mx-5 sm:-mb-[18px] sm:h-72 sm:rounded-b-[22px]"
+                    role="img"
+                    aria-label="Map showing the approximate area the station reports from"
+                ></div>
+            </x-tile>
         </div>
 
-        <div
-            wire:ignore
-            data-station-map
-            data-lat="{{ $this->approximateLocation['lat'] }}"
-            data-lng="{{ $this->approximateLocation['lng'] }}"
-            data-radius="{{ $this->approximateLocation['radius'] }}"
-            class="h-64 w-full sm:h-72"
-            role="img"
-            aria-label="Map showing the approximate area the station reports from"
-        ></div>
-    </section>
-
-    {{-- ── Footer ─────────────────────────────────────────────────── --}}
-    <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-6 font-mono text-[11px] tracking-widest text-zinc-400 uppercase sm:px-8 dark:text-zinc-500">
-        <span>{{ number_format($this->recordCount, 0, ',', ' ') }} records</span>
-        <span class="hidden sm:inline">ESP32 → HTTP POST · unix time + t/h/p</span>
-        <span>
-            &copy; {{ $this->currentYear }} Vladislav Rajtmajer ·
-            <a
-                href="https://github.com/rajtik76"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="rounded-sm underline decoration-zinc-300 underline-offset-4 hover:text-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:decoration-zinc-600 dark:hover:text-zinc-300 dark:focus-visible:outline-zinc-100"
-            >GitHub</a>
-        </span>
-    </footer>
+        {{-- ── Footer ─────────────────────────────────────────────── --}}
+        <footer class="mt-6 flex flex-wrap items-center justify-between gap-2 px-1.5 text-[13px] text-slate-500 dark:text-slate-400">
+            <span>{{ number_format($this->recordCount, 0, ',', ' ') }} records</span>
+            <span>
+                &copy; {{ $this->currentYear }} Vladislav Rajtmajer ·
+                <a
+                    href="https://github.com/rajtik76"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="rounded-sm underline decoration-slate-300 underline-offset-4 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:decoration-slate-600 dark:hover:text-slate-300 dark:focus-visible:outline-slate-100"
+                >GitHub</a>
+            </span>
+        </footer>
+    </div>
 </div>

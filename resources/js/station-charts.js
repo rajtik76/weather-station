@@ -235,6 +235,13 @@ let noiseRows = [];
 /** `[wall-clock ms, epoch]` of the noise slots the server heard rain in (Dashboard::rainSlots). */
 let rainSlots = [];
 
+/** Frosted like the tiles the charts sit on; ECharts takes the rest as inline CSS. */
+const TOOLTIP_GLASS =
+    "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);";
+
+/** The page's figures face, for axis labels and tooltips alike. */
+const CHART_FONT = "IBM Plex Mono";
+
 function isDark() {
     return document.documentElement.classList.contains("dark");
 }
@@ -243,20 +250,20 @@ function isDark() {
 function palette() {
     return isDark()
         ? {
-              axis: "#52525b",
-              label: "#a1a1aa",
-              grid: "#ffffff14",
-              surface: "#27272a",
-              border: "#3f3f46",
-              text: "#e4e4e7",
+              axis: "#475569",
+              label: "#94a3b8",
+              grid: "#ffffff12",
+              surface: "rgba(20, 30, 52, 0.82)",
+              border: "#ffffff14",
+              text: "#e2e8f0",
           }
         : {
-              axis: "#d4d4d8",
-              label: "#a1a1aa",
-              grid: "#0000000d",
-              surface: "#ffffff",
-              border: "#e4e4e7",
-              text: "#27272a",
+              axis: "#cbd5e1",
+              label: "#94a3b8",
+              grid: "#0f1c2e0f",
+              surface: "rgba(255, 255, 255, 0.86)",
+              border: "#ffffff",
+              text: "#1e293b",
           };
 }
 
@@ -405,7 +412,8 @@ function tooltipFor(strip, colours) {
         confine: true,
         backgroundColor: colours.surface,
         borderColor: colours.border,
-        textStyle: { color: colours.label, fontSize: 12 },
+        extraCssText: TOOLTIP_GLASS,
+        textStyle: { color: colours.label, fontFamily: CHART_FONT, fontSize: 12 },
         formatter: (params) => {
             const point = Array.isArray(params) ? params[0] : params;
 
@@ -693,6 +701,7 @@ function chartOption(strip) {
 
     return {
         animation: false,
+        textStyle: { fontFamily: CHART_FONT },
         // Stamps already carry the local offset; UTC keeps the axis on station time for every viewer.
         useUTC: true,
         ...own,
@@ -1229,6 +1238,7 @@ function navigatorOption(from, to) {
 
     return {
         animation: false,
+        textStyle: { fontFamily: CHART_FONT },
         useUTC: true,
         grid: { ...GRID_SIDES, top: 4, height: 44 },
         // Two x axes: the slider narrows the one it drives to the window, so
