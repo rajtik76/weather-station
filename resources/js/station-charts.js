@@ -215,8 +215,19 @@ const EVENT = { time: 0, title: 1, colour: 2 };
 /** Fallback event colour; a mid-grey that works on both grounds. */
 const EVENT_COLOUR = "#a1a1aa";
 
-/** Shared by every canvas so the stacked time axes line up pixel for pixel; the right margin is a second value axis's width. */
+/**
+ * Shared by every canvas so the stacked time axes line up pixel for pixel; the right margin is a second value axis's width.
+ * A phone gets the narrow pair: the labels are a few digits wide and 128 px of a 360 px strip is a third of it.
+ */
 const GRID_SIDES = { left: 64, right: 64 };
+const NARROW_GRID_SIDES = { left: 36, right: 30 };
+
+/** Tailwind's `sm` breakpoint; below it the strips use NARROW_GRID_SIDES. */
+const narrowScreen = window.matchMedia("(max-width: 639px)");
+
+function gridSides() {
+    return narrowScreen.matches ? NARROW_GRID_SIDES : GRID_SIDES;
+}
 
 const charts = new Map();
 
@@ -798,7 +809,7 @@ function frameGrid(strip, own = {}) {
     const top = own.top ?? 12;
 
     return {
-        ...GRID_SIDES,
+        ...gridSides(),
         bottom: 28,
         ...own,
         top: marksEvents(strip) ? top + EVENT_LANE : top,
@@ -1229,7 +1240,8 @@ function spectrumOption(strip, colours) {
                 fontSize: 10,
                 // Every third band: 25, 50, 100, 200 ... an octave apart.
                 interval: 2,
-                formatter: (label) => `${label} Hz`,
+                // The bare band on a phone, to fit the narrow side.
+                formatter: (label) => (narrowScreen.matches ? label : `${label} Hz`),
             },
             splitLine: { show: false },
         },
@@ -1333,7 +1345,7 @@ function navigatorOption(from, to) {
         animation: false,
         textStyle: { fontFamily: CHART_FONT },
         useUTC: true,
-        grid: { ...GRID_SIDES, top: 4, height: 44 },
+        grid: { ...gridSides(), top: 4, height: 44 },
         // Two x axes: the slider narrows the one it drives to the window, so
         // that one is hidden and a second, pinned to the record's ends like
         // the shadow, carries the labels and the event lines.
@@ -1361,7 +1373,7 @@ function navigatorOption(from, to) {
             {
                 type: "slider",
                 xAxisIndex: 0,
-                ...GRID_SIDES,
+                ...gridSides(),
                 top: 4,
                 height: 44,
                 startValue: from,
@@ -1819,3 +1831,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("livewire:navigated", () => mount(true));
 window.addEventListener("resize", resize);
+// The grid sides are baked into every option; crossing the breakpoint repaints them.
+narrowScreen.addEventListener("change", () => mount(true));

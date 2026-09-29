@@ -281,7 +281,7 @@
                                 <span class="text-xs font-bold">now</span>
                                 <span class="font-mono text-[11px] text-white/75 tabular-nums">{{ $this->lastMeasurement?->clock() }}</span>
                                 @if ($temperature !== null)
-                                    <span class="mt-7 text-[15px] font-extrabold tabular-nums">{{ number_format($temperature['now'], 1, ',', ' ') }}°</span>
+                                    <span class="mt-7 text-[13px] font-extrabold tabular-nums sm:text-[15px]">{{ number_format($temperature['now'], 1, ',', ' ') }}°</span>
                                 @endif
                             </li>
                             @foreach ($forecast['horizons'] as $hour)
@@ -290,7 +290,8 @@
                                     <span class="font-mono text-[11px] text-white/75 tabular-nums">{{ $hour['clock'] }}</span>
                                     <flux:icon :icon="$hour['sky']['icon']" class="size-6" title="{{ ucfirst($hour['sky']['label']) }}" aria-hidden="true" />
                                     <span class="sr-only">{{ ucfirst($hour['sky']['label']) }}.</span>
-                                    <span class="flex items-center gap-0.5 text-[15px] font-extrabold tabular-nums">
+                                    {{-- A phone gives each hour about 40 px: smaller figures, the trend arrow and the rain's umbrella stacked. --}}
+                                    <span class="flex flex-col items-center gap-0.5 text-[13px] font-extrabold tabular-nums sm:flex-row sm:text-[15px]">
                                         {{ number_format($hour['t'], 1, ',', ' ') }}°
                                         <flux:icon
                                             :icon="match ($hour['trend']) { 'rising' => 'arrow-trending-up', 'falling' => 'arrow-trending-down', default => 'minus' }"
@@ -302,7 +303,7 @@
                                         <span class="sr-only">{{ ucfirst($hour['trend']) }}.</span>
                                     </span>
                                     <span class="hidden font-mono text-[10.5px] leading-tight text-white/80 tabular-nums sm:block">{{ number_format($hour['tLow'], 1, ',', ' ') }} to {{ number_format($hour['tHigh'], 1, ',', ' ') }}</span>
-                                    <span class="inline-flex items-center gap-0.5 font-mono text-[11px] text-white/85 tabular-nums">
+                                    <span class="inline-flex flex-col items-center gap-0.5 font-mono text-[11px] whitespace-nowrap text-white/85 tabular-nums sm:flex-row">
                                         <flux:icon.umbrella variant="micro" class="size-3" aria-hidden="true" />
                                         <span class="sr-only">rain</span>
                                         {{ $hour['rain'] }} %
