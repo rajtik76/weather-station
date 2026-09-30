@@ -26,9 +26,9 @@ recorded; see the git history before this file for it.
 
 ## Hardware
 
-Wiring: the [station schematic](../docs/hardware/station-schematic.svg), the
-[shield hub schematic](../docs/hardware/shield-hub-schematic.svg) and its
-[soldering layout](../docs/hardware/shield-hub-board.svg).
+Wiring: the [station schematic](../docs/hardware/kicad/WeatherStation/WeatherStation_schematic.svg)
+and the [shield hub schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg),
+both from KiCad.
 
 ### Cable
 
@@ -74,10 +74,8 @@ python generate_assembly.py          # perforated 3D assembly, needs CadQuery
 On the board, B.Cu tracks are tinned wire on the solder side and F.Cu
 tracks are insulated wires on the component side. A wire end sits in a free
 hole (a via in KiCad) and is soldered from below to the run next to it, so
-nothing is soldered on the component side. The board follows
-`shield-hub-board.py`; change the two together and check both
-(`shield-hub-board.py` prints its own check, KiCad runs DRC with schematic
-parity).
+nothing is soldered on the component side. Check a change with KiCad's DRC
+and schematic parity.
 
 The sketch takes the I2C pins from the board variant through the `SDA` /
 `SCL` symbols (GPIO21 / GPIO22 on the DevKit); the I2S pins are in `noise.h`.
