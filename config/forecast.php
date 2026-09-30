@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\ValueObject\StationSite;
+
 return [
     // The forecast service on the internal Docker network, e.g.
     // http://weather-forecast:8000. Unset means no forecasts are made.
@@ -18,6 +20,6 @@ return [
     // the correction learns from them all.
     'history_since' => env('FORECAST_HISTORY_SINCE'),
 
-    // Plzeň-Slovany. The models use local solar time, so only the longitude matters.
-    'longitude' => 13.40,
+    // The models use local solar time, so only the longitude matters.
+    'longitude' => StationSite::LONGITUDE,
 ];

@@ -7,6 +7,7 @@ use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\StationSite;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Date;
@@ -66,7 +67,7 @@ it('sends the last sixty days of the sensor in service units and stores the fore
     dispatch_sync(new ForecastWeather($sensor));
 
     Http::assertSent(fn (Request $request): bool => $request->data() === [
-        'longitude' => 13.40,
+        'longitude' => StationSite::LONGITUDE,
         'readings' => [['timestamp' => $recent, 'temperature' => 11.81, 'humidity' => 83.27, 'pressure' => 976.55]],
     ]);
     $forecast = Forecast::query()->sole();

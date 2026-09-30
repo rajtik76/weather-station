@@ -9,12 +9,11 @@ namespace App\ValueObject;
  * hundredths, pressure reduced to sea level at the station's height. The
  * stored reading stays as sent, so a corrected height never means rewriting
  * stored rows.
+ *
+ * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
  */
 final readonly class Readout
 {
-    /** Station height for the sea-level reduction, Plzeň-Slovany. */
-    public const float ALTITUDE_METRES = 345.0;
-
     private function __construct(private MeasurementData $data) {}
 
     public static function of(MeasurementData $data): self
@@ -57,7 +56,7 @@ final readonly class Readout
             pressure: $pascals,
         );
 
-        return SeaLevelPressure::reduce($reading, self::ALTITUDE_METRES)->hectopascals(2);
+        return SeaLevelPressure::reduce($reading, StationSite::ALTITUDE_METRES)->hectopascals(2);
     }
 
     /** Null where there is none (see DewPoint::of); the chart draws a gap. */
@@ -90,7 +89,7 @@ final readonly class Readout
     /**
      * Every channel with its extremes, keyed as the day readouts read them.
      *
-     * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
+     * @return DayRow
      */
     public function toArray(): array
     {

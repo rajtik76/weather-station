@@ -9,26 +9,31 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\StationReport;
+use App\Queries\CachedForecastAccuracy;
 use App\Queries\ForecastAccuracy;
 use App\Queries\MeasurementBuckets;
+use App\ValueObject\BoardReport;
 use App\ValueObject\CarriesNoise;
+use App\ValueObject\ChartRow;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\DayFigures;
+use App\ValueObject\ForecastHours;
 use App\ValueObject\LocalTime;
-use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\NoiseWindow;
 use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
+use App\ValueObject\Sky;
+use App\ValueObject\StationSite;
 use App\ValueObject\Trace;
+use App\ValueObject\Verdict;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
-use UnexpectedValueException;
 
 /**
  * `#[Computed]` methods are declared as properties for Larastan.
@@ -42,13 +47,14 @@ use UnexpectedValueException;
  * @property-read bool $hasReadings
  * @property-read int $recordCount
  * @property-read list<DayRow> $lastDay
- * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}> $metrics
+ * @property-read array<string, Figures> $metrics
  * @property-read bool $isNoiseCurrent
  * @property-read bool $isLightCurrent
  * @property-read list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
- * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
+ * @property-read Report|null $stationReport
  * @property-read int $currentYear
+ * @property-read Measurement|null $newestMeasurement
  * @property-read LocalTime|null $lastMeasurement
  * @property-read string|null $measuredAt
  * @property-read string|null $measuredAgo
@@ -66,35 +72,22 @@ use UnexpectedValueException;
  * @property-read string|null $skyScene
  * @property-read list<Score> $forecastAccuracy
  * @property-read Score|null $accuracyScore
- * @property-read array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}|null $verdict
+ * @property-read Answer|null $verdict
  *
- * Chart rows are positional arrays to keep the JSON payload small. A bucket
- * row is `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`
- * with nulls for an empty slot; a reading row stops after the epoch.
- *
- * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
- * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
- * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
- * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
- * nulls for a slot without noise.
- * @phpstan-type NoiseRow list<int|float|null>
- * A light row is `[wall-clock ms, epoch, lx, lx min, lx max]`, nulls for a slot without light.
- * @phpstan-type LightRow array{0: int, 1: int, 2: ?float, 3: ?float, 4: ?float}
- * @phpstan-type ForecastHour array{hours: int, clock: string, t: float, tLow: float, tHigh: float, trend: string, rain: int, sky: array{icon: string, label: string, tone: string}}
- *
- * @phpstan-import-type Bucket from MeasurementBuckets
- * @phpstan-import-type NoiseBucket from MeasurementBuckets
- * @phpstan-import-type LightBucket from MeasurementBuckets
- * @phpstan-import-type Horizon from Forecast
+ * @phpstan-import-type ReadingRow from ChartRow
+ * @phpstan-import-type BucketRow from ChartRow
+ * @phpstan-import-type NoiseRow from ChartRow
+ * @phpstan-import-type LightRow from ChartRow
+ * @phpstan-import-type DayRow from Readout
+ * @phpstan-import-type Figures from DayFigures
+ * @phpstan-import-type Hour from ForecastHours as ForecastHour
+ * @phpstan-import-type Report from BoardReport
+ * @phpstan-import-type Answer from Verdict
  * @phpstan-import-type Score from ForecastAccuracy
  */
 #[Title('Station Log')]
 class Dashboard extends Component
 {
-    private const float LATITUDE = 49.733242;
-
-    private const float LONGITUDE = 13.399911;
-
     private const int LOCATION_RADIUS_METRES = 800;
 
     private const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
@@ -104,22 +97,6 @@ class Dashboard extends Component
 
     /** How far back the forecasts are scored against what came; the panel's label reads it. */
     public const int ACCURACY_DAYS = 30;
-
-    /** The horizon the page's question asks about; the verdict falls back to the longest scored until it has come true. */
-    private const int VERDICT_HOURS = 6;
-
-    /** A day of forecasts, one per ten minutes: fewer and the verdict says it is too early. */
-    private const int VERDICT_MIN_FORECASTS = 144;
-
-    /**
-     * Stored with the cached accuracy: bump it when Score changes shape, so a
-     * deploy never reads the old one. In the value, not the key - a key per
-     * shape would leave the old row behind for good.
-     */
-    private const int ACCURACY_CACHE_SHAPE = 7;
-
-    /** A forecast hour this close to the one before it shows no trend. */
-    private const float FORECAST_STEADY_CELSIUS = 0.3;
 
     /** Navigator thinning: one reading per bucket once the record is large. */
     private const int OVERVIEW_BUCKET_SECONDS = 21600;
@@ -282,7 +259,7 @@ class Dashboard extends Component
             return [];
         }
 
-        return array_values($buckets->map(fn (object $bucket): array => $this->plotBucket($bucket))->all());
+        return array_values($buckets->map(fn (object $bucket): array => ChartRow::bucket($bucket))->all());
     }
 
     /**
@@ -302,7 +279,7 @@ class Dashboard extends Component
 
         $buckets = $this->measurementBuckets()->noise($this->chartWindow());
 
-        return array_values($buckets->map(fn (object $bucket): array => $this->plotNoise($bucket))->all());
+        return array_values($buckets->map(fn (object $bucket): array => ChartRow::noise($bucket))->all());
     }
 
     /**
@@ -333,7 +310,7 @@ class Dashboard extends Component
 
         $buckets = $this->measurementBuckets()->light($this->chartWindow());
 
-        return array_values($buckets->map(fn (object $bucket): array => $this->plotLight($bucket))->all());
+        return array_values($buckets->map(fn (object $bucket): array => ChartRow::light($bucket))->all());
     }
 
     /**
@@ -385,7 +362,7 @@ class Dashboard extends Component
             return null;
         }
 
-        $data = $this->measurements()->orderByDesc('timestamp')->first()?->data;
+        $data = $this->newestMeasurement?->data;
 
         if (! $data instanceof CarriesNoise || ! $data->noise instanceof NoiseWindow) {
             return null;
@@ -412,21 +389,7 @@ class Dashboard extends Component
             return null;
         }
 
-        $time = $this->isDaylight(now()->getTimestamp()) ? 'day' : 'night';
-
-        if ($this->rainHeard === true) {
-            return "rain-{$time}";
-        }
-
-        $rain = $this->forecast['horizons'][0]['rain'] ?? null;
-
-        return match (true) {
-            $rain === null => null,
-            $rain >= 60 => "rain-{$time}",
-            $rain >= 30 => "drizzle-{$time}",
-            $rain >= 10 => "partly-{$time}",
-            default => "clear-{$time}",
-        };
+        return Sky::scene(now()->getTimestamp(), $this->rainHeard, $this->forecast['horizons'][0]['rain'] ?? null);
     }
 
     /**
@@ -443,7 +406,7 @@ class Dashboard extends Component
     {
         $total = $this->measurements()->count();
 
-        return $this->plot(
+        return array_values(
             $this->measurements()
                 ->when(
                     $total >= self::OVERVIEW_UNTHINNED_ROWS,
@@ -454,6 +417,8 @@ class Dashboard extends Component
                 )
                 ->orderBy('timestamp')
                 ->get()
+                ->map(fn (Measurement $measurement): array => ChartRow::reading($measurement))
+                ->all()
         );
     }
 
@@ -607,25 +572,17 @@ class Dashboard extends Component
     }
 
     /**
-     * Noise (`n`) and light (`l`) only when the day holds some: older rows,
-     * a dead microphone or no VEML7700 carry none.
-     *
-     * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}>
+     * @return array<string, Figures>
      */
     #[Computed]
     public function metrics(): array
     {
-        if (! $this->hasReadings) {
+        // The readouts follow the window's; an empty day has nothing to summarise either.
+        if (! $this->hasReadings || $this->lastDay === []) {
             return [];
         }
 
-        return array_filter([
-            't' => $this->figures('t'),
-            'h' => $this->figures('h'),
-            'p' => $this->figures('p'),
-            'n' => $this->noiseFigures(),
-            'l' => $this->lightFigures(),
-        ]);
+        return DayFigures::of($this->lastDay)->metrics();
     }
 
     /**
@@ -684,15 +641,8 @@ class Dashboard extends Component
             return null;
         }
 
-        // Each hour's trend against the one before it; the first against the newest reading.
-        $newest = $this->measurements()->orderByDesc('timestamp')->first();
-        $previous = $newest === null ? null : Readout::of($newest->data)->temperature();
-        $horizons = [];
-
-        foreach ($forecast->data as $horizon) {
-            $horizons[] = $this->forecastHour($forecast->issued_at, $horizon, $previous);
-            $previous = $horizon['temperature']['mid'];
-        }
+        $newest = $this->newestMeasurement;
+        $horizons = ForecastHours::of($forecast, $newest === null ? null : Readout::of($newest->data)->temperature());
 
         return [
             // When it arrived, not the window it starts from: that is what the reader asks.
@@ -735,39 +685,15 @@ class Dashboard extends Component
 
     /**
      * The last month's forecasts scored against the readings that followed,
-     * per horizon; empty until one has come true. Not the chart window: a
-     * score over a zoomed hour would say nothing. Kept until the next
-     * forecast: it comes with the upload that completes new scores. Fifteen
-     * minutes at most, for when the service is down and none comes.
-     *
-     * One key per sensor, the forecast it was scored at inside the value: a
-     * key per forecast is never read again once the next one comes, and the
-     * database store only deletes an expired row it reads, so the table grew
-     * by a row every ten minutes.
+     * per horizon. Not the chart window: a score over a zoomed hour would
+     * say nothing.
      *
      * @return list<Score>
      */
     #[Computed]
     public function forecastAccuracy(): array
     {
-        $sensorId = $this->selectedSensor?->id;
-        $newest = Forecast::query()->where('sensor_id', $sensorId)->max('issued_at');
-
-        if ($newest === null) {
-            return [];
-        }
-
-        $key = "forecast-accuracy:{$sensorId}";
-        $cached = Cache::get($key);
-
-        if (is_array($cached) && ($cached['shape'] ?? null) === self::ACCURACY_CACHE_SHAPE && ($cached['issuedAt'] ?? null) === $newest) {
-            return $cached['scores'];
-        }
-
-        $scores = new ForecastAccuracy($sensorId)->since(now()->subDays(self::ACCURACY_DAYS)->getTimestamp());
-        Cache::put($key, ['shape' => self::ACCURACY_CACHE_SHAPE, 'issuedAt' => $newest, 'scores' => $scores], now()->addMinutes(15));
-
-        return $scores;
+        return new CachedForecastAccuracy($this->selectedSensor?->id)->lastDays(self::ACCURACY_DAYS);
     }
 
     /**
@@ -792,97 +718,18 @@ class Dashboard extends Component
     }
 
     /**
-     * The page's answer: the forecast as shown, six hours ahead, against the
-     * naive guess, and every horizon's skill beside it so the six is not the
-     * only number picked. Independent of the accuracy panel's horizon choice,
-     * so the headline never changes under the reader's pointer.
-     *
-     * @return array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}|null
+     * @return Answer|null
      */
     #[Computed]
     public function verdict(): ?array
     {
-        $scores = $this->forecastAccuracy;
-
-        if ($scores === []) {
-            return null;
-        }
-
-        $headline = array_find($scores, fn (array $score): bool => $score['hours'] === self::VERDICT_HOURS) ?? end($scores);
-        $figures = $headline['shown'];
-
-        return [
-            'hours' => $headline['hours'],
-            'ready' => $figures['skill'] !== null && $figures['count'] >= self::VERDICT_MIN_FORECASTS,
-            ...$figures,
-            'horizons' => array_map(fn (array $score): array => ['hours' => $score['hours'], 'skill' => $score['shown']['skill']], $scores),
-        ];
+        return Verdict::of($this->forecastAccuracy);
     }
 
     /**
-     * Temperature and rain only: the service forecasts humidity and pressure
-     * too, and they stay in the stored row, but nobody reads them ahead.
+     * The newest `station` object of the selected sensor.
      *
-     * @param  Horizon  $horizon
-     * @param  float|null  $previous  the hour before's median, or the newest reading's temperature
-     * @return ForecastHour
-     */
-    private function forecastHour(int $issuedAt, array $horizon, ?float $previous): array
-    {
-        $temperature = $horizon['temperature'];
-        $change = $previous === null ? 0.0 : $temperature['mid'] - $previous;
-        $at = $issuedAt + $horizon['hours'] * 3600;
-        $rain = (int) round($horizon['rain_probability'] * 100);
-
-        return [
-            'hours' => $horizon['hours'],
-            'clock' => LocalTime::of($at)->clock(),
-            't' => round($temperature['mid'], 1),
-            'tLow' => round($temperature['low'], 1),
-            'tHigh' => round($temperature['high'], 1),
-            // Under FORECAST_STEADY_CELSIUS either way reads as holding: the median wobbles by tenths.
-            'trend' => match (true) {
-                $change >= self::FORECAST_STEADY_CELSIUS => 'rising',
-                $change <= -self::FORECAST_STEADY_CELSIUS => 'falling',
-                default => 'steady',
-            },
-            'rain' => $rain,
-            'sky' => $this->sky($at, $rain),
-        ];
-    }
-
-    /**
-     * The picture over a forecast hour. The models forecast rain, not cloud,
-     * so it follows the rain chance alone; sun or moon by the real sunrise.
-     *
-     * @return array{icon: string, label: string, tone: string}
-     */
-    private function sky(int $timestamp, int $rain): array
-    {
-        $isDay = $this->isDaylight($timestamp);
-        $tone = $isDay ? 'day' : 'night';
-
-        return match (true) {
-            $rain >= 60 => ['icon' => 'cloud-rain', 'label' => 'rain likely', 'tone' => 'rain'],
-            $rain >= 30 => ['icon' => 'cloud-drizzle', 'label' => 'rain possible', 'tone' => 'rain'],
-            $rain >= 10 => ['icon' => $isDay ? 'cloud-sun' : 'cloud-moon', 'label' => 'slight chance of rain', 'tone' => $tone],
-            default => ['icon' => $isDay ? 'sun' : 'moon', 'label' => 'dry', 'tone' => $tone],
-        };
-    }
-
-    /** Between the real sunrise and sunset over the station. */
-    private function isDaylight(int $timestamp): bool
-    {
-        $sun = date_sun_info($timestamp, self::LATITUDE, self::LONGITUDE);
-
-        return $timestamp >= (int) $sun['sunrise'] && $timestamp < (int) $sun['sunset'];
-    }
-
-    /**
-     * The newest `station` object of the selected sensor. SSID and IP stay
-     * off the page: it is public.
-     *
-     * @return array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null
+     * @return Report|null
      */
     #[Computed]
     public function stationReport(): ?array
@@ -896,59 +743,7 @@ class Dashboard extends Component
             return null;
         }
 
-        $data = $report->data;
-
-        return [
-            'firmware' => (string) $data['firmware'],
-            // Null before firmware 2.3, which is when the board began reporting it.
-            'board' => isset($data['board']) ? (string) $data['board'] : null,
-            'resetReason' => (string) $data['reset_reason'],
-            'uptime' => $this->duration((int) $data['uptime']),
-            'network' => (int) $data['wifi_network'] === 0 ? 'primary' : 'backup',
-            'rssi' => (int) $data['rssi'],
-            'switches' => (int) $data['wifi_switches'],
-            'heapFree' => (int) $data['heap_free'],
-            'heapMin' => (int) $data['heap_min'],
-            'buffered' => (int) $data['buffered'],
-            'uploadFailures' => (int) $data['upload_failures'],
-            ...$this->clockDrift($data),
-            ...LocalTime::of($report->created_at?->getTimestamp() ?? 0)->forHumans(),
-        ];
-    }
-
-    /**
-     * Nulls until the board has re-synced once since boot: the boot sync steps
-     * from 1970 and says nothing about the crystal.
-     *
-     * @param  array<string, mixed>  $data
-     * @return array{clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null}
-     */
-    private function clockDrift(array $data): array
-    {
-        $overSeconds = (int) ($data['clock_step_over_s'] ?? 0);
-        $syncedAt = (int) ($data['clock_synced_at'] ?? 0);
-
-        if ($overSeconds <= 0 || $syncedAt <= 0) {
-            return ['clockDrift' => null, 'clockDriftWorst' => null, 'clockSynced' => null];
-        }
-
-        return [
-            'clockDrift' => $this->signedMilliseconds((int) $data['clock_step_ms']).' in '.$this->duration($overSeconds),
-            'clockDriftWorst' => $this->signedMilliseconds((int) ($data['clock_step_max_ms'] ?? $data['clock_step_ms'])),
-            'clockSynced' => LocalTime::of($syncedAt)->stamp(),
-        ];
-    }
-
-    /** "+812 ms", "-1 204 ms", "0 ms". */
-    private function signedMilliseconds(int $milliseconds): string
-    {
-        $sign = match (true) {
-            $milliseconds > 0 => '+',
-            $milliseconds < 0 => '-',
-            default => '',
-        };
-
-        return $sign.number_format(abs($milliseconds), 0, ',', ' ').' ms';
+        return BoardReport::of($report)->toArray();
     }
 
     /**
@@ -958,8 +753,8 @@ class Dashboard extends Component
     public function approximateLocation(): array
     {
         return [
-            'lat' => self::LATITUDE,
-            'lng' => self::LONGITUDE,
+            'lat' => StationSite::LATITUDE,
+            'lng' => StationSite::LONGITUDE,
             'radius' => self::LOCATION_RADIUS_METRES,
         ];
     }
@@ -971,16 +766,21 @@ class Dashboard extends Component
     }
 
     /**
-     * Across the whole table, not the window. The station's own stamp, not
+     * Across the whole table, not the window. By the station's own stamp, not
      * `created_at`: a buffered batch arrives late and says nothing about when
-     * the sensor was last read.
+     * the sensor was last read. One query for the status line, the rain and
+     * the forecast's first trend.
      */
+    #[Computed]
+    public function newestMeasurement(): ?Measurement
+    {
+        return $this->measurements()->orderByDesc('timestamp')->first();
+    }
+
     #[Computed]
     public function lastMeasurement(): ?LocalTime
     {
-        $timestamp = $this->measurements()->max('timestamp');
-
-        return $timestamp === null ? null : LocalTime::of((int) $timestamp);
+        return $this->newestMeasurement === null ? null : LocalTime::of($this->newestMeasurement->timestamp);
     }
 
     #[Computed]
@@ -1086,215 +886,5 @@ class Dashboard extends Component
 
         $this->from = $window?->from;
         $this->to = $window?->to;
-    }
-
-    /** "3 d 4 h", "4 h 12 min", "12 min 5 s". */
-    private function duration(int $seconds): string
-    {
-        $days = intdiv($seconds, 86_400);
-        $hours = intdiv($seconds % 86_400, 3_600);
-        $minutes = intdiv($seconds % 3_600, 60);
-
-        return match (true) {
-            $days > 0 => "{$days} d {$hours} h",
-            $hours > 0 => "{$hours} h {$minutes} min",
-            default => "{$minutes} min ".($seconds % 60).' s',
-        };
-    }
-
-    /**
-     * The averages go back into a measurement in protocol units so reduction
-     * and dew point run through the same code as a single reading. Pressure
-     * extremes are reduced with the bucket's mean temperature; the sample
-     * that read them kept none of its own.
-     *
-     * @param  Bucket  $bucket
-     * @return BucketRow
-     */
-    private function plotBucket(object $bucket): array
-    {
-        $time = LocalTime::of($bucket->bucket)->wallClockMs();
-
-        if ($bucket->t_avg === null || $bucket->h_avg === null || $bucket->p_avg === null) {
-            return [$time, null, null, null, null, $bucket->bucket, null, null, null, null, null, null];
-        }
-
-        $mean = Readout::of(new MeasurementDataV1(
-            temperature: (int) round((float) $bucket->t_avg),
-            humidity: (int) round((float) $bucket->h_avg),
-            pressure: (int) round((float) $bucket->p_avg),
-        ));
-
-        return [
-            $time,
-            Readout::hundredths($bucket->t_avg),
-            Readout::hundredths($bucket->h_avg),
-            $mean->pressure(),
-            $mean->dewPoint(),
-            $bucket->bucket,
-            Readout::hundredths((float) $bucket->t_min),
-            Readout::hundredths((float) $bucket->t_max),
-            Readout::hundredths((float) $bucket->h_min),
-            Readout::hundredths((float) $bucket->h_max),
-            $mean->seaLevel((int) $bucket->p_min),
-            $mean->seaLevel((int) $bucket->p_max),
-        ];
-    }
-
-    /**
-     * Tenths of a dB: the band spread is tens of dB, and the payload is 26
-     * numbers a slot.
-     *
-     * @param  NoiseBucket  $bucket
-     * @return NoiseRow
-     */
-    private function plotNoise(object $bucket): array
-    {
-        $time = LocalTime::of($bucket->bucket)->wallClockMs();
-
-        if ($bucket->laeq === null || $bucket->bands === null) {
-            return [$time, $bucket->bucket, ...array_fill(0, 4 + NoiseWindow::BANDS_COUNT, null)];
-        }
-
-        $decibels = fn (float|int|string|null $value): ?float => $value === null ? null : round((float) $value / 100, 1);
-
-        /** @var list<float|int|null> $bands */
-        $bands = json_decode($bucket->bands, true, flags: JSON_THROW_ON_ERROR);
-
-        return [
-            $time,
-            $bucket->bucket,
-            $decibels($bucket->laeq),
-            $decibels($bucket->la10),
-            $decibels($bucket->la90),
-            $decibels($bucket->lamax),
-            ...array_map($decibels, $bands),
-        ];
-    }
-
-    /**
-     * Lux with two decimals: dusk reads hundredths, noon tens of thousands.
-     *
-     * @param  LightBucket  $bucket
-     * @return LightRow
-     */
-    private function plotLight(object $bucket): array
-    {
-        $lux = fn (int|string|null $value): ?float => $value === null ? null : round((float) $value / 100, 2);
-
-        return [
-            LocalTime::of($bucket->bucket)->wallClockMs(),
-            $bucket->bucket,
-            $lux($bucket->l_avg),
-            $lux($bucket->l_min),
-            $lux($bucket->l_max),
-        ];
-    }
-
-    /**
-     * @param  Collection<int, Measurement>  $measurements
-     * @return list<ReadingRow>
-     */
-    private function plot(Collection $measurements): array
-    {
-        return array_values(
-            $measurements
-                ->map(function (Measurement $measurement): array {
-                    $readout = Readout::of($measurement->data);
-
-                    return [
-                        LocalTime::of($measurement->timestamp)->wallClockMs(),
-                        $readout->temperature(),
-                        $readout->humidity(),
-                        $readout->pressure(),
-                        $readout->dewPoint(),
-                        $measurement->timestamp,
-                    ];
-                })
-                ->all()
-        );
-    }
-
-    /**
-     * Day min and max come off the entries' extremes, not their means: the
-     * coldest sample sits below the coldest ten-minute mean.
-     *
-     * @param  't'|'h'|'p'  $field
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}
-     */
-    private function figures(string $field): array
-    {
-        $day = array_column($this->lastDay, $field);
-        $lows = array_column($this->lastDay, "{$field}Min");
-        $highs = array_column($this->lastDay, "{$field}Max");
-
-        if ($day === [] || $lows === [] || $highs === []) {
-            throw new UnexpectedValueException("No readings to summarise for [{$field}].");
-        }
-
-        return $this->summary($day, $lows, $highs);
-    }
-
-    /**
-     * The day's LAeq, its extremes included: a window has no quietest
-     * sample, and LAmax is a single door slam, not the loudest ten minutes.
-     *
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}|null
-     */
-    private function noiseFigures(): ?array
-    {
-        $levels = [];
-
-        foreach ($this->lastDay as $entry) {
-            if ($entry['n'] !== null) {
-                $levels[] = $entry['n'];
-            }
-        }
-
-        return $levels === [] ? null : $this->summary($levels, $levels, $levels);
-    }
-
-    /**
-     * The day's light off each entry's extremes, like the weather channels:
-     * the 24 h max is the brightest sample, not the brightest mean.
-     *
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}|null
-     */
-    private function lightFigures(): ?array
-    {
-        $lit = [];
-
-        foreach ($this->lastDay as $entry) {
-            if ($entry['l'] !== null) {
-                $lit[] = [$entry['l'], $entry['lMin'] ?? $entry['l'], $entry['lMax'] ?? $entry['l']];
-            }
-        }
-
-        if ($lit === []) {
-            return null;
-        }
-
-        return $this->summary(array_column($lit, 0), array_column($lit, 1), array_column($lit, 2));
-    }
-
-    /**
-     * @param  non-empty-list<float>  $day
-     * @param  non-empty-list<float>  $lows
-     * @param  non-empty-list<float>  $highs
-     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}
-     */
-    private function summary(array $day, array $lows, array $highs): array
-    {
-        $now = end($day);
-
-        return [
-            'now' => $now,
-            // Against one hour ago (six slots), or the oldest point if the day is shorter.
-            'delta' => $now - (float) $day[max(0, count($day) - 7)],
-            'dayMin' => min($lows),
-            'dayMax' => max($highs),
-            // The day's means, oldest first, for the readout's sparkline.
-            'trace' => $day,
-        ];
     }
 }
