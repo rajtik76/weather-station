@@ -26,9 +26,10 @@ recorded; see the git history before this file for it.
 
 ## Hardware
 
-Wiring: the [station schematic](../docs/hardware/kicad/WeatherStation/WeatherStation_schematic.svg)
+Wiring: the [station schematic](../docs/hardware/kicad/WeatherStation/WeatherStation_schematic.svg),
+the [base board schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg)
 and the [shield hub schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg),
-both from KiCad.
+all from KiCad.
 
 ### Cable
 
@@ -52,8 +53,8 @@ the old hub dropped about one reading in seven while the WiFi was on. Each
 I2C line shares its pair with a supply or ground, and the I2S clocks keep to
 their own pair, so SCK never runs next to SDA or SCL. Over four metres they
 still couple into the I2C lines, which is why the clocks stop for every
-sensor read (see _Noise_). The foil and drain are cut back and not
-connected at either end.
+sensor read (see _Noise_). The foil is cut back at both ends; the drain
+lands on the base board's cable header and is grounded there only.
 
 The shield hub is also a KiCad project in
 [`docs/hardware/kicad/ShieldHub`](../docs/hardware/kicad/ShieldHub): a
@@ -76,6 +77,23 @@ tracks are insulated wires on the component side. A wire end sits in a free
 hole (a via in KiCad) and is soldered from below to the run next to it, so
 nothing is soldered on the component side. Check a change with KiCad's DRC
 and schematic parity.
+
+The ESP32 side is the base board in
+[`docs/hardware/kicad/BaseBoard`](../docs/hardware/kicad/BaseBoard): a
+60 x 80 mm perfboard with the DevKit and the BMP280 in female headers, the
+[wired schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg),
+the board, a [3D preview](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_preview.png)
+and the [solder side](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_solder_side.png).
+`layout.py` holds the parts and runs for both generators and refuses a short
+or a split net; a run is 0 Ω links on the component side and solder bridges
+between neighbouring pads below.
+
+```
+cd docs/hardware/kicad/BaseBoard
+python generate_models.py            # BMP280, 0 Ω links, rings and bridges; needs CadQuery
+python3 generate_schematic.py        # schematic and symbols, plain Python
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/bin/python3 generate_board.py
+```
 
 The sketch takes the I2C pins from the board variant through the `SDA` /
 `SCL` symbols (GPIO21 / GPIO22 on the DevKit); the I2S pins are in `noise.h`.
