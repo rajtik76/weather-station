@@ -85,7 +85,8 @@ def fit(
     longitude: float,
     since: pd.Timestamp | None = None,
 ) -> dict:
-    """One Correction per 'T_3h'-style target; empty while the history is short.
+    """One Correction per 'T_3h'-style target; empty while the history is short,
+    and none for a target that has not a single verified row to learn from.
 
     Only the rows from since on teach it, when given: readings from before a
     change at the station would teach it the wrong thing. The frames still
@@ -100,6 +101,10 @@ def fit(
         for variable in CORRECTED_VARIABLES:
             target = errors(forecast, current, variable, n)
             known = target.notna() & learnable
+            # Enough grid rows can still hold no verified pair at all: a sparse
+            # history is forecast without the correction, not refused.
+            if not known.any():
+                continue
             x = inputs(forecast, current, variable, n, longitude)[known]
             shift = Ridge(alpha=RIDGE_ALPHA).fit(x, target[known])
 

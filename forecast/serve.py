@@ -58,7 +58,12 @@ from forecast import QUANTILES, predict
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", Path(__file__).parent / "models" / "forecast.joblib"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
-MAX_READINGS = 60 * 24 * 6
+# Guards against nonsense, not a copy of Laravel's history_days: a year is far
+# more than it sends, and the history is snapped onto a 10-minute grid, so a
+# stray timestamp decades off would lay out millions of empty slots.
+MAX_SPAN_DAYS = 366
+MAX_SPAN_SECONDS = MAX_SPAN_DAYS * 86_400
+MAX_READINGS = MAX_SPAN_DAYS * 24 * 6
 
 FIELDS = {"temperature": "T", "humidity": "H", "pressure": "P"}
 NAMES = {column: field for field, column in FIELDS.items()}
@@ -87,12 +92,20 @@ class InvalidRequest(ValueError):
     pass
 
 
+def epoch(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidRequest(f"{name} must be an integer")
+    return value
+
+
 def timestamp(value: object, name: str, required: bool) -> pd.Timestamp | None:
     if value is None and not required:
         return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise InvalidRequest(f"{name} must be an integer timestamp")
-    return pd.Timestamp(value, unit="s", tz="UTC")
+    value = epoch(value, name)
+    try:
+        return pd.Timestamp(value, unit="s", tz="UTC")
+    except (OverflowError, pd.errors.OutOfBoundsDatetime):
+        raise InvalidRequest(f"{name} is out of range") from None
 
 
 def number(value: object) -> float:
@@ -100,7 +113,14 @@ def number(value: object) -> float:
         return math.nan
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidRequest("readings values must be numbers or null")
-    return float(value)
+    # An int past float's range overflows, and JSON's 1e400 parses as inf.
+    try:
+        result = float(value)
+    except OverflowError:
+        result = math.inf
+    if not math.isfinite(result):
+        raise InvalidRequest("readings values must be finite numbers or null")
+    return result
 
 
 def readings_frame(readings: object) -> pd.DataFrame:
@@ -110,12 +130,17 @@ def readings_frame(readings: object) -> pd.DataFrame:
         raise InvalidRequest(f"at most {MAX_READINGS} readings")
     rows = []
     for reading in readings:
-        if not isinstance(reading, dict) or not isinstance(reading.get("timestamp"), int):
-            raise InvalidRequest("every reading needs an integer timestamp")
-        row = {column: number(reading.get(field)) for field, column in FIELDS.items()}
+        row = {"time": epoch(reading.get("timestamp") if isinstance(reading, dict) else None, "a reading's timestamp")}
+        row |= {column: number(reading.get(field)) for field, column in FIELDS.items()}
         row["SRA10M"] = number(reading.get("rain"))
-        row["time"] = reading["timestamp"]
         rows.append(row)
+    # Every stamp lies between these two, so checking them covers the rest.
+    oldest = min(row["time"] for row in rows)
+    newest = max(row["time"] for row in rows)
+    timestamp(oldest, "a reading's timestamp", required=True)
+    timestamp(newest, "a reading's timestamp", required=True)
+    if newest - oldest > MAX_SPAN_SECONDS:
+        raise InvalidRequest(f"readings must span at most {MAX_SPAN_DAYS} days")
     frame = pd.DataFrame(rows)
     frame.index = pd.to_datetime(frame.pop("time"), unit="s", utc=True)
     return to_grid(frame.sort_index())
@@ -144,7 +169,8 @@ def make_forecast(payload: dict) -> dict:
     return {
         "issued_at": int(latest.name.timestamp()),
         "model": bundle["trained_at"],
-        "corrected": bool(corrections),
+        # Only when every target was: a sparse history can leave some without a verified row.
+        "corrected": len(corrections) == len(horizons) * len(CORRECTED_VARIABLES),
         "correction": CORRECTION_VERSION,
         "horizons": [
             {

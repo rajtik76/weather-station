@@ -30,6 +30,10 @@ Model 2026-09-24T08:40:43Z · Server v3.10.0
   (2.36).
 - Still adds warmth on a morning the shield stays in shade: from temperature
   alone it cannot tell the two kinds of morning apart.
+- Server v4.0.5: a sparse history no longer fails the request. A target
+  without a single verified row stays uncorrected, and `corrected` is true
+  only when every target was corrected. The version stays 2: those requests
+  failed before, so no stored forecast changes meaning.
 
 ## 2026-09-24T08:40:43Z
 
