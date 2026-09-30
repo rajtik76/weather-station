@@ -1,0 +1,1 @@
+(sym_lib_table (lib (name "BaseBoard") (type "KiCad") (uri "${KIPRJMOD}/symbols/BaseBoard.kicad_sym") (options "") (descr "Base board parts")))
