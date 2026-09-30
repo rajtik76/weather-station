@@ -19,6 +19,9 @@ typedef struct {
   int16_t t_min, t_max;
   uint16_t h_min, h_max;
   uint32_t p_min, p_max;
+  uint16_t l_samples;     // readings that carried the light
+  int64_t l_sum;
+  uint32_t l_min, l_max;
 } window_t;
 
 uint32_t windowSlotOf(uint32_t timestamp);

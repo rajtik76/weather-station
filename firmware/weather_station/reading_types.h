@@ -10,6 +10,8 @@
 #define READING_HUMIDITY_MAX (10000)
 #define READING_PRESSURE_MIN (30000)  // Pa
 #define READING_PRESSURE_MAX (110000)
+#define READING_ILLUMINANCE_MIN (0)         // 0.01 lx
+#define READING_ILLUMINANCE_MAX (15000000)  // the VEML7700's top range ends at 141 klx
 
 // Noise levels in 0.01 dB, clamped into the protocol range before they are stored.
 #define NOISE_LEVEL_MIN (0)
@@ -18,12 +20,16 @@
 // Third-octave bands 25 Hz .. 8 kHz, nominal centres 10^(n/10) kHz for n = -16 .. 9.
 #define NOISE_BAND_COUNT 26
 
-// Temperature and humidity from the SHT41 outside, pressure from the BMP280 indoors.
+// Temperature and humidity from the SHT4x outside, pressure from the BMP280 indoors,
+// illuminance from the VEML7700 outside. The light is optional: a reading
+// without it still counts for the other three.
 typedef struct {
   uint32_t timestamp;    // UTC Unix epoch, seconds
   int16_t temperature;   // hundredths of a degree Celsius
   uint16_t humidity;     // hundredths of a percent
   uint32_t pressure;     // pascals
+  bool has_illuminance;
+  uint32_t illuminance;  // hundredths of a lux
 } station_reading_t;
 
 // The microphone's account of one window. seconds == 0: no noise data, the
@@ -51,6 +57,10 @@ typedef struct {
   uint32_t pressure_min;
   uint32_t pressure_max;
   uint16_t samples;
+  uint16_t illuminance_samples;  // 0: no light data, the entry goes out without it
+  uint32_t illuminance;
+  uint32_t illuminance_min;
+  uint32_t illuminance_max;
   noise_window_t noise;
 } station_window_t;
 

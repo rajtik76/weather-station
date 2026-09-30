@@ -40,6 +40,9 @@
 #define NOISE_HOPS_AFTER_PAUSE 2
 #define NOISE_HOPS_AFTER_HUSH 6
 
+// A parked task looks at its flag this often even without a notification.
+#define NOISE_PARK_POLL_MS 100
+
 static I2SClass i2s;
 static TaskHandle_t task = nullptr;
 
@@ -261,8 +264,14 @@ static void noiseTask(void*) {
 
   while (true) {
     if (pauseRequested) {
+      // Re-checks the flag rather than trusting one notification: a waker
+      // that cleared it between our read and `paused = true` saw a running
+      // task and sent none, and a notification banked while running only
+      // costs one extra pass here.
       paused = true;
-      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+      while (pauseRequested) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(NOISE_PARK_POLL_MS));
+      }
       paused = false;
       hopsToRefill = hopsAfterWake;
       hopsAfterWake = NOISE_HOPS_AFTER_PAUSE;
@@ -448,8 +457,8 @@ void noisePause() {
 }
 
 // The slot being filled goes on; it misses the seconds of the pause.
-// Only a parked task is woken: a notification to a running one would be
-// banked and make its next pause return at once.
+// Only a parked task is woken; one that misses it sees the flag cleared on
+// its next poll, and a stray notification only costs the task one pass.
 void noiseResume() {
   if (task == nullptr || !pauseRequested) {
     return;
@@ -501,6 +510,8 @@ void noiseHush() {
 }
 
 void noiseUnhush() {
+  // Only a stopped clock mutes the mic; after a hush that timed out it never stopped.
+  const bool restarted = clockStopped;
   if (clockStopped) {
     i2s_channel_enable(i2s.rxChan());
     clockStopped = false;
@@ -510,10 +521,10 @@ void noiseUnhush() {
     return;
   }
   hushParked = false;
-  hopsAfterWake = NOISE_HOPS_AFTER_HUSH;
+  hopsAfterWake = restarted ? NOISE_HOPS_AFTER_HUSH : NOISE_HOPS_AFTER_PAUSE;
   pauseRequested = false;
 
-  // Same rule as noiseResume(): never a notification to a running task.
+  // Same as noiseResume(): the task also polls, so a missed wake costs 100 ms.
   if (paused) {
     xTaskNotifyGive(task);
   }

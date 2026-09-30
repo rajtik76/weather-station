@@ -1,7 +1,8 @@
 # Firmware
 
 ESP32 firmware for the weather station. Reads temperature and humidity from
-an SHT41 and pressure from a BMP280 every thirty seconds, listens to an
+an SHT4x, pressure from a BMP280 and illuminance from a VEML7700 every
+thirty seconds, listens to an
 INMP441 microphone all the time, folds both into ten-minute windows - mean,
 minimum and maximum per channel, and the noise levels and third-octave
 spectrum over the same ten minutes - and uploads each closed window to
@@ -10,12 +11,13 @@ buffered on the flash until the link is back, and the station can be looked
 at over the LAN without a cable.
 
 ```
-SHT41   --I2C--+
-BMP280  --I2C--+--> ESP32-WROOM-32 --HTTPS--> Laravel API
-INMP441 --I2S--+     core 0: noise   |    \
-                     core 1: the rest |     HTTP on the LAN: status and log
-                                      |
-                        window buffer on the flash, 144 entries (a day)
+SHT4x    --I2C--+
+VEML7700 --I2C--+
+BMP280   --I2C--+--> ESP32-WROOM-32 --HTTPS--> Laravel API
+INMP441  --I2S--+     core 0: noise   |    \
+                      core 1: the rest |     HTTP on the LAN: status and log
+                                       |
+                         window buffer on the flash, 144 entries (a day)
 ```
 
 The board is mains powered and never sleeps. The earlier design - a battery
@@ -191,14 +193,15 @@ There is no authentication. It only reads, and it is only on the LAN.
 
 ## Protocol
 
-Version 3. Fixed point integers throughout, converted when the reading is
-taken. One entry per ten-minute window: the V2 fields, plus a `noise` object
-when the microphone gave anything for that window.
+Version 4. Fixed point integers throughout, converted when the reading is
+taken. One entry per ten-minute window: the V2 fields, `illuminance` with
+its extremes when the VEML7700 gave anything for that window, and a `noise`
+object when the microphone did.
 
 ```json
 {
     "sensor_name": "sensor-001",
-    "protocol_version": 3,
+    "protocol_version": 4,
     "measurements": [
         {
             "timestamp": 1757000000,
@@ -212,6 +215,9 @@ when the microphone gave anything for that window.
             "pressure_min": 97381,
             "pressure_max": 97396,
             "samples": 20,
+            "illuminance": 1123000,
+            "illuminance_min": 980000,
+            "illuminance_max": 1310000,
             "noise": {
                 "seconds": 600,
                 "laeq": 5562,
@@ -291,13 +297,35 @@ window. The API validates each entry and rejects the whole batch on one bad
 value, and one wild reading would otherwise carry a window's extreme out of
 range and wedge every window queued behind it.
 
-A reading needs both sensors: the SHT41 for temperature and humidity, the
+A reading needs both sensors: the SHT4x for temperature and humidity, the
 BMP280 for pressure. If either fails the reading is dropped and the window
-takes the next one. The SHT41 measures at high precision without its heater;
+takes the next one. The SHT4x measures at high precision without its heater;
 the first read after `begin()` failed more often than not on the bench, so
-`sht41Begin()` spends it. The BMP280 runs in forced mode with oversampling
+`sht4xBegin()` spends it. The BMP280 runs in forced mode with oversampling
 and the IIR filter off: the window mean does that job, over readings half a
 minute apart rather than milliseconds.
+
+The VEML7700 sits inside the radiation shield, behind its louvers: it
+reads a fraction of the open sky's light, and the morning sun straight
+through the east side. The lux are the shield's, not comparable with a
+station in the open.
+
+The VEML7700 is optional. A failed or saturated read drops the light from
+that reading and nothing else, and a window without any goes out without
+`illuminance`. It is driven through its registers (`veml7700.cpp`) and
+integrates on its own, so a read is one short transfer of the last result.
+Five ranges from gain 2 at 100 ms (0.034 lx per count) to gain 1/8 at
+25 ms (141 klx) cover dusk to full sun; each read steps one range towards
+the light, and neighbours differ by at most 4x, so the range does not flap.
+No non-linearity correction is applied: Vishay's polynomial runs away at
+the top of the range and there is nothing on the balcony to check it
+against.
+
+The microphone's SCK and WS stop for every sensor read (`noiseHush()`).
+Running, they couple into SDA and SCL over the 4 m cable: the VEML7700
+missed about every other transfer, and none with them stopped. The SHT4x
+never noticed. The clocks also run on the weakest GPIO driver for slower
+edges.
 
 `ca_certs.h` pins ISRG Root X1 and ISRG Root YR. Let's Encrypt renews the leaf
 every few months, so pinning it would break uploads on every renewal. Two roots
@@ -348,6 +376,12 @@ stuck low or high - is counted as silent and left out, so a dead
 microphone sends windows without `noise` rather than windows of silence;
 the window's log line says which.
 
+Every sensor read stops the clocks too: the task parks, the I2S channel is
+disabled, and after the read two hops refill the history and four more
+wait out the microphone's 2^18-cycle start. The buffers stay; freeing them
+twice a minute would only fragment the heap. It costs about half a second
+of noise per reading.
+
 The task's ~40 kB of buffers are what TLS needs. Before every upload the
 task finishes its frame and parks, the buffers go back to the heap, and
 after the upload they are allocated again - with them held, mbedTLS could
@@ -371,5 +405,6 @@ means checking them against a few rains again.
 
 `weather_station` is the station. `sensors_check` is diagnostics for the
 whole set: I2C scan, then one line every two seconds with the BMP280, the
-SHT41 and the INMP441's level, retrying a sensor that is missing so a fixed
+SHT4x, the VEML7700 and the INMP441's level, the clocks stopped around the
+I2C reads as in the station, retrying a sensor that is missing so a fixed
 joint shows up without a reset.

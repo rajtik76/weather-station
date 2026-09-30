@@ -32,6 +32,13 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
     entry["pressure_max"] = w.pressure_max;
     entry["samples"] = w.samples;
 
+    // Left out when the VEML7700 gave nothing for the window, like the noise.
+    if (w.illuminance_samples > 0) {
+      entry["illuminance"] = w.illuminance;
+      entry["illuminance_min"] = w.illuminance_min;
+      entry["illuminance_max"] = w.illuminance_max;
+    }
+
     // Left out when the microphone gave nothing for the window; the server
     // takes the entry without it.
     if (w.noise.seconds > 0) {

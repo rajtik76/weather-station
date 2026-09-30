@@ -13,6 +13,22 @@ assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 before. 2.3.0 is the one exception to the rule above: it never went on a
 board and has no tag, and its changes first shipped with 3.0.0.
 
+## 4.0.0 - 2026-09-30
+
+Board ESP32_DEV · Protocol 4 · Server v4.0.0
+
+- Illuminance from the VEML7700 on the shield hub: mean, minimum and
+  maximum per window in 0.01 lx, left out of a window with no light data.
+  A failed or saturated light read drops only the light, never the
+  reading.
+- The VEML7700 steps through five ranges on its own, 0.03 lx per count at
+  dusk to 141 klx in full sun, one step per reading.
+- A parked noise task polls its flag every 100 ms instead of waiting for
+  one notification. A resume that cleared the flag just as the task was
+  parking sent none, and the microphone stayed off until the next upload.
+- The flash buffer's format changed (version 3); windows buffered by an
+  older build are discarded on the first boot.
+
 ## 3.0.3 - 2026-09-30
 
 Board ESP32_DEV · Protocol 3 · Server v3.0.1

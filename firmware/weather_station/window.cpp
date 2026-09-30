@@ -14,6 +14,9 @@ void windowBegin(window_t& w, uint32_t slot) {
   w.t_min = w.t_max = 0;
   w.h_min = w.h_max = 0;
   w.p_min = w.p_max = 0;
+  w.l_samples = 0;
+  w.l_sum = 0;
+  w.l_min = w.l_max = 0;
 }
 
 void windowAdd(window_t& w, const station_reading_t& r) {
@@ -28,6 +31,13 @@ void windowAdd(window_t& w, const station_reading_t& r) {
     if (r.humidity > w.h_max) w.h_max = r.humidity;
     if (r.pressure < w.p_min) w.p_min = r.pressure;
     if (r.pressure > w.p_max) w.p_max = r.pressure;
+  }
+
+  if (r.has_illuminance) {
+    if (w.l_samples == 0 || r.illuminance < w.l_min) w.l_min = r.illuminance;
+    if (w.l_samples == 0 || r.illuminance > w.l_max) w.l_max = r.illuminance;
+    w.l_sum += r.illuminance;
+    w.l_samples++;
   }
 
   w.t_sum += r.temperature;
@@ -56,6 +66,12 @@ bool windowClose(const window_t& w, station_window_t& out) {
   out.pressure_min = w.p_min;
   out.pressure_max = w.p_max;
   out.samples = w.samples;
+
+  // Its own count: readings where only the light failed still went in.
+  out.illuminance_samples = w.l_samples;
+  out.illuminance = w.l_samples > 0 ? (uint32_t)meanOf(w.l_sum, w.l_samples) : 0;
+  out.illuminance_min = w.l_min;
+  out.illuminance_max = w.l_max;
 
   // The microphone runs on its own clock; the caller fills this in.
   memset(&out.noise, 0, sizeof(out.noise));

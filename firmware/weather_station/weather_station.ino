@@ -22,12 +22,13 @@
 #include "station_log.h"
 #include "station_status.h"
 #include "transmission_json.h"
+#include "veml7700.h"
 #include "window.h"
 #include "window_buffer.h"
 
 // Sent with every batch; bump it with each build that goes on a board, and
 // tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
-#define FIRMWARE_VERSION "3.0.3"
+#define FIRMWARE_VERSION "4.0.0"
 
 // The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
 // DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
@@ -38,11 +39,11 @@
 #define FIRMWARE_BOARD ARDUINO_BOARD
 
 // ESP32-WROOM-32 hardware I2C: SDA GPIO21, SCL GPIO22. The BMP280 sits on
-// the base board, the SHT41 at the end of the 4 m cable, on the same bus.
+// the base board, the SHT4x at the end of the 4 m cable, on the same bus.
 #define I2C_SDA_PIN SDA
 #define I2C_SCL_PIN SCL
 
-// 4 m of cable to the SHT41: slower edges than the default 100 kHz leave
+// 4 m of cable to the SHT4x: slower edges than the default 100 kHz leave
 // room for the cable's capacitance and whatever the radio couples into it.
 #define I2C_CLOCK_HZ 20000
 
@@ -149,9 +150,9 @@ static bool bmp280Begin() {
 }
 
 // Temperature and humidity, in the radiation shield outside.
-static bool sht41Begin() {
+static bool sht4xBegin() {
   if (!sht.begin(&Wire)) {
-    logInfo("SHT41 not found");
+    logInfo("SHT4x not found");
     return false;
   }
 
@@ -169,7 +170,11 @@ static bool sensorsBegin() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(I2C_CLOCK_HZ);
   bool bmpFound = bmp280Begin();
-  bool shtFound = sht41Begin();
+  bool shtFound = sht4xBegin();
+
+  // Not waited for: the station measures on without the light, and
+  // vemlRead() keeps trying.
+  vemlBegin();
   return bmpFound && shtFound;
 }
 
@@ -177,16 +182,18 @@ static bool readSensors(station_reading_t& out) {
   // All I2C traffic, readPressure() included, happens with the mic clocks stopped.
   sensors_event_t humidityEvent, tempEvent;
   float p = NAN;
+  uint32_t illuminance = 0;
   noiseHush();
   const bool shtRead = sht.getEvent(&humidityEvent, &tempEvent);
   const bool bmpRead = shtRead && bmp.takeForcedMeasurement();
   if (bmpRead) {
     p = bmp.readPressure();                      // Pa, already the unit the API takes
   }
+  const bool lightRead = vemlRead(illuminance);
   noiseUnhush();
 
   if (!shtRead) {
-    logInfo("SHT41 measurement failed");
+    logInfo("SHT4x measurement failed");
     return false;
   }
 
@@ -221,7 +228,15 @@ static bool readSensors(station_reading_t& out) {
   out.humidity = (uint16_t)humidity;
   out.pressure = (uint32_t)pressure;
 
-  logTrace("SHT41: %.2f C  %.2f %%  BMP280: %.2f hPa", t, h, p / 100.0f);
+  // Out of range goes the same way as a failed read: the reading stays, the light does not.
+  out.has_illuminance = lightRead && illuminance <= READING_ILLUMINANCE_MAX;
+  out.illuminance = out.has_illuminance ? illuminance : 0;
+
+  if (out.has_illuminance) {
+    logTrace("SHT4x: %.2f C  %.2f %%  BMP280: %.2f hPa  VEML7700: %.2f lx", t, h, p / 100.0f, illuminance / 100.0f);
+  } else {
+    logTrace("SHT4x: %.2f C  %.2f %%  BMP280: %.2f hPa  VEML7700: none", t, h, p / 100.0f);
+  }
   return true;
 }
 
@@ -639,12 +654,14 @@ static void closeWindow() {
             (unsigned long)n.silent_frames, (unsigned long)n.short_reads);
   }
 
-  logInfo("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  n=%u",
+  logInfo("window %lu: t=%d [%d..%d]  h=%u [%u..%u]  p=%lu [%lu..%lu]  l=%lu [%lu..%lu]/%u  n=%u",
           (unsigned long)entry.timestamp,
           entry.temperature, entry.temperature_min, entry.temperature_max,
           entry.humidity, entry.humidity_min, entry.humidity_max,
           (unsigned long)entry.pressure, (unsigned long)entry.pressure_min,
           (unsigned long)entry.pressure_max,
+          (unsigned long)entry.illuminance, (unsigned long)entry.illuminance_min,
+          (unsigned long)entry.illuminance_max, entry.illuminance_samples,
           entry.samples);
 
   if (!windowBufferAdd(entry)) {

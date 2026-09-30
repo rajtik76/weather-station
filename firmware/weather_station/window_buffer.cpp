@@ -8,9 +8,9 @@
 
 // Header then raw entries. Bump the version whenever station_window_t
 // changes shape, so an older file is discarded rather than read as garbage.
-// 2: noise per window (firmware 3.0).
+// 2: noise per window (firmware 3.0). 3: illuminance (firmware 4.0).
 #define WINDOW_BUFFER_FILE_MAGIC   0x574E4457UL  // "WNDW"
-#define WINDOW_BUFFER_FILE_VERSION 2
+#define WINDOW_BUFFER_FILE_VERSION 3
 
 typedef struct {
   uint32_t magic;
