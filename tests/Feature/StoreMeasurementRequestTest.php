@@ -374,6 +374,83 @@ describe('protocol V3', function (): void {
     });
 });
 
+describe('protocol V4', function (): void {
+    /**
+     * A window the firmware would send under V4, one field overridden.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    function v4Window(array $overrides = []): array
+    {
+        return [
+            'sensor_name' => 'test-sensor',
+            'protocol_version' => ProtocolVersion::V4->value,
+            'measurements' => [
+                array_filter(array_merge([
+                    'timestamp' => 1788332955,
+                    'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                    'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                    'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                    'samples' => 20,
+                    'illuminance' => 112300, 'illuminance_min' => 98000, 'illuminance_max' => 131000,
+                ], $overrides), fn (mixed $value): bool => $value !== null),
+            ],
+        ];
+    }
+
+    it('accepts a window with light', function (): void {
+        postJson('/api/v1/measurement', v4Window())->assertStatus(201);
+    });
+
+    it('accepts a window without light', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance' => null, 'illuminance_min' => null, 'illuminance_max' => null]))
+            ->assertStatus(201);
+    });
+
+    it('accepts a dark window at zero lux', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance' => 0, 'illuminance_min' => 0, 'illuminance_max' => 0]))
+            ->assertStatus(201);
+    });
+
+    it('still takes the noise object', function (): void {
+        postJson('/api/v1/measurement', v4Window(['noise' => [
+            'seconds' => 600, 'laeq' => 4312, 'lamax' => 6120, 'la10' => 4705, 'la90' => 3890,
+            'bands' => array_fill(0, 26, 2000),
+        ]]))->assertStatus(201);
+    });
+
+    it('demands all three light fields once one is present', function (string $missing): void {
+        postJson('/api/v1/measurement', v4Window([$missing => null]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(["measurements.0.{$missing}"]);
+    })->with(['illuminance', 'illuminance_min', 'illuminance_max']);
+
+    it('rejects a minimum above the mean', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance_min' => 112301]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.illuminance_min' => 'The measurements.0.illuminance_min field must be less than or equal to 112300.']);
+    });
+
+    it('rejects a maximum below the mean', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance_max' => 112299]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.illuminance_max' => 'The measurements.0.illuminance_max field must be greater than or equal to 112300.']);
+    });
+
+    it('rejects light above the sensor\'s range', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance' => 15000001, 'illuminance_max' => 15000001]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.illuminance', 'measurements.0.illuminance_max']);
+    });
+
+    it('rejects negative light', function (): void {
+        postJson('/api/v1/measurement', v4Window(['illuminance' => -1, 'illuminance_min' => -1]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['measurements.0.illuminance', 'measurements.0.illuminance_min']);
+    });
+});
+
 describe('station report', function (): void {
     it('is optional as a whole', function (): void {
         postJson('/api/v1/measurement', ['protocol_version' => ProtocolVersion::V1->value])

@@ -7,9 +7,11 @@ namespace Database\Factories;
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\ValueObject\LightWindow;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\MeasurementDataV4;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -94,6 +96,41 @@ class MeasurementFactory extends Factory
                     pressureMin: $pressure - fake()->numberBetween(0, 200),
                     pressureMax: $pressure + fake()->numberBetween(0, 200),
                     samples: fake()->numberBetween(1, 20),
+                ),
+            ];
+        });
+    }
+
+    /**
+     * A V4 window with light behind the shield, from night to a bright
+     * morning. No "noise" object, as in v3().
+     */
+    public function v4(): static
+    {
+        return $this->state(function (): array {
+            $temperature = fake()->numberBetween(-3800, 8300);
+            $humidity = fake()->numberBetween(200, 9800);
+            $pressure = fake()->numberBetween(30200, 109800);
+            $illuminance = fake()->numberBetween(0, 2_000_000);
+
+            return [
+                'protocol_version' => ProtocolVersion::V4,
+                'data' => (string) new MeasurementDataV4(
+                    temperature: $temperature,
+                    humidity: $humidity,
+                    pressure: $pressure,
+                    temperatureMin: $temperature - fake()->numberBetween(0, 200),
+                    temperatureMax: $temperature + fake()->numberBetween(0, 200),
+                    humidityMin: $humidity - fake()->numberBetween(0, 200),
+                    humidityMax: $humidity + fake()->numberBetween(0, 200),
+                    pressureMin: $pressure - fake()->numberBetween(0, 200),
+                    pressureMax: $pressure + fake()->numberBetween(0, 200),
+                    samples: fake()->numberBetween(1, 20),
+                    light: new LightWindow(
+                        illuminance: $illuminance,
+                        illuminanceMin: intdiv($illuminance, 2),
+                        illuminanceMax: $illuminance * 2,
+                    ),
                 ),
             ];
         });

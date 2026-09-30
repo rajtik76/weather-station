@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
+use App\ValueObject\LightWindow;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
+use App\ValueObject\Readout;
 
 use function Pest\Laravel\freezeTime;
 use function Pest\Laravel\postJson;
@@ -145,6 +148,80 @@ it('reads a stored V3 window without a noise object', function (): void {
         ->and($measurement->data->jsonSerialize())->not->toHaveKey('noise');
 });
 
+it('reads a stored V4 window back with its light', function (): void {
+    freezeTime();
+
+    postJson('api/v1/measurement', [
+        'protocol_version' => ProtocolVersion::V4->value,
+        'sensor_name' => 'test-sensor',
+        'measurements' => [
+            [
+                'timestamp' => now()->timestamp,
+                'temperature' => 2134, 'temperature_min' => 2101, 'temperature_max' => 2177,
+                'humidity' => 5812, 'humidity_min' => 5700, 'humidity_max' => 5900,
+                'pressure' => 97389, 'pressure_min' => 97380, 'pressure_max' => 97395,
+                'samples' => 20,
+                'illuminance' => 112300, 'illuminance_min' => 98000, 'illuminance_max' => 131000,
+                'noise' => noiseWindow(),
+            ],
+        ],
+    ])->assertCreated();
+
+    $measurement = Measurement::query()->sole();
+
+    expect($measurement->data)->toEqual(new MeasurementDataV4(
+        temperature: 2134, humidity: 5812, pressure: 97389,
+        temperatureMin: 2101, temperatureMax: 2177,
+        humidityMin: 5700, humidityMax: 5900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+        noise: new NoiseWindow(
+            seconds: 600, laeq: 4312, lamax: 6120, la10: 4705, la90: 3890,
+            bands: array_fill(0, NoiseWindow::BANDS_COUNT, 2000),
+        ),
+        light: new LightWindow(illuminance: 112300, illuminanceMin: 98000, illuminanceMax: 131000),
+    ))
+        ->and($measurement->protocol_version)->toBe(ProtocolVersion::V4)
+        ->and(Readout::of($measurement->data)->noise())->toBe(43.1);
+});
+
+it('reads a stored V4 window without light', function (): void {
+    $measurement = Measurement::factory()->v4()->create([
+        'data' => json_encode([
+            'temperature' => 2134, 'humidity' => 5812, 'pressure' => 97389,
+            'temperature_min' => 2101, 'temperature_max' => 2177,
+            'humidity_min' => 5700, 'humidity_max' => 5900,
+            'pressure_min' => 97380, 'pressure_max' => 97395,
+            'samples' => 20,
+        ]),
+    ]);
+
+    expect($measurement->refresh()->data)->toEqual(new MeasurementDataV4(
+        temperature: 2134, humidity: 5812, pressure: 97389,
+        temperatureMin: 2101, temperatureMax: 2177,
+        humidityMin: 5700, humidityMax: 5900,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+    ))
+        ->and($measurement->data->jsonSerialize())->not->toHaveKey('illuminance');
+});
+
+it('rejects a stored V4 blob with half its light', function (): void {
+    $measurement = Measurement::factory()->v4()->create([
+        'data' => json_encode([
+            'temperature' => 2134, 'humidity' => 5812, 'pressure' => 97389,
+            'temperature_min' => 2101, 'temperature_max' => 2177,
+            'humidity_min' => 5700, 'humidity_max' => 5900,
+            'pressure_min' => 97380, 'pressure_max' => 97395,
+            'samples' => 20,
+            'illuminance' => 112300,
+        ]),
+    ]);
+
+    expect(fn () => $measurement->refresh()->data)
+        ->toThrow(UnexpectedValueException::class, 'Missing or invalid field [illuminance_min] for protocol version 4.');
+});
+
 it('reads a V3 factory window', function (): void {
     $data = Measurement::factory()->v3()->create()->refresh()->data;
 
@@ -224,5 +301,8 @@ it('resolves the value object class from the protocol version', function (): voi
         ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples'])
         ->and(ProtocolVersion::V3->dataClass())->toBe(MeasurementDataV3::class)
         ->and(array_keys(ProtocolVersion::V3->validationRules()))
-        ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples', 'noise', 'noise.seconds', 'noise.laeq', 'noise.lamax', 'noise.la10', 'noise.la90', 'noise.bands', 'noise.bands.*']);
+        ->toBe(['temperature', 'humidity', 'pressure', 'temperature_min', 'temperature_max', 'humidity_min', 'humidity_max', 'pressure_min', 'pressure_max', 'samples', 'noise', 'noise.seconds', 'noise.laeq', 'noise.lamax', 'noise.la10', 'noise.la90', 'noise.bands', 'noise.bands.*'])
+        ->and(ProtocolVersion::V4->dataClass())->toBe(MeasurementDataV4::class)
+        ->and(array_slice(array_keys(ProtocolVersion::V4->validationRules()), -3))
+        ->toBe(['illuminance', 'illuminance_min', 'illuminance_max']);
 });

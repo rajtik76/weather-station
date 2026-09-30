@@ -8,10 +8,10 @@ use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
 /**
- * Protocol V3: a V2 window plus an optional "noise" object, present only
- * when the microphone produced data for that ten minutes.
+ * Protocol V4: a V3 window plus optional illuminance from the VEML7700,
+ * present only when it gave a reading in that ten minutes.
  */
-final readonly class MeasurementDataV3 implements CarriesNoise
+final readonly class MeasurementDataV4 implements CarriesNoise
 {
     public ProtocolVersion $protocolVersion;
 
@@ -27,15 +27,16 @@ final readonly class MeasurementDataV3 implements CarriesNoise
         public int $pressureMax,
         public int $samples,
         public ?NoiseWindow $noise = null,
+        public ?LightWindow $light = null,
     ) {
-        $this->protocolVersion = ProtocolVersion::V3;
+        $this->protocolVersion = ProtocolVersion::V4;
     }
 
     public static function fromArray(array $data): self
     {
         foreach (array_keys(MeasurementDataV2::validationRules()) as $field) {
             if (! isset($data[$field]) || ! is_numeric($data[$field])) {
-                throw new UnexpectedValueException("Missing or invalid field [{$field}] for protocol version 3.");
+                throw new UnexpectedValueException("Missing or invalid field [{$field}] for protocol version 4.");
             }
         }
 
@@ -43,7 +44,7 @@ final readonly class MeasurementDataV3 implements CarriesNoise
 
         if (isset($data['noise'])) {
             if (! is_array($data['noise'])) {
-                throw new UnexpectedValueException('Missing or invalid field [noise] for protocol version 3.');
+                throw new UnexpectedValueException('Missing or invalid field [noise] for protocol version 4.');
             }
 
             $noise = NoiseWindow::fromArray($data['noise']);
@@ -61,26 +62,22 @@ final readonly class MeasurementDataV3 implements CarriesNoise
             pressureMax: (int) $data['pressure_max'],
             samples: (int) $data['samples'],
             noise: $noise,
+            light: LightWindow::fromArray($data),
         );
     }
 
     /**
-     * The V2 rules plus the noise object, optional as a whole and complete
-     * once present - the same shape as the "station" report.
+     * The V3 rules plus the light, optional as a set and complete once any
+     * of it is present, with the same rule on the extremes as the other
+     * channels. 15 000 000 is 150 klx, above the sensor's top range.
      */
     public static function validationRules(): array
     {
         return [
-            ...MeasurementDataV2::validationRules(),
-            'noise' => ['sometimes', 'array'],
-            'noise.seconds' => ['required_with:measurements.*.noise', 'integer', 'min:1', 'max:600'],
-            'noise.laeq' => ['required_with:measurements.*.noise', 'integer', 'min:0', 'max:15000', 'lte:measurements.*.noise.lamax'],
-            'noise.lamax' => ['required_with:measurements.*.noise', 'integer', 'min:0', 'max:15000'],
-            'noise.la10' => ['required_with:measurements.*.noise', 'integer', 'min:0', 'max:15000', 'lte:measurements.*.noise.lamax'],
-            'noise.la90' => ['required_with:measurements.*.noise', 'integer', 'min:0', 'max:15000', 'lte:measurements.*.noise.la10'],
-            // A list: 26 keyed entries would pass "array" and fail only on hydration, as a 500.
-            'noise.bands' => ['required_with:measurements.*.noise', 'list', 'size:'.NoiseWindow::BANDS_COUNT],
-            'noise.bands.*' => ['integer', 'min:0', 'max:15000'],
+            ...MeasurementDataV3::validationRules(),
+            'illuminance' => ['required_with:measurements.*.illuminance_min,measurements.*.illuminance_max', 'integer', 'min:0', 'max:15000000'],
+            'illuminance_min' => ['required_with:measurements.*.illuminance,measurements.*.illuminance_max', 'integer', 'min:0', 'lte:measurements.*.illuminance'],
+            'illuminance_max' => ['required_with:measurements.*.illuminance,measurements.*.illuminance_min', 'integer', 'max:15000000', 'gte:measurements.*.illuminance'],
         ];
     }
 
@@ -98,6 +95,10 @@ final readonly class MeasurementDataV3 implements CarriesNoise
             'pressure_max' => $this->pressureMax,
             'samples' => $this->samples,
         ];
+
+        if ($this->light instanceof LightWindow) {
+            $data = [...$data, ...$this->light->jsonSerialize()];
+        }
 
         if ($this->noise instanceof NoiseWindow) {
             $data['noise'] = $this->noise->jsonSerialize();

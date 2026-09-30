@@ -63,11 +63,11 @@ ten minutes, so the limit only ever bites a retry loop gone wrong.
 }
 ```
 
-| Field              | Rule                                                               |
-| ------------------ | ------------------------------------------------------------------ |
-| `sensor_name`      | string, 3 to 50 characters. Registers the station on first use.    |
-| `protocol_version` | `1`, `2` or `3`. Decides which fields each measurement must carry. |
-| `measurements`     | 1 to 500 entries.                                                  |
+| Field              | Rule                                                            |
+| ------------------ | --------------------------------------------------------------- |
+| `sensor_name`      | string, 3 to 50 characters. Registers the station on first use. |
+| `protocol_version` | `1` to `4`. Decides which fields each measurement must carry.   |
+| `measurements`     | 1 to 500 entries.                                               |
 
 Every measurement carries a `timestamp`: UTC Unix seconds, 1 to 4294967295.
 The remaining fields depend on the version. All values are integers, in
@@ -89,7 +89,26 @@ half-minute readings: the bare field is the mean over the window, `_min` and
 mean or a `_max` below it fails validation. The mean keeps the V1 key on
 purpose - the dashboard averages both versions with one SQL expression, and
 a V1 row stands in as its own minimum and maximum. **V3** is a V2 window
-with an optional `noise` object added to each measurement.
+with an optional `noise` object added to each measurement. **V4** is a V3
+window with optional illuminance.
+
+### Illuminance
+
+V4 only, from the VEML7700 on the shield hub. Present only when the sensor
+gave at least one reading in the window; once present, all three fields
+are required. Integers in hundredths of a lux, 0 .. 15000000, and the same
+rule on the extremes as the other channels.
+
+The sensor sits inside the radiation shield, so this is the light that gets
+through the louvers, a fraction of the open sky's and with the morning sun
+straight through the east side. Its shape - dawn, dusk, clouds - is the
+signal; the absolute lux do not compare with another station. The dashboard
+draws it on a log axis and says so beside the strip.
+
+| Field                                | Meaning                          |
+| ------------------------------------ | -------------------------------- |
+| `illuminance`                        | mean over the window             |
+| `illuminance_min`, `illuminance_max` | lowest and highest reading in it |
 
 ### The `noise` object
 
@@ -161,8 +180,9 @@ the other side that understands it:
 | `station.clock_step_*`, `station.clock_synced_at` | 2.2.0         | v2.2.0      |
 | `station.board`                                   | 2.3.0         | v3.0.0      |
 | `protocol_version` 3, `noise` per window          | 3.0.0         | v3.0.1      |
+| `protocol_version` 4, illuminance per window      | 4.0.0         | v4.0.0      |
 
-A server older than the row refuses a V2 or V3 batch (unknown
+A server older than the row refuses a V2, V3 or V4 batch (unknown
 `protocol_version`) and ignores a `station` object or `noise` object it does
 not know; it refuses nothing else from a newer firmware, because every
 later field is optional. A firmware

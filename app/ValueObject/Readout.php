@@ -69,17 +69,28 @@ final readonly class Readout
     /** LAeq in dB, tenths like the noise strips. Null for an entry the microphone did not hear. */
     public function noise(): ?float
     {
-        if (! $this->data instanceof MeasurementDataV3 || ! $this->data->noise instanceof NoiseWindow) {
+        if (! $this->data instanceof CarriesNoise || ! $this->data->noise instanceof NoiseWindow) {
             return null;
         }
 
         return round($this->data->noise->laeq / 100, 1);
     }
 
+    /** Lux behind the shield, from hundredths. Null for an entry without light. */
+    public function light(): ?float
+    {
+        return $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminance) : null;
+    }
+
+    private function lightWindow(): ?LightWindow
+    {
+        return $this->data instanceof MeasurementDataV4 ? $this->data->light : null;
+    }
+
     /**
      * Every channel with its extremes, keyed as the day readouts read them.
      *
-     * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float}
+     * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
      */
     public function toArray(): array
     {
@@ -94,6 +105,9 @@ final readonly class Readout
             'pMin' => $this->seaLevel($this->data->pressureMin),
             'pMax' => $this->seaLevel($this->data->pressureMax),
             'n' => $this->noise(),
+            'l' => $this->light(),
+            'lMin' => $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminanceMin) : null,
+            'lMax' => $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminanceMax) : null,
         ];
     }
 }
