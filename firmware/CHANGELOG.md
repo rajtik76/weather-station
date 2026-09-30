@@ -13,6 +13,16 @@ assigned afterwards from the history. 2.1.1, 2.1.2 and the OTA build of
 before. 2.3.0 is the one exception to the rule above: it never went on a
 board and has no tag, and its changes first shipped with 3.0.0.
 
+## 3.0.3 - 2026-09-30
+
+Board ESP32_DEV · Protocol 3 · Server v3.0.1
+
+- The microphone's SCK and WS stop for every sensor read. Running, they
+  couple into SDA and SCL over the 4 m cable: the new VEML7700 on the
+  shield hub missed about every other transfer, and clean with them
+  stopped. A reading costs the noise about half a second.
+- SCK and WS on the weakest GPIO driver, for slower edges.
+
 ## 3.0.2 - 2026-09-23
 
 Board ESP32_DEV · Protocol 3 · Server v3.0.1

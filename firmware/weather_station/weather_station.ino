@@ -27,7 +27,7 @@
 
 // Sent with every batch; bump it with each build that goes on a board, and
 // tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
-#define FIRMWARE_VERSION "3.0.2"
+#define FIRMWARE_VERSION "3.0.3"
 
 // The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
 // DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
@@ -174,20 +174,29 @@ static bool sensorsBegin() {
 }
 
 static bool readSensors(station_reading_t& out) {
+  // All I2C traffic, readPressure() included, happens with the mic clocks stopped.
   sensors_event_t humidityEvent, tempEvent;
-  if (!sht.getEvent(&humidityEvent, &tempEvent)) {
+  float p = NAN;
+  noiseHush();
+  const bool shtRead = sht.getEvent(&humidityEvent, &tempEvent);
+  const bool bmpRead = shtRead && bmp.takeForcedMeasurement();
+  if (bmpRead) {
+    p = bmp.readPressure();                      // Pa, already the unit the API takes
+  }
+  noiseUnhush();
+
+  if (!shtRead) {
     logInfo("SHT41 measurement failed");
     return false;
   }
 
-  if (!bmp.takeForcedMeasurement()) {
+  if (!bmpRead) {
     logInfo("BMP280 measurement failed");
     return false;
   }
 
   float t = tempEvent.temperature;               // degC
   float h = humidityEvent.relative_humidity;     // %
-  float p = bmp.readPressure();                  // Pa, already the unit the API takes
 
   if (isnan(t) || isnan(h) || isnan(p)) {
     logInfo("sensors returned NaN: t=%.2f h=%.2f p=%.0f", t, h, p);

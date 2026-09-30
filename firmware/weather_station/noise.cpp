@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <ESP_I2S.h>
+#include <driver/gpio.h>
 #include <dsps_fft2r.h>
 
 #include "station_log.h"
@@ -32,6 +33,12 @@
 
 // I2S is read in pieces; a whole hop at once would need a buffer that size.
 #define NOISE_READ_SAMPLES 256
+
+// Hops dropped after the task wakes: two refill the history. With the clock
+// stopped as well, the mic is muted for 2^18 SCK cycles (256 ms at
+// 1.024 MHz), four more hops.
+#define NOISE_HOPS_AFTER_PAUSE 2
+#define NOISE_HOPS_AFTER_HUSH 6
 
 static I2SClass i2s;
 static TaskHandle_t task = nullptr;
@@ -78,6 +85,11 @@ static float secondSumA = 0;
 static volatile bool pauseRequested = false;
 static volatile bool paused = false;
 static bool buffersAllocated = false;
+static volatile uint8_t hopsAfterWake = NOISE_HOPS_AFTER_PAUSE;
+
+// noiseHush() parked the task itself (not an upload) and stopped the clock.
+static bool hushParked = false;
+static bool clockStopped = false;
 
 // Shared with the loop: the finished slot and the counters.
 static portMUX_TYPE shared = portMUX_INITIALIZER_UNLOCKED;
@@ -245,14 +257,15 @@ static void noiseTask(void*) {
   float frameBands[NOISE_BAND_COUNT];
 
   // A fresh history is zeros; the frames over it would read low.
-  uint8_t hopsToRefill = 2;
+  uint8_t hopsToRefill = NOISE_HOPS_AFTER_PAUSE;
 
   while (true) {
     if (pauseRequested) {
       paused = true;
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
       paused = false;
-      hopsToRefill = 2;
+      hopsToRefill = hopsAfterWake;
+      hopsAfterWake = NOISE_HOPS_AFTER_PAUSE;
       continue;
     }
 
@@ -367,6 +380,10 @@ bool noiseBegin() {
     return false;
   }
 
+  // Weakest driver, slowest edges: the clocks run 4 m next to the I2C pairs.
+  gpio_set_drive_capability((gpio_num_t)NOISE_SCK_PIN, GPIO_DRIVE_CAP_0);
+  gpio_set_drive_capability((gpio_num_t)NOISE_WS_PIN, GPIO_DRIVE_CAP_0);
+
   if (xTaskCreatePinnedToCore(noiseTask, "noise", NOISE_TASK_STACK, nullptr, NOISE_TASK_PRIORITY, &task, NOISE_TASK_CORE) != pdPASS) {
     task = nullptr;
     i2s.end();
@@ -450,6 +467,53 @@ void noiseResume() {
 
   // A task that never parked (noisePause() gave up on it) is still running
   // and must not get a notification it would bank.
+  if (paused) {
+    xTaskNotifyGive(task);
+  }
+}
+
+// Parks the task the same way as noisePause(), then stops the channel, which
+// stops SCK and WS. The buffers stay: this runs every reading, and freeing
+// ~40 kB twice a minute would only fragment the heap. A task already parked
+// by a failed resume is left to noiseResume(); only the clock is stopped.
+void noiseHush() {
+  if (task == nullptr) {
+    return;
+  }
+
+  if (!pauseRequested) {
+    hushParked = true;
+    pauseRequested = true;
+    const uint32_t start = millis();
+    while (!paused && millis() - start < NOISE_PAUSE_WAIT_MS) {
+      delay(5);
+    }
+  }
+
+  // Stopping the channel under a task blocked in its read would leave the
+  // read to time out as a short one; only a parked task is safe.
+  if (!paused) {
+    logInfo("noise: task did not park, clock keeps running");
+    return;
+  }
+
+  clockStopped = i2s_channel_disable(i2s.rxChan()) == ESP_OK;
+}
+
+void noiseUnhush() {
+  if (clockStopped) {
+    i2s_channel_enable(i2s.rxChan());
+    clockStopped = false;
+  }
+
+  if (!hushParked) {
+    return;
+  }
+  hushParked = false;
+  hopsAfterWake = NOISE_HOPS_AFTER_HUSH;
+  pauseRequested = false;
+
+  // Same rule as noiseResume(): never a notification to a running task.
   if (paused) {
     xTaskNotifyGive(task);
   }

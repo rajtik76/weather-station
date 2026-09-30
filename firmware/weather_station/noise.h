@@ -16,7 +16,6 @@
 #define NOISE_WS_PIN 25
 #define NOISE_SD_PIN 33
 
-// 16 kHz ran next to the I2C sensors over the 4 m cable without a glitch.
 // Nyquist is 8 kHz, so the top band (7.1 - 8.9 kHz) only sees its lower half.
 #define NOISE_SAMPLE_RATE 16000
 
@@ -58,6 +57,13 @@ noise_stats_t noiseStats();
 // misses the seconds in between.
 void noisePause();
 void noiseResume();
+
+// Around every I2C read: the task parks and SCK and WS stop, the buffers
+// stay. The clocks share the 4 m cable with SDA and SCL, and with them
+// running the VEML7700 missed about every other transfer (2026-09-30); the
+// SHT45 did not notice. About half a second of noise is lost per reading.
+void noiseHush();
+void noiseUnhush();
 
 // A resume that found no memory leaves the task parked; the loop calls this
 // every NOISE_RETRY_MS so the microphone comes back without waiting for the
