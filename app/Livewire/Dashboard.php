@@ -286,20 +286,17 @@ class Dashboard extends Component
     }
 
     /**
-     * Protocol 3's noise over the same buckets as the readings. A window
-     * that holds no noise at all (older rows, a dead microphone) is `[]`,
-     * and the noise strips do not render.
+     * Protocol 3's noise over the same buckets as the readings. `[]` only
+     * for a sensor that never sent any, and then the noise strips do not
+     * render; a window before or between its noise keeps the strips, with
+     * holes, so they do not vanish on a zoom.
      *
      * @return list<NoiseRow>
      */
     #[Computed]
     public function noise(): array
     {
-        $hasNoise = $this->measurementsInWindow()
-            ->whereRaw("data->'noise' IS NOT NULL")
-            ->exists();
-
-        if (! $hasNoise) {
+        if (! $this->hasEverSent('noise')) {
             return [];
         }
 
@@ -309,20 +306,28 @@ class Dashboard extends Component
     }
 
     /**
-     * Protocol 4's illuminance over the same buckets as the readings. A
-     * window without any (older rows, no VEML7700) is `[]`, and the light
-     * strip does not render.
+     * Whether the selected sensor has ever sent the blob key. A partial index
+     * per key keeps this a lookup, not a scan of the sensor's history.
+     *
+     * @param  'noise'|'illuminance'  $key
+     */
+    private function hasEverSent(string $key): bool
+    {
+        return $this->measurements()->whereRaw("data->'{$key}' IS NOT NULL")->exists();
+    }
+
+    /**
+     * Protocol 4's illuminance over the same buckets as the readings. `[]`
+     * only for a sensor that never sent any (no VEML7700), and then the
+     * light strip does not render; a window before or between its light
+     * keeps the strip, with holes, so it does not vanish on a zoom.
      *
      * @return list<LightRow>
      */
     #[Computed]
     public function light(): array
     {
-        $hasLight = $this->measurementsInWindow()
-            ->whereRaw("data->'illuminance' IS NOT NULL")
-            ->exists();
-
-        if (! $hasLight) {
+        if (! $this->hasEverSent('illuminance')) {
             return [];
         }
 

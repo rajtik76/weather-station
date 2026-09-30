@@ -786,7 +786,7 @@
             @endforeach
 
             {{-- ── Noise ──────────────────────────────────────────── --}}
-            {{-- Protocol 3 only: a window of older rows has no noise, and no strips. --}}
+            {{-- Protocol 3 only: a sensor that never sent noise has no strips; a window before it has them empty. --}}
             @if ($hasNoise)
                 <x-strip
                     key="noise"
@@ -831,8 +831,8 @@
             @endif
 
             {{-- ── Light ──────────────────────────────────────────── --}}
-            {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers, so
-                 the lux are the shield's, not the open sky's: read the shape. --}}
+            {{-- Protocol 4 only, and only for a sensor that ever sent light. The VEML7700 sits behind
+                 the shield's louvers, so the lux are the shield's, not the open sky's: read the shape. --}}
             @if ($this->light !== [])
                 <x-strip
                     key="light"

@@ -569,7 +569,24 @@ it('lists a V3 packet with its noise object', function (): void {
         ->assertSee('"laeq":5562', true);
 });
 
-it('draws no noise strips over a window without noise', function (): void {
+it('keeps the noise strips over a window before the sensor had noise', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->v2()->create(['timestamp' => now()->subHours(3)->getTimestamp()]);
+    Measurement::factory()->for($sensor)->v3()->create(['timestamp' => now()->subMinutes(10)->getTimestamp(), 'data' => (string) noisyWindow(5000, 5500, 4500, 6000, 3000)]);
+
+    $html = Livewire::withQueryParams([
+        'from' => now()->subHours(4)->getTimestamp(),
+        'to' => now()->subHours(2)->getTimestamp(),
+    ])->test(Dashboard::class)->html();
+
+    expect(noiseBuckets($html))->toBe([])
+        ->and($html)->toContain('Noise spectrum history');
+});
+
+it('draws no noise strips for a sensor that never had noise', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     Measurement::factory()->v2()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
@@ -580,7 +597,24 @@ it('draws no noise strips over a window without noise', function (): void {
         ->and($html)->not->toContain('Noise spectrum history');
 });
 
-it('draws no light strip over a window without light', function (): void {
+it('keeps the light strip over a window before the sensor had light', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->v3()->create(['timestamp' => now()->subHours(3)->getTimestamp()]);
+    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => now()->subMinutes(10)->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
+
+    $html = Livewire::withQueryParams([
+        'from' => now()->subHours(4)->getTimestamp(),
+        'to' => now()->subHours(2)->getTimestamp(),
+    ])->test(Dashboard::class)->html();
+
+    expect(lightBuckets($html))->toBe([])
+        ->and($html)->toContain('lx inside the radiation shield');
+});
+
+it('draws no light strip for a sensor that never had light', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     Measurement::factory()->v3()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
@@ -589,6 +623,22 @@ it('draws no light strip over a window without light', function (): void {
 
     expect(lightBuckets($html))->toBe([])
         ->and($html)->not->toContain('lx inside the radiation shield');
+});
+
+it('shows the light strip once a sensor without it starts sending light', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->v3()->create(['timestamp' => now()->subMinutes(20)->getTimestamp()]);
+
+    $dashboard = Livewire::test(Dashboard::class);
+
+    expect($dashboard->html())->not->toContain('lx inside the radiation shield');
+
+    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => now()->subMinutes(10)->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
+
+    expect($dashboard->call('$refresh')->html())->toContain('lx inside the radiation shield');
 });
 
 it('averages the light in a bucket with the extremes of its windows', function (): void {

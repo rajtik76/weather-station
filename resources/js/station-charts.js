@@ -1083,13 +1083,25 @@ function spectrumLines(row) {
     ];
 }
 
-/** Paints the scale beside the strip's label with the ramp and its ends. */
+/**
+ * Paints the scale beside the strip's label with the ramp and its ends. A
+ * window without noise clears it: the elements are wire:ignore, so the
+ * previous window's ends would otherwise stay beside an empty strip.
+ */
 function paintSpectrumScale(range) {
     const scale = document.querySelector("[data-spectrum-scale]");
     const low = document.querySelector("[data-spectrum-low]");
     const high = document.querySelector("[data-spectrum-high]");
 
-    if (!scale || !low || !high || !range) {
+    if (!scale || !low || !high) {
+        return;
+    }
+
+    if (!range) {
+        scale.style.background = "";
+        low.textContent = "";
+        high.textContent = "";
+
         return;
     }
 
