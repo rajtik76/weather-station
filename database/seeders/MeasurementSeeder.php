@@ -8,10 +8,12 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
+use App\ValueObject\LightWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
 use Illuminate\Database\Seeder;
 
@@ -24,9 +26,10 @@ class MeasurementSeeder extends Seeder
     /**
      * Two stations on the same month: the second is warmer, drier, starts
      * mid-month and is V2 throughout, the first switches to V2 on
-     * `v2FromDay` and to V3 with noise on `v3FromDay` as the real one did.
+     * `v2FromDay`, to V3 with noise on `v3FromDay` and to V4 with light on
+     * `v4FromDay` as the real one did.
      *
-     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, v3FromDay: ?int, sunSpikes: bool, firmware: string, board: ?string}>
+     * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, v3FromDay: ?int, v4FromDay: ?int, sunSpikes: bool, firmware: string, board: ?string}>
      */
     private const array SENSORS = [
         [
@@ -37,8 +40,9 @@ class MeasurementSeeder extends Seeder
             'skipDays' => 0,
             'v2FromDay' => 21,
             'v3FromDay' => 28,
+            'v4FromDay' => 30,
             'sunSpikes' => false,
-            'firmware' => '3.0.2',
+            'firmware' => '4.0.0',
             'board' => 'ESP32_DEV',
         ],
         [
@@ -49,6 +53,7 @@ class MeasurementSeeder extends Seeder
             'skipDays' => 12,
             'v2FromDay' => 12,
             'v3FromDay' => null,
+            'v4FromDay' => null,
             'sunSpikes' => true,
             'firmware' => '2.1.0',
             'board' => null,
@@ -74,6 +79,27 @@ class MeasurementSeeder extends Seeder
      * Relative to the end because the record ends at the seed time.
      */
     private const array SHOWERS = [[20.0, 18.5], [44.0, 43.5]];
+
+    /** The seeded station's site, for the sun's height. */
+    private const float LATITUDE = 49.73;
+
+    private const float LONGITUDE = 13.40;
+
+    /**
+     * Open-sky illuminance on a clear day, lx: at the horizon, and what
+     * the sun adds per unit of the sine of its height.
+     */
+    private const float HORIZON_LUX = 400.0;
+
+    private const float SUN_LUX = 110_000.0;
+
+    /** The share of the open sky that reaches the VEML7700 behind the shield's louvers. */
+    private const float SHIELD_SHARE = 0.08;
+
+    /** The morning sun shines straight through the east louvers until this local hour. */
+    private const int MORNING_SUN_UNTIL = 10;
+
+    private const float MORNING_SUN_GAIN = 4.0;
 
     /**
      * Real hourly observations for Plzen-Slovany (Open-Meteo, 345 m), 744
@@ -120,6 +146,7 @@ class MeasurementSeeder extends Seeder
 
                 $slot = $start + $i * self::STEP_SECONDS;
                 $version = match (true) {
+                    $station['v4FromDay'] !== null && $i >= $station['v4FromDay'] * 24 * $perHour => ProtocolVersion::V4,
                     $station['v3FromDay'] !== null && $i >= $station['v3FromDay'] * 24 * $perHour => ProtocolVersion::V3,
                     $i >= $station['v2FromDay'] * 24 * $perHour => ProtocolVersion::V2,
                     default => ProtocolVersion::V1,
@@ -135,6 +162,10 @@ class MeasurementSeeder extends Seeder
                         ProtocolVersion::V1 => new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p),
                         ProtocolVersion::V2 => $window(),
                         ProtocolVersion::V3 => $this->withNoise($window(), $this->noise($slot, $this->isShowering($slot, $end))),
+                        ProtocolVersion::V4 => $this->withLight(
+                            $this->withNoise($window(), $this->noise($slot, $this->isShowering($slot, $end))),
+                            $this->light($slot, $this->isShowering($slot, $end)),
+                        ),
                     },
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -253,6 +284,73 @@ class MeasurementSeeder extends Seeder
             pressureMax: $window->pressureMax,
             samples: $window->samples,
             noise: $noise,
+        );
+    }
+
+    /**
+     * The window's light behind the shield, in 0.01 lx: open sky by the
+     * sun's height, a cloud cover that holds for the hour, the morning sun
+     * straight through the east louvers, and a dim city glow at night. The
+     * extremes spread with the clouds passing during the ten minutes.
+     */
+    private function light(int $slot, bool $isShowering): LightWindow
+    {
+        $height = $this->sunHeight($slot + intdiv(self::STEP_SECONDS, 2));
+
+        $openSky = match (true) {
+            $height < -6.0 => mt_rand(0, 5) / 100 / self::SHIELD_SHARE,
+            $height < 0.0 => self::HORIZON_LUX * 10 ** ($height / 2),
+            default => self::HORIZON_LUX + self::SUN_LUX * sin(deg2rad($height)),
+        };
+
+        // One cover per hour, so a cloudy stretch lasts; a shower is dark.
+        // Off a hash of the hour, not mt_rand(), which would need reseeding.
+        $cover = $isShowering ? 0.12 : 0.25 + 0.75 * (crc32((string) intdiv($slot, 3600)) % 1000) / 999;
+
+        $isMorningSun = $height > 3.0 && $this->localHour($slot) < self::MORNING_SUN_UNTIL && $cover > 0.7;
+        $lux = $openSky * self::SHIELD_SHARE * ($height > 0.0 ? $cover : 1.0) * ($isMorningSun ? self::MORNING_SUN_GAIN : 1.0);
+
+        $mean = (int) round($lux * 100);
+        $spread = $height > 0.0 ? mt_rand(5, 30) / 100 : 0.02;
+
+        return new LightWindow(
+            illuminance: $mean,
+            illuminanceMin: (int) floor($mean * (1 - $spread)),
+            illuminanceMax: min(15_000_000, (int) ceil($mean * (1 + $spread))),
+        );
+    }
+
+    /**
+     * The sun's height above the horizon in degrees: declination by the day
+     * of the year and the hour angle by solar time, the equation of time
+     * left out - a quarter of an hour at most, nothing a seeded curve shows.
+     */
+    private function sunHeight(int $timestamp): float
+    {
+        $day = (int) gmdate('z', $timestamp) + 1;
+        $declination = deg2rad(23.44 * sin(deg2rad(360 / 365 * ($day + 284))));
+        $solarHours = ($timestamp % 86_400) / 3600 + self::LONGITUDE / 15;
+        $hourAngle = deg2rad(15 * ($solarHours - 12));
+        $latitude = deg2rad(self::LATITUDE);
+
+        return rad2deg(asin(sin($latitude) * sin($declination) + cos($latitude) * cos($declination) * cos($hourAngle)));
+    }
+
+    private function withLight(MeasurementDataV3 $window, LightWindow $light): MeasurementDataV4
+    {
+        return new MeasurementDataV4(
+            temperature: $window->temperature,
+            humidity: $window->humidity,
+            pressure: $window->pressure,
+            temperatureMin: $window->temperatureMin,
+            temperatureMax: $window->temperatureMax,
+            humidityMin: $window->humidityMin,
+            humidityMax: $window->humidityMax,
+            pressureMin: $window->pressureMin,
+            pressureMax: $window->pressureMax,
+            samples: $window->samples,
+            noise: $window->noise,
+            light: $light,
         );
     }
 
