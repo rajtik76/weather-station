@@ -1,0 +1,9 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "esp32_30pin_revised")(type "KiCad")(uri "${KIPRJMOD}/symbols/esp32_30pin_revised.kicad_sym")(options "")(descr "30-pin DOIT ESP32 DevKit V1, MIT"))
+  (lib (name "BMP280_Module")(type "KiCad")(uri "${KIPRJMOD}/symbols/BMP280_Module.kicad_sym")(options "")(descr "BMP280 six-pin breakout interface"))
+  (lib (name "LaskaKit_SHT45_Module")(type "KiCad")(uri "${KIPRJMOD}/symbols/LaskaKit_SHT45_Module.kicad_sym")(options "")(descr "LaskaKit SHT45 breakout interface"))
+  (lib (name "VEML7700_Module")(type "KiCad")(uri "${KIPRJMOD}/symbols/VEML7700_Module.kicad_sym")(options "")(descr "VEML7700 five-pin breakout interface"))
+  (lib (name "INMP441_Module")(type "KiCad")(uri "${KIPRJMOD}/symbols/INMP441_Module.kicad_sym")(options "")(descr "INMP441 breakout interface"))
+  (lib (name "WeatherStation_Functional")(type "KiCad")(uri "${KIPRJMOD}/symbols/WeatherStation_Functional.kicad_sym")(options "")(descr "Functional station modules with schematic-first pin placement"))
+)

@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "ESP32_Footprints")(type "KiCad")(uri "${KIPRJMOD}/footprints/ESP32_Footprints.pretty")(options "")(descr "30-pin DOIT ESP32 DevKit V1, MIT"))
+)

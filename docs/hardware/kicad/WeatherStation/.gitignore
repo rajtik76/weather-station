@@ -1,0 +1,7 @@
+*.kicad_prl
+*.bak
+*.lck
+output/
+.kicad-mcp/
+.history/
+*.kicad_pcb
