@@ -28,6 +28,31 @@ Wiring: the [station schematic](../docs/hardware/station-schematic.svg), the
 [shield hub schematic](../docs/hardware/shield-hub-schematic.svg) and its
 [soldering layout](../docs/hardware/shield-hub-board.svg).
 
+### Cable
+
+Four metres of FTP (four twisted pairs) run from the ESP32 board to the shield
+hub. On the ESP32 side each wire ends on a Dupont pin; on the hub it is
+soldered in column 5 of the perfboard.
+
+| Pair | Wire         | Signal | ESP32 side         | Hub side          |
+| ---- | ------------ | ------ | ------------------ | ----------------- |
+| 1    | blue         | SD     | GPIO33 (D33)       | R5 47 Ω → mic SD  |
+| 1    | white-blue   | GND    | GND                | GND, C2           |
+| 2    | orange       | SDA    | GPIO21 (D21)       | SHT4x, VEML7700   |
+| 2    | white-orange | 3V3    | 3V3                | C2, all three VCC |
+| 3    | white-green  | SCL    | GPIO22 (D22)       | SHT4x, VEML7700   |
+| 3    | green        | GND    | GND                | GND               |
+| 4    | white-brown  | SCK    | GPIO26 via R3 47 Ω | mic SCK           |
+| 4    | brown        | WS     | GPIO25 via R4 47 Ω | mic WS            |
+
+Both grounds go to GND at both ends. With one of them open the SHT41 on
+the old hub dropped about one reading in seven while the WiFi was on. Each
+I2C line shares its pair with a supply or ground, and the I2S clocks keep to
+their own pair, so SCK never runs next to SDA or SCL. Over four metres they
+still couple into the I2C lines, which is why the clocks stop for every
+sensor read (see _Noise_). The foil and drain are cut back and not
+connected at either end.
+
 The shield hub is also a KiCad project in
 [`docs/hardware/kicad/ShieldHub`](../docs/hardware/kicad/ShieldHub): a
 [wired schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg),
