@@ -1,4 +1,4 @@
-"""Electrical schematic of the whole station: ESP32 DevKit, BMP280, SHT45, VEML7700 and INMP441.
+"""Electrical schematic of the whole station: ESP32 DevKit, BMP280, SHT4x, VEML7700 and INMP441.
 
 The circuit only, no cable and no connectors. ESP32 pin names as printed on the
 DOIT ESP32 DevKit V1 (esp32-devkit-v1-pinout.png, playelek.com, CC BY).
@@ -33,7 +33,7 @@ def draw(d: schemdraw.Drawing) -> None:
     # I2C: one bus, pull-ups at the ESP32, three sensors on it
     x0 = pin(esp, 'D21')[0]
     bmp = chip('U2\nBMP280\n0x76', (3.6, 3.6), left=['VCC', 'GND'], right=['CSB', 'SDO'], top=['SCL'], bottom=['SDA'])
-    sht = chip('U3\nSHT45\n0x44', (3.6, 3.6), left=['VCC', 'GND'], top=['SCL'], bottom=['SDA'])
+    sht = chip('U3\nSHT4x\n0x44', (3.6, 3.6), left=['VCC', 'GND'], top=['SCL'], bottom=['SDA'])
     veml = chip('U4\nVEML7700\n0x10', (3.6, 3.6), left=['VIN', '3Vo', 'GND'], top=['SCL'], bottom=['SDA'])
     i2c_bus(d, pin(esp, 'D21'), pin(esp, 'D22'), [(bmp, x0 + 7.4), (sht, x0 + 15.4), (veml, x0 + 22.4)],
             pullup_x=x0 + 2.4)

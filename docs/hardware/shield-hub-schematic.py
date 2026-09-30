@@ -47,7 +47,7 @@ def draw(d: schemdraw.Drawing) -> None:
 
     # I2C: both sensors on the bus from the cable; pull-ups sit on the ESP32 board and on the modules
     x0 = ends['SDA'][0][0]
-    sht = chip('U3\nSHT45\n0x44', (3.6, 3.6), left=['VCC', 'GND'], top=['SCL'], bottom=['SDA'])
+    sht = chip('U3\nSHT4x\n0x44', (3.6, 3.6), left=['VCC', 'GND'], top=['SCL'], bottom=['SDA'])
     veml = chip('U4\nVEML7700\n0x10', (3.6, 3.6), left=['VIN', '3Vo', 'GND'], top=['SCL'], bottom=['SDA'])
     i2c_bus(d, ends['SDA'][0], ends['SCL'][0], [(sht, x0 + 5.0), (veml, x0 + 12.0)])
     supply(d, pin(sht, 'VCC'))

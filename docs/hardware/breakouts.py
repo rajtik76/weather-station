@@ -61,7 +61,7 @@ class Spec:
                       origin=pin1, standoff=standoff, note_ha=note_ha, label_dirs={n: turn(x, y, facing) for n, (x, y) in self.label_dir.items()})
 
 
-def _sht45() -> Spec:
+def _sht4x() -> Spec:
     # From LaskaKit's STEP model (Temp-HumSensor_SHT45 v1, header centre at 0,0), shifted so SDA sits at the
     # origin; the v2.1 on sale has the same outline. Pin order from the back silkscreen, mirrored to the front.
     def at(x: float, y: float) -> tuple[float, float]:
@@ -76,7 +76,7 @@ def _sht45() -> Spec:
     socket = {'fc': '#eeeeee', 'ec': '#999999', 'lw': 0.6}
     hole = {'fc': '#e8d6a0', 'ec': '#bbbbbb', 'lw': 1.5}
     return Spec(
-        name='LaskaKit SHT45',
+        name='LaskaKit SHT4x',
         source='https://www.laskakit.cz/laskakit-sht45-senzor-teploty-a-vlhkosti-vzduchu/ '
                '(STEP: https://github.com/LaskaKit/Temp-HumSensor-SHTxx)',
         pins=[('SDA', 0, 0, 'SDA'), ('SCL', 2.54, 0, 'SCL'), ('GND', 5.08, 0, 'GND'), ('VCC', 7.62, 0, '3V3')],
@@ -88,7 +88,7 @@ def _sht45() -> Spec:
             {'circle': (*at(6.99, 12.7), 1.25), **hole},
             {'rect': (*at(-0.75, 0.75), 20.21, 21.71), 'fc': '#111111', 'ec': 'none'},
         ],
-        note='LaskaKit SHT45 (0x44)\ntongue free in the air',
+        note='LaskaKit SHT4x (0x44)\ntongue free in the air',
         note_at=at(0, 26),
         label_dir={n: (0, 1.3) for n in ('SDA', 'SCL', 'GND', 'VCC')},
         facts=[
@@ -159,6 +159,6 @@ def _inmp441() -> Spec:
     )
 
 
-SHT45 = _sht45()
+SHT4X = _sht4x()
 VEML7700 = _veml7700()
 INMP441 = _inmp441()

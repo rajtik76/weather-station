@@ -1,6 +1,6 @@
-"""Shield hub on a 30x70 mm perfboard (10x24 holes): FTP, SHT45, VEML7700 and INMP441 on one board.
+"""Shield hub on a 30x70 mm perfboard (10x24 holes): FTP, SHT4x, VEML7700 and INMP441 on one board.
 
-Mounted with column 1 up: the FTP enters from the top, the SHT45 tongue points
+Mounted with column 1 up: the FTP enters from the top, the SHT4x tongue points
 down, the VEML7700 faces the east louvers. Module footprints live in breakouts.py.
 
 Run with .venv/bin/python docs/hardware/shield-hub-board.py [--svg]; writes docs/hardware/shield-hub-board.svg.
@@ -9,7 +9,7 @@ Run with .venv/bin/python docs/hardware/shield-hub-board.py [--svg]; writes docs
 from pathlib import Path
 
 from layout import Board, Cable, Capacitor, Jumper, Resistor, Tie
-from breakouts import INMP441, SHT45, VEML7700
+from breakouts import INMP441, SHT4X, VEML7700
 
 board = Board(
     title='Shield hub, 30x70 mm',
@@ -31,7 +31,7 @@ board = Board(
     footer='Bottom runs: tinned wire along the holes; top links: insulated wire. '
            'Both FTP grounds tied through column 4. '
            'I2C pull-ups on the indoor base, module pull-ups stay. '
-           'Mask the SHT45 tongue, the VEML window and the mic port before Plastik 70.',
+           'Mask the SHT4x tongue, the VEML window and the mic port before Plastik 70.',
 )
 
 # Male header long tails are soldered through the perfboard; short tails are
@@ -53,7 +53,7 @@ ftp = Cable('FTP', [
 board.add(
     ftp,
     Tie('TIE', [(2, 3), (2, 7)]),
-    SHT45.place('U3', (20, 2), 'right', standoff=STANDOFF, note_at=(8.8, 23), note_va='top', note_ha='left'),
+    SHT4X.place('U3', (20, 2), 'right', standoff=STANDOFF, note_at=(8.8, 23), note_va='top', note_ha='left'),
     VEML7700.place('U4', (18, 6), 'left', note='VEML7700 (0x10), sensor up,\nfaces the east louvers, 3Vo not connected',
                    note_at=(19, 5), note_va='bottom', standoff=STANDOFF),
     INMP441.place('U5', (10, 9), 'left', nets={'SD': 'SD_MIC'}, note_at=(-7.5, 3.81), note_va='top',

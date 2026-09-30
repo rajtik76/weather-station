@@ -1858,7 +1858,7 @@ z
     <text style="font-size: 5.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #ffffff" x="511.608258" y="207.606697" transform="rotate(-0 511.608258 207.606697)">VCC</text>
    </g>
    <g id="text_32">
-    <text style="font-size: 6.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(634.88586 218.47118)">U3  LaskaKit SHT45 (0x44)</text>
+    <text style="font-size: 6.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(634.88586 218.47118)">U3  LaskaKit SHT4x (0x44)</text>
     <text style="font-size: 6.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif" transform="translate(634.88586 226.272958)">tongue free in the air</text>
    </g>
    <g id="text_33">
@@ -3558,7 +3558,7 @@ z
    </g>
   </g>
   <g id="text_83">
-   <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #444444" transform="translate(0.772266 842.037949)">Bottom runs: tinned wire along the holes; top links: insulated wire. Both FTP grounds tied through column 4. I2C pull-ups on the indoor base, module pull-ups stay. Mask the SHT45 tongue, the VEML window and</text>
+   <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #444444" transform="translate(0.938672 842.037949)">Bottom runs: tinned wire along the holes; top links: insulated wire. Both FTP grounds tied through column 4. I2C pull-ups on the indoor base, module pull-ups stay. Mask the SHT4x tongue, the VEML window and</text>
    <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #444444" transform="translate(339.172852 851.04)">the mic port before Plastik 70.</text>
   </g>
  </g>
