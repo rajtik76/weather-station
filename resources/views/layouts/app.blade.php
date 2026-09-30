@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
         <title>{{ $title ?? config('app.name') }}</title>
+        <meta name="description" content="A balcony weather station that forecasts its own next six hours and scores each forecast against what it then measured.">
 
         {{-- The mark is the three channel traces; the .ico carries the small
              sizes for browsers that will not take the SVG. --}}

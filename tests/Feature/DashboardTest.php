@@ -217,6 +217,12 @@ it('shows an empty state when nothing has been recorded', function (): void {
         ->assertSee('Nothing in this range');
 });
 
+it('describes the page for search results', function (): void {
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('<meta name="description" content="A balcony weather station that forecasts its own next six hours', escape: false);
+});
+
 it('loads the bundled font faces', function (): void {
     $this->partialMock(Vite::class)
         ->shouldReceive('fonts')
