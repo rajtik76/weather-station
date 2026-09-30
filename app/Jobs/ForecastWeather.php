@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\Forecast;
 use App\Models\Sensor;
 use App\Queries\ServiceReadings;
+use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -29,11 +30,23 @@ class ForecastWeather
 {
     use Dispatchable;
 
+    /**
+     * A station clock running a little ahead still gets its newest reading
+     * forecast from. A row stamped further ahead is a clock fault - local
+     * time sent as UTC, a jump - and sent, it would be the reading every run
+     * forecasts from, under an issued_at that has not come yet, until real
+     * time caught up with it.
+     */
+    private const int AHEAD_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
     public function __construct(public Sensor $sensor) {}
 
     public function handle(): void
     {
-        $readings = new ServiceReadings($this->sensor->id)->between(now()->subDays((int) config('forecast.history_days'))->getTimestamp());
+        $readings = new ServiceReadings($this->sensor->id)->between(
+            now()->subDays((int) config('forecast.history_days'))->getTimestamp(),
+            now()->getTimestamp() + self::AHEAD_SECONDS,
+        );
 
         if ($readings === []) {
             return;

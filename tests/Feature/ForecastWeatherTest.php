@@ -97,6 +97,21 @@ it('sends the whole sixty days and the local midnight of FORECAST_HISTORY_SINCE 
         && $request['since'] === Date::parse('2026-09-16 22:00:00', 'UTC')->getTimestamp());
 });
 
+it('sends a reading stamped a little ahead of the server but not one stamped hours ahead', function (): void {
+    freezeTime();
+    $sensor = Sensor::factory()->create();
+    $recent = now()->subMinutes(10)->getTimestamp();
+    $ahead = now()->addMinutes(5)->getTimestamp();
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    forecastReading($sensor, $ahead, 1181, 8327, 97655);
+    forecastReading($sensor, now()->addHours(2)->getTimestamp(), 1181, 8327, 97655);
+    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($ahead))]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertSent(fn (Request $request): bool => array_column($request['readings'], 'timestamp') === [$recent, $ahead]);
+});
+
 it('reports a FORECAST_HISTORY_SINCE that is not a date and forecasts without it', function (string $since): void {
     freezeTime();
     Exceptions::fake();
