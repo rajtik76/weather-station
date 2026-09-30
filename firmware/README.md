@@ -47,7 +47,7 @@ soldered in column 5 of the perfboard.
 | 4    | white-brown  | SCK    | GPIO26 via R3 47 Ω | mic SCK           |
 | 4    | brown        | WS     | GPIO25 via R4 47 Ω | mic WS            |
 
-Both grounds go to GND at both ends. With one of them open the SHT41 on
+Both grounds go to GND at both ends. With one of them open the SHT4x on
 the old hub dropped about one reading in seven while the WiFi was on. Each
 I2C line shares its pair with a supply or ground, and the I2S clocks keep to
 their own pair, so SCK never runs next to SDA or SCL. Over four metres they

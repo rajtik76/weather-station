@@ -14,18 +14,19 @@ alone, and every forecast is scored against what the station then measured.
 The dashboard shows the last 30 days' verdict right under the current readings.
 
 The station is how the question gets asked. An ESP32 reads temperature and
-humidity from an SHT41 outside and pressure from a BMP280 indoors every half
-minute, listens to an INMP441 microphone beside the SHT41 all the time, folds
-both into ten-minute windows, and uploads them to a Laravel API that stores
-the windows and draws them. The microphone's spectrum also tells when it
-rains.
+humidity from an SHT4x outside, the light from a VEML7700 beside it and
+pressure from a BMP280 indoors every half minute, listens to an INMP441
+microphone in the same shield all the time, folds it all into ten-minute
+windows, and uploads them to a Laravel API that stores the windows and draws
+them. The microphone's spectrum also tells when it rains.
 
 ```
-SHT41   --I2C--+
-BMP280  --I2C--+--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
-INMP441 --I2S--+                       |    |
-                                       |  forecast service (Python)
-                                  Livewire dashboard
+SHT4x    --I2C--+
+VEML7700 --I2C--+
+BMP280   --I2C--+--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
+INMP441  --I2S--+                       |    |
+                                        |  forecast service (Python)
+                                   Livewire dashboard
 ```
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
@@ -68,7 +69,7 @@ works, how well it scores and what it cannot do is in
 
 ## Sensor accuracy
 
-This is a hobby station, and the readings should be read as such. The SHT41
+This is a hobby station, and the readings should be read as such. The SHT4x
 sits in a passive radiation shield on an east-facing balcony, and on a clear
 morning the sun hits it head on: for an hour or two the temperature then runs
 more than 10 °C above the real air temperature, and the band behind the line
@@ -79,8 +80,12 @@ There is no fix coming. A properly ventilated site or an aspirated shield is
 more than a balcony allows, and the point of the project is the forecast, not
 a reference instrument. The forecast is scored against these same readings,
 sun included, and the chart by the hour of the day shows what that does to
-it. Overnight and under cloud the numbers are as good as an SHT41 gets; on a
+it. Overnight and under cloud the numbers are as good as an SHT4x gets; on a
 sunny morning they are not the air temperature.
+
+The VEML7700 sits in the same shield, behind its louvers. It sees a fraction
+of the open sky's light, so its lux are the shield's: the shape of the day is
+real, the numbers do not compare with a station in the open.
 
 ## What it does
 
@@ -100,8 +105,10 @@ drag any window up to a month through; the bucket width follows the span on
 screen. When the window holds noise, two more strips follow: the A-weighted
 level with its LA90 to LA10 band and the loudest second, and the third-octave
 spectrum as a waterfall, with a rain icon over the columns the microphone
-heard rain in. Events entered by hand into `station_events` are marked on
-the charts. Under the charts the three newest windows as they were
+heard rain in. A station that sends light gets one more, the lux in the
+shield on a log scale; noise and light also join the current readings while
+the newest window has them. Events entered by hand into `station_events` are
+marked on the charts. Under the charts the three newest windows as they were
 stored, the station's own report of how it was doing, and the site's
 approximate location - one place, set in the component, so a second station
 is shown on the first one's map. The window and the station are in the URL,
@@ -122,13 +129,13 @@ and belong to this mounting; drizzle too fine to drip is not heard.
 | `forecast/`         | The forecast: fetching the ČHMÚ records, training, scoring, and the service. Its own [`README`](forecast/README.md) and [`CHANGELOG`](forecast/CHANGELOG.md), one entry per model that went on the server.                                                          |
 | `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                                                                                                                                                             |
 | `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                                                                                                                                                                     |
-| `app/ValueObject/`  | Per-version decoding of a measurement payload.                                                                                                                                                                                                                      |
+| `app/ValueObject/`  | Per-version decoding of a measurement payload, and what the dashboard computes from the readings: sea-level pressure, dew point, the rain the microphone heard.                                                                                                     |
 | `app/Models/`       | Sensors, measurements, station reports, forecasts and the hand-written events.                                                                                                                                                                                      |
 | `app/Jobs/`         | `ForecastWeather`, which asks the forecast service after an upload and stores the answer; `BackfillForecastBase`, behind `php artisan forecast:backfill-base`, which fills in the base model's forecast on forecasts stored before the service returned it.         |
 | `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                                                                                                                                                              |
-| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, and two weeks of forecasts for each, for a dashboard without a device on the desk.                                                                                   |
+| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, its last day with light, and two weeks of forecasts for each, for a dashboard without a device on the desk.                                                          |
 | `public/images/`    | The [sky backgrounds](public/images/weather-backgrounds/README.md) behind the dashboard's reading now, generated for this page, with the prompts that made them.                                                                                                    |
-| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands.                                                                                                                                                                                        |
+| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands; the KiCad projects of the station and the shield hub in `docs/hardware/kicad/`.                                                                                                        |
 | `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.                                                                                                                                               |
 
 ## API
@@ -183,13 +190,14 @@ PostgreSQL everywhere, the same image as production: the dashboard averages
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
 back on. `MeasurementSeeder` writes a month of two stations at the reporting
 interval, which is the fastest way to get something on the chart without a
-device on the desk. The first station moves through all three protocols as
-the real one did and carries noise for its last three days, two showers in
-it, so the noise strips and the rain icons have something to draw; the
-second has no microphone. `ForecastSeeder` adds a forecast from each
-station's newest reading and one on every hour of the two weeks before,
-synthetic but shaped like the service's answer: a correction that gets better
-as the record grows, and a newly trained model that took over five days back.
+device on the desk. The first station moves through all four protocols as
+the real one did: noise for its last three days, two showers in it, and
+light for the last one, so the noise and light strips and the rain icons
+have something to draw; the second has neither. `ForecastSeeder` adds a
+forecast from each station's newest reading and one on every hour of the two
+weeks before, synthetic but shaped like the service's answer: a correction
+that gets better as the record grows, and a newly trained model that took
+over five days back.
 The forecast and its accuracy panel show without the service running.
 
 ## Deploying
