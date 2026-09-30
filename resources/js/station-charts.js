@@ -116,6 +116,15 @@ const BAND_OPACITY = 0.16;
  */
 const NOISE_COLUMN = { time: 0, epoch: 1, laeq: 2, la10: 3, la90: 4, lamax: 5, band: 6 };
 
+/** Light row from the server: wall-clock ms, epoch, mean, min, max, all lx. A slot without light is nulls. */
+const LIGHT_COLUMN = { time: 0, epoch: 1, mean: 2, min: 3, max: 4 };
+
+/**
+ * A log axis has no zero, and a dark night reads 0 lx. Anything below this
+ * is drawn on it; the tooltip still prints the value as measured.
+ */
+const LIGHT_FLOOR = 0.01;
+
 /** Nominal third-octave centres, Hz. */
 const NOISE_BANDS = [
     "25",
@@ -183,10 +192,20 @@ const STRIPS = [
         rows: () => noiseRows,
         time: NOISE_COLUMN.time,
     },
+    {
+        key: "light",
+        option: lightOption,
+        lines: lightLines,
+        rows: () => lightRows,
+        time: LIGHT_COLUMN.time,
+    },
 ];
 
 /** Emerald: its own strip, and a hue none of the weather lines use. */
 const NOISE_COLOUR = { light: "#059669", dark: "#34d399" };
+
+/** Yellow, apart from the temperature's amber. */
+const LIGHT_COLOUR = { light: "#ca8a04", dark: "#facc15" };
 
 /**
  * One-hue sequential ramp for the spectrum, light to dark: loud is dark on
@@ -242,6 +261,8 @@ let rows = [];
 let events = [];
 
 let noiseRows = [];
+
+let lightRows = [];
 
 /** `[wall-clock ms, epoch]` of the noise slots the server heard rain in (Dashboard::rainSlots). */
 let rainSlots = [];
@@ -894,6 +915,96 @@ function noiseOption(strip, colours) {
                 lineStyle: { width: 1.5, color: colour },
                 itemStyle: { color: colour },
                 data: noiseRows.map((row) => [time(row), row[NOISE_COLUMN.laeq]]),
+            },
+        ],
+    };
+}
+
+/** Fewer decimals as the light grows: dusk reads hundredths, noon thousands. */
+function formatLux(value) {
+    if (value === null) {
+        return "n/a";
+    }
+
+    const decimals = value < 10 ? 2 : value < 100 ? 1 : 0;
+
+    return `${formatNumber(value, decimals)} lx`;
+}
+
+function lightColour() {
+    return LIGHT_COLOUR[isDark() ? "dark" : "light"];
+}
+
+function lightLines(row) {
+    if (row[LIGHT_COLUMN.mean] === null) {
+        return [{ label: "Light", value: "n/a", strong: true }];
+    }
+
+    return [
+        {
+            label: "Light",
+            value: formatLux(row[LIGHT_COLUMN.mean]),
+            colour: lightColour(),
+            strong: true,
+            detail: `${formatLux(row[LIGHT_COLUMN.min])} to ${formatLux(row[LIGHT_COLUMN.max])}`,
+        },
+    ];
+}
+
+function floorLux(value) {
+    return value === null ? null : Math.max(value, LIGHT_FLOOR);
+}
+
+/**
+ * The mean over the min-max band on a log axis: dusk and noon are four
+ * orders apart, and on a linear axis every night would be one flat line.
+ */
+function lightOption(strip, colours) {
+    const colour = lightColour();
+    const time = (row) => row[LIGHT_COLUMN.time];
+    const spread = (row) =>
+        row[LIGHT_COLUMN.min] === null || row[LIGHT_COLUMN.max] === null
+            ? null
+            : floorLux(row[LIGHT_COLUMN.max]) - floorLux(row[LIGHT_COLUMN.min]);
+
+    return {
+        yAxis: {
+            type: "log",
+            min: LIGHT_FLOOR,
+            axisLabel: {
+                fontSize: 10,
+                color: colour,
+                formatter: (value) => formatNumber(value, value < 1 ? 2 : 0),
+            },
+            splitLine: { lineStyle: { color: colours.grid } },
+        },
+        series: [
+            {
+                type: "line",
+                stack: "light-band",
+                stackStrategy: "all",
+                silent: true,
+                showSymbol: false,
+                lineStyle: { opacity: 0 },
+                data: lightRows.map((row) => [time(row), floorLux(row[LIGHT_COLUMN.min])]),
+            },
+            {
+                type: "line",
+                stack: "light-band",
+                stackStrategy: "all",
+                silent: true,
+                showSymbol: false,
+                lineStyle: { opacity: 0 },
+                areaStyle: { color: colour, opacity: BAND_OPACITY },
+                data: lightRows.map((row) => [time(row), spread(row)]),
+            },
+            {
+                type: "line",
+                name: "Light",
+                showSymbol: false,
+                lineStyle: { width: 1.5, color: colour },
+                itemStyle: { color: colour },
+                data: lightRows.map((row) => [time(row), floorLux(row[LIGHT_COLUMN.mean])]),
             },
         ],
     };
@@ -1628,7 +1739,9 @@ function paintKey(payload) {
         "\n" +
         payload.dataset.hiddenChannels +
         "\n" +
-        payload.dataset.noiseRows
+        payload.dataset.noiseRows +
+        "\n" +
+        payload.dataset.lightRows
     );
 }
 
@@ -1681,6 +1794,12 @@ function render(payload, force) {
         noiseRows = JSON.parse(payload.dataset.noiseRows ?? "[]");
     } catch {
         noiseRows = [];
+    }
+
+    try {
+        lightRows = JSON.parse(payload.dataset.lightRows ?? "[]");
+    } catch {
+        lightRows = [];
     }
 
     // Heard from the same windows as the noise rows, so it changes only with them:
@@ -1804,6 +1923,7 @@ function watchPayload() {
             "data-chart-events",
             "data-hidden-channels",
             "data-noise-rows",
+            "data-light-rows",
         ],
     });
 }

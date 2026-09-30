@@ -11,6 +11,7 @@
         'p' => 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
         'n' => 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
         'spectrum' => 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+        'l' => 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400',
         'good' => 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
         'rain' => 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
     ])
@@ -69,8 +70,8 @@
                     A model trained on station records from the Czech Hydrometeorological Institute (ČHMÚ) tries, from these readings alone, and every forecast is scored against what the sensor measured next.
                 </p>
                 <p class="mt-3 max-w-[58ch] text-[15.5px] leading-relaxed text-slate-500 dark:text-slate-400">
-                    An SHT41 outside and a BMP280 indoors are read every thirty seconds by an ESP32, which reports each ten minutes as a mean with its extremes.
-                    An INMP441 microphone beside the SHT41 adds the noise: A-weighted levels and a third-octave spectrum per window.
+                    An SHT4x outside and a BMP280 indoors are read every thirty seconds by an ESP32, which reports each ten minutes as a mean with its extremes.
+                    An INMP441 microphone beside the SHT4x adds the noise: A-weighted levels and a third-octave spectrum per window, and a VEML7700 in the same shield the light that gets through its louvers.
                     Pressure is measured at 345 m and shown reduced to mean sea level.
                 </p>
                 @if ($this->verdict !== null && $this->verdict['ready'])
@@ -181,15 +182,20 @@
                         </dl>
 
                         {{-- The rest of the reading now, straight under the temperature; the tiles below carry their day.
-                             Noise only while the newest reading has it: a dead microphone leaves the day's last level behind. --}}
+                             Noise and light only while the newest reading has them: a dead sensor leaves the day's last value behind. --}}
                         @php($liveReadouts = array_filter([
                             ['key' => 'h', 'label' => 'Humidity', 'icon' => 'droplet', 'unit' => '%', 'dec' => 2],
                             ['key' => 'p', 'label' => 'Pressure', 'icon' => 'gauge', 'unit' => 'hPa', 'dec' => 1],
                             ['key' => 'n', 'label' => 'Noise', 'icon' => 'audio-waveform', 'unit' => 'dB(A)', 'dec' => 1],
-                        ], fn (array $readout): bool => isset($this->metrics[$readout['key']]) && ($readout['key'] !== 'n' || $this->isNoiseCurrent)))
+                            ['key' => 'l', 'label' => 'Light', 'icon' => 'sun', 'unit' => 'lx', 'dec' => 1],
+                        ], fn (array $readout): bool => isset($this->metrics[$readout['key']])
+                            && ($readout['key'] !== 'n' || $this->isNoiseCurrent)
+                            && ($readout['key'] !== 'l' || $this->isLightCurrent)))
                         <dl
                             @class([
-                                'mt-5 grid max-w-lg divide-x divide-white/20 border-y border-white/20 py-3',
+                                'mt-5 grid divide-x divide-white/20 border-y border-white/20 py-3',
+                                'max-w-lg' => count($liveReadouts) < 4,
+                                'max-w-2xl grid-cols-2 sm:grid-cols-4 max-sm:gap-y-3 max-sm:[&>*:nth-child(3)]:border-l-0 max-sm:[&>*:nth-child(3)]:pl-0' => count($liveReadouts) === 4,
                                 'grid-cols-3' => count($liveReadouts) === 3,
                                 'grid-cols-2' => count($liveReadouts) === 2,
                             ])
@@ -425,7 +431,7 @@
             >
                 <ol class="grid grid-cols-2 gap-2.5 md:grid-cols-4">
                     @foreach ([
-                        ['Measure', 'An SHT41 and an INMP441 microphone outside, a BMP280 indoors, read every 30 seconds.'],
+                        ['Measure', 'An SHT4x, a VEML7700 and an INMP441 microphone outside, a BMP280 indoors, read every 30 seconds.'],
                         ['Upload', 'The ESP32 sends each ten minutes as a mean with its extremes.'],
                         ['Forecast', 'A model trained on ČHMÚ records looks six hours ahead, corrected by this station\'s own misses.'],
                         ['Score', 'When the hour comes, the forecast is checked against what the sensor measured.'],
@@ -440,22 +446,29 @@
             </x-tile>
 
             {{-- ── Readouts ───────────────────────────────────────── --}}
-            {{-- Temperature is the sky's; noise only when the last day holds some. --}}
+            {{-- Temperature is the sky's; noise and light only when the last day holds some.
+                 The light's sparkline is logarithmic: on a linear one every night is the floor. --}}
             @if ($this->hasReadings)
                 @php($readouts = array_filter([
                     ['key' => 'h', 'label' => 'Humidity', 'icon' => 'droplet', 'unit' => '%', 'dec' => 2, 'accent' => 'text-cyan-600 dark:text-cyan-400'],
                     ['key' => 'p', 'label' => 'Pressure, MSL', 'icon' => 'gauge', 'unit' => 'hPa', 'dec' => 1, 'accent' => 'text-violet-600 dark:text-violet-400'],
                     ['key' => 'n', 'label' => 'Noise, LAeq', 'icon' => 'audio-waveform', 'unit' => 'dB(A)', 'dec' => 1, 'accent' => 'text-emerald-600 dark:text-emerald-400'],
+                    ['key' => 'l', 'label' => 'Light, in the shield', 'icon' => 'sun', 'unit' => 'lx', 'dec' => 1, 'accent' => 'text-yellow-600 dark:text-yellow-400', 'log' => true],
                 ], fn (array $readout): bool => isset($this->metrics[$readout['key']])))
                 @foreach ($readouts as $readout)
                     @php($m = $this->metrics[$readout['key']])
-                    @php($trace = \App\ValueObject\Trace::spanning($m['trace']))
+                    @php($trace = \App\ValueObject\Trace::spanning(isset($readout['log']) ? array_map(fn (float $value): float => log10(max($value, 0.01)), $m['trace']) : $m['trace']))
                     <x-tile
                         :title="$readout['label']"
                         :icon="$readout['icon']"
                         :tone="$tones[$readout['key']]"
                         aria-label="{{ $readout['label'] }} now"
-                        :class="\Illuminate\Support\Arr::toCssClasses(['col-span-12 flex flex-col', 'md:col-span-4' => count($readouts) === 3, 'md:col-span-6' => count($readouts) === 2])"
+                        :class="\Illuminate\Support\Arr::toCssClasses([
+                            'col-span-12 flex flex-col',
+                            'md:col-span-6 xl:col-span-3' => count($readouts) === 4,
+                            'md:col-span-4' => count($readouts) === 3,
+                            'md:col-span-6' => count($readouts) === 2,
+                        ])"
                     >
                         <p class="text-[44px] leading-none font-extrabold tracking-[-0.045em] tabular-nums">
                             {{ number_format($m['now'], $readout['dec'], ',', ' ') }}<span class="{{ $readout['accent'] }} ml-1 text-base font-bold tracking-normal">{{ $readout['unit'] }}</span>
@@ -716,6 +729,7 @@
                 data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
                 data-noise-rows="{{ json_encode($this->noise) }}"
                 data-noise-rain="{{ json_encode($this->rainSlots) }}"
+                data-light-rows="{{ json_encode($this->light) }}"
                 data-window-from="{{ $this->windowMs['from'] }}"
                 data-window-to="{{ $this->windowMs['to'] }}"
                 data-chart-component="{{ $this->getId() }}"
@@ -812,6 +826,26 @@
                         <span data-spectrum-low wire:ignore></span>
                         <span data-spectrum-scale wire:ignore class="h-2 w-24 rounded-full" aria-hidden="true"></span>
                         <span data-spectrum-high wire:ignore></span>
+                    </p>
+                </x-strip>
+            @endif
+
+            {{-- ── Light ──────────────────────────────────────────── --}}
+            {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers, so
+                 the lux are the shield's, not the open sky's: read the shape. --}}
+            @if ($this->light !== [])
+                <x-strip
+                    key="light"
+                    label="Light"
+                    title="Light"
+                    icon="sun"
+                    :tone="$tones['l']"
+                    hint="lx inside the radiation shield, log scale"
+                    height="h-48 sm:h-56"
+                >
+                    <p class="chip bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
+                        <span class="size-2 rounded-full bg-yellow-600 dark:bg-yellow-400" aria-hidden="true"></span>
+                        Light (lx)
                     </p>
                 </x-strip>
             @endif

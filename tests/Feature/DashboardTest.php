@@ -9,10 +9,12 @@ use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\StationReport;
+use App\ValueObject\LightWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV2;
 use App\ValueObject\MeasurementDataV3;
+use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
 use Illuminate\Foundation\Vite;
 use Illuminate\Support\Facades\Date;
@@ -39,6 +41,39 @@ function chartRows(string $html): string
 function bucketRows(string $html): array
 {
     return json_decode(chartRows($html) ?: '[]', true);
+}
+
+/**
+ * The window's light payload, only the buckets that hold light, keyed by their epoch.
+ *
+ * @return array<int, list<int|float|null>>
+ */
+function lightBuckets(string $html): array
+{
+    preg_match('/data-light-rows="([^"]*)"/', $html, $matches);
+
+    $filled = [];
+
+    foreach (json_decode(html_entity_decode($matches[1] ?? '') ?: '[]', true) as $row) {
+        if ($row[2] !== null) {
+            $filled[$row[1]] = $row;
+        }
+    }
+
+    return $filled;
+}
+
+/** A V4 window with light, in hundredths of a lux. */
+function litWindow(int $illuminance, int $min, int $max): MeasurementDataV4
+{
+    return new MeasurementDataV4(
+        temperature: 1200, humidity: 6000, pressure: 97000,
+        temperatureMin: 1150, temperatureMax: 1250,
+        humidityMin: 5900, humidityMax: 6100,
+        pressureMin: 96990, pressureMax: 97010,
+        samples: 20,
+        light: new LightWindow(illuminance: $illuminance, illuminanceMin: $min, illuminanceMax: $max),
+    );
 }
 
 /**
@@ -545,6 +580,40 @@ it('draws no noise strips over a window without noise', function (): void {
         ->and($html)->not->toContain('Noise spectrum history');
 });
 
+it('draws no light strip over a window without light', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v3()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    expect(lightBuckets($html))->toBe([])
+        ->and($html)->not->toContain('lx inside the radiation shield');
+});
+
+it('averages the light in a bucket with the extremes of its windows', function (): void {
+    $start = Date::parse('2026-03-15 10:00:00', 'UTC');
+    $this->travelTo($start->copy()->addHours(2));
+
+    $sensor = Sensor::factory()->create();
+
+    // Three windows in one half-hour bucket of the week view.
+    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $start->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
+    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $start->getTimestamp() + 600, 'data' => (string) litWindow(300_000, 250_000, 400_000)]);
+    // A window whose VEML7700 gave nothing does not pull the mean down.
+    Measurement::factory()->for($sensor)->v4()->create([
+        'timestamp' => $start->getTimestamp() + 1200,
+        'data' => json_encode(array_diff_key(litWindow(0, 0, 0)->jsonSerialize(), array_flip(LightWindow::FIELDS))),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+    $row = lightBuckets($html)[$start->getTimestamp()];
+
+    // Lux: the mean of the means, the lowest minimum and the highest maximum.
+    expect(array_slice($row, 2))->toEqual([2000.0, 800.0, 4000.0])
+        ->and($html)->toContain('lx inside the radiation shield');
+});
+
 it('averages the noise in a bucket as energy', function (): void {
     $start = Date::parse('2026-03-15 10:00:00', 'UTC');
     $this->travelTo($start->copy()->addHours(2));
@@ -655,6 +724,56 @@ it('reads the noise into the hero beside the weather', function (): void {
         ->assertSee('Noise, LAeq')
         ->assertSee('55,6')
         ->assertSee('min 42,1 · max 63,8');
+});
+
+it('reads the light into the hero with the day\'s brightest and darkest sample', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    foreach ([[8, 5, 0, 12], [2, 250_000, 200_000, 610_000], [0, 123_456, 100_000, 150_000]] as [$hoursAgo, $lux, $min, $max]) {
+        Measurement::factory()->for($sensor)->v4()->create([
+            'timestamp' => now()->subHours($hoursAgo)->subMinutes(10)->getTimestamp(),
+            'data' => (string) litWindow($lux, $min, $max),
+        ]);
+    }
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The tile: now, and the 24 h extremes off the samples, not the means.
+    expect($html)->toContain('Light, in the shield')
+        ->toContain('1 234,6')
+        ->toContain('min 0,0 · max 6 100,0')
+        ->and(Str::between($html, 'data-sky-readouts', '</dl>'))->toContain('Light');
+});
+
+it('leaves the light out of the sky once the newest reading has none', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    $sensor = Sensor::factory()->create();
+
+    Measurement::factory()->for($sensor)->v4()->create([
+        'timestamp' => now()->subHours(2)->getTimestamp(),
+        'data' => (string) litWindow(250_000, 200_000, 300_000),
+    ]);
+    Measurement::factory()->for($sensor)->v4()->create([
+        'timestamp' => now()->subMinutes(10)->getTimestamp(),
+        'data' => json_encode(array_diff_key(litWindow(0, 0, 0)->jsonSerialize(), array_flip(LightWindow::FIELDS))),
+    ]);
+
+    $html = Livewire::test(Dashboard::class)->html();
+
+    // The tile still sums up the day; the sky shows only what is current.
+    expect($html)->toContain('Light, in the shield')
+        ->and(Str::between($html, 'data-sky-readouts', '</dl>'))->not->toContain('Light');
+});
+
+it('leaves the light out of the hero for a day without it', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v3()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    expect(Livewire::test(Dashboard::class)->html())->not->toContain('Light, in the shield');
 });
 
 it('leaves the noise out of the hero for a day without it', function (): void {

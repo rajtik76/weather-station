@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @phpstan-type Bucket object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string, t_min: ?string, t_max: ?string, h_min: ?string, h_max: ?string, p_min: ?string, p_max: ?string}
  * @phpstan-type NoiseBucket object{bucket: int, laeq: ?string, la10: ?string, la90: ?string, lamax: ?string, bands: ?string}
+ * @phpstan-type LightBucket object{bucket: int, l_avg: ?string, l_min: int|string|null, l_max: int|string|null}
  */
 final readonly class MeasurementBuckets
 {
@@ -96,6 +97,30 @@ final readonly class MeasurementBuckets
             ->leftJoinSub($levels, 'level', 'level.bucket', '=', 'slot.bucket')
             ->leftJoinSub($bands, 'band', 'band.bucket', '=', 'slot.bucket')
             ->addSelect(['laeq', 'la10', 'la90', 'lamax', 'bands'])
+            ->get();
+
+        return $buckets;
+    }
+
+    /**
+     * Protocol 4's illuminance on the same slots as readings(), in
+     * hundredths of a lux: the mean of the window means and the extremes of
+     * the extremes, like the weather channels. Only rows that carry it.
+     *
+     * @return Collection<int, LightBucket>
+     */
+    public function light(ChartWindow $window): Collection
+    {
+        $light = $this->bucketed($window)
+            ->selectRaw("AVG((data->>'illuminance')::bigint) AS l_avg")
+            ->selectRaw("MIN((data->>'illuminance_min')::bigint) AS l_min")
+            ->selectRaw("MAX((data->>'illuminance_max')::bigint) AS l_max")
+            ->whereRaw("data->'illuminance' IS NOT NULL");
+
+        /** @var Collection<int, LightBucket> $buckets */
+        $buckets = $this->slots($window)
+            ->leftJoinSub($light, 'light', 'light.bucket', '=', 'slot.bucket')
+            ->addSelect(['l_avg', 'l_min', 'l_max'])
             ->get();
 
         return $buckets;

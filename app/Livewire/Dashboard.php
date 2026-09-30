@@ -11,10 +11,10 @@ use App\Models\StationEvent;
 use App\Models\StationReport;
 use App\Queries\ForecastAccuracy;
 use App\Queries\MeasurementBuckets;
+use App\ValueObject\CarriesNoise;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV1;
-use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
 use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
@@ -35,6 +35,7 @@ use UnexpectedValueException;
  *
  * @property-read list<BucketRow> $readings
  * @property-read list<NoiseRow> $noise
+ * @property-read list<LightRow> $light
  * @property-read list<array{0: int, 1: int}> $rainSlots
  * @property-read list<ReadingRow> $overview
  * @property-read array{from: int, to: int} $windowMs
@@ -43,6 +44,7 @@ use UnexpectedValueException;
  * @property-read list<DayRow> $lastDay
  * @property-read array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}> $metrics
  * @property-read bool $isNoiseCurrent
+ * @property-read bool $isLightCurrent
  * @property-read list<array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}> $recentTransmissions
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  * @property-read array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}|null $stationReport
@@ -72,14 +74,17 @@ use UnexpectedValueException;
  *
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
  * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
- * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float}
+ * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
  * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
  * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
+ * A light row is `[wall-clock ms, epoch, lx, lx min, lx max]`, nulls for a slot without light.
+ * @phpstan-type LightRow array{0: int, 1: int, 2: ?float, 3: ?float, 4: ?float}
  * @phpstan-type ForecastHour array{hours: int, clock: string, t: float, tLow: float, tHigh: float, trend: string, rain: int, sky: array{icon: string, label: string, tone: string}}
  *
  * @phpstan-import-type Bucket from MeasurementBuckets
  * @phpstan-import-type NoiseBucket from MeasurementBuckets
+ * @phpstan-import-type LightBucket from MeasurementBuckets
  * @phpstan-import-type Horizon from Forecast
  * @phpstan-import-type Score from ForecastAccuracy
  */
@@ -304,6 +309,29 @@ class Dashboard extends Component
     }
 
     /**
+     * Protocol 4's illuminance over the same buckets as the readings. A
+     * window without any (older rows, no VEML7700) is `[]`, and the light
+     * strip does not render.
+     *
+     * @return list<LightRow>
+     */
+    #[Computed]
+    public function light(): array
+    {
+        $hasLight = $this->measurementsInWindow()
+            ->whereRaw("data->'illuminance' IS NOT NULL")
+            ->exists();
+
+        if (! $hasLight) {
+            return [];
+        }
+
+        $buckets = $this->measurementBuckets()->light($this->chartWindow());
+
+        return array_values($buckets->map(fn (object $bucket): array => $this->plotLight($bucket))->all());
+    }
+
+    /**
      * The noise slots the microphone heard rain in, as `[wall-clock ms,
      * epoch]` - the waterfall marks them. Each window is heard on its own
      * and a slot is rainy when any of its windows was: RainDetector is
@@ -354,7 +382,7 @@ class Dashboard extends Component
 
         $data = $this->measurements()->orderByDesc('timestamp')->first()?->data;
 
-        if (! $data instanceof MeasurementDataV3 || ! $data->noise instanceof NoiseWindow) {
+        if (! $data instanceof CarriesNoise || ! $data->noise instanceof NoiseWindow) {
             return null;
         }
 
@@ -473,11 +501,28 @@ class Dashboard extends Component
                     'pMin' => $row[10] ?? $row[3],
                     'pMax' => $row[11] ?? $row[3],
                     'n' => $this->noiseAt($row[5]),
+                    ...$this->lightAt($row[5]),
                 ];
             }
         }
 
         return null;
+    }
+
+    /**
+     * Lux of the light bucket on the same slot, nulls when it saw nothing.
+     *
+     * @return array{l: ?float, lMin: ?float, lMax: ?float}
+     */
+    private function lightAt(int $epoch): array
+    {
+        foreach ($this->light as $row) {
+            if ($row[1] === $epoch) {
+                return ['l' => $row[2], 'lMin' => $row[3], 'lMax' => $row[4]];
+            }
+        }
+
+        return ['l' => null, 'lMin' => null, 'lMax' => null];
     }
 
     /** LAeq of the noise bucket on the same slot, null when it heard nothing. */
@@ -547,9 +592,18 @@ class Dashboard extends Component
         return $newest !== null && $newest['n'] !== null;
     }
 
+    /** Whether the newest reading carries light; same reason as isNoiseCurrent(). */
+    #[Computed]
+    public function isLightCurrent(): bool
+    {
+        $newest = $this->lastDay === [] ? null : $this->lastDay[array_key_last($this->lastDay)];
+
+        return $newest !== null && $newest['l'] !== null;
+    }
+
     /**
-     * Noise (`n`) only when the day holds some: older rows and a dead
-     * microphone carry none.
+     * Noise (`n`) and light (`l`) only when the day holds some: older rows,
+     * a dead microphone or no VEML7700 carry none.
      *
      * @return array<string, array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}>
      */
@@ -565,6 +619,7 @@ class Dashboard extends Component
             'h' => $this->figures('h'),
             'p' => $this->figures('p'),
             'n' => $this->noiseFigures(),
+            'l' => $this->lightFigures(),
         ]);
     }
 
@@ -1113,6 +1168,25 @@ class Dashboard extends Component
     }
 
     /**
+     * Lux with two decimals: dusk reads hundredths, noon tens of thousands.
+     *
+     * @param  LightBucket  $bucket
+     * @return LightRow
+     */
+    private function plotLight(object $bucket): array
+    {
+        $lux = fn (int|string|null $value): ?float => $value === null ? null : round((float) $value / 100, 2);
+
+        return [
+            LocalTime::of($bucket->bucket)->wallClockMs(),
+            $bucket->bucket,
+            $lux($bucket->l_avg),
+            $lux($bucket->l_min),
+            $lux($bucket->l_max),
+        ];
+    }
+
+    /**
      * @param  Collection<int, Measurement>  $measurements
      * @return list<ReadingRow>
      */
@@ -1173,6 +1247,29 @@ class Dashboard extends Component
         }
 
         return $levels === [] ? null : $this->summary($levels, $levels, $levels);
+    }
+
+    /**
+     * The day's light off each entry's extremes, like the weather channels:
+     * the 24 h max is the brightest sample, not the brightest mean.
+     *
+     * @return array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}|null
+     */
+    private function lightFigures(): ?array
+    {
+        $lit = [];
+
+        foreach ($this->lastDay as $entry) {
+            if ($entry['l'] !== null) {
+                $lit[] = [$entry['l'], $entry['lMin'] ?? $entry['l'], $entry['lMax'] ?? $entry['l']];
+            }
+        }
+
+        if ($lit === []) {
+            return null;
+        }
+
+        return $this->summary(array_column($lit, 0), array_column($lit, 1), array_column($lit, 2));
     }
 
     /**
