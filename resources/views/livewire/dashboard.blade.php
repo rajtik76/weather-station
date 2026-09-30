@@ -191,28 +191,35 @@
                         ], fn (array $readout): bool => isset($this->metrics[$readout['key']])
                             && ($readout['key'] !== 'n' || $this->isNoiseCurrent)
                             && ($readout['key'] !== 'l' || $this->isLightCurrent)))
-                        <dl
-                            @class([
-                                'mt-5 grid divide-x divide-white/20 border-y border-white/20 py-3',
-                                'max-w-lg' => count($liveReadouts) < 4,
-                                'max-w-2xl grid-cols-2 sm:grid-cols-4 max-sm:gap-y-3 max-sm:[&>*:nth-child(3)]:border-l-0 max-sm:[&>*:nth-child(3)]:pl-0' => count($liveReadouts) === 4,
-                                'grid-cols-3' => count($liveReadouts) === 3,
-                                'grid-cols-2' => count($liveReadouts) === 2,
-                            ])
-                            data-sky-readouts
-                        >
-                            @foreach ($liveReadouts as $readout)
-                                <div class="min-w-0 px-3 first:pl-0 sm:px-4">
-                                    <dt class="flex items-center gap-1 text-[11.5px] font-semibold tracking-[0.06em] text-white/75 uppercase">
-                                        <flux:icon :icon="$readout['icon']" variant="micro" class="size-3.5" aria-hidden="true" />
-                                        {{ $readout['label'] }}
-                                    </dt>
-                                    <dd class="mt-1 text-xl leading-tight font-extrabold tracking-[-0.02em] whitespace-nowrap tabular-nums sm:text-[22px]">
-                                        {{ number_format($this->metrics[$readout['key']]['now'], $readout['dec'], ',', ' ') }}<span class="ml-1 text-xs font-semibold tracking-normal text-white/80">{{ $readout['unit'] }}</span>
-                                    </dd>
-                                </div>
-                            @endforeach
-                        </dl>
+                        {{-- Four readouts go by the hero column's own width, not the viewport's: a row of
+                             equal quarters overflowed "1 020,2 hPa" in the half-width column. Below @xl two rows
+                             with a rule drawn in the middle of the gap, so the dividers stop short of it as they
+                             do of the outer borders; above it one row, each column as wide as its value.
+                             divide-x draws on the right of every item but the last, so the row's end drops it. --}}
+                        <div class="@container">
+                            <dl
+                                @class([
+                                    'mt-5 grid divide-x divide-white/20 border-y border-white/20 py-3',
+                                    'max-w-lg' => count($liveReadouts) < 4,
+                                    'grid-cols-2 gap-y-6 @xl:grid-cols-[repeat(4,max-content)] @xl:gap-y-0 @max-xl:[&>*:nth-child(2)]:border-e-0 @max-xl:[&>*:nth-child(3)]:pl-0 @max-xl:[&>*:nth-child(n+3)]:relative @max-xl:[&>*:nth-child(n+3)]:before:absolute @max-xl:[&>*:nth-child(n+3)]:before:inset-x-0 @max-xl:[&>*:nth-child(n+3)]:before:-top-3 @max-xl:[&>*:nth-child(n+3)]:before:h-px @max-xl:[&>*:nth-child(n+3)]:before:bg-white/20' => count($liveReadouts) === 4,
+                                    'grid-cols-3' => count($liveReadouts) === 3,
+                                    'grid-cols-2' => count($liveReadouts) === 2,
+                                ])
+                                data-sky-readouts
+                            >
+                                @foreach ($liveReadouts as $readout)
+                                    <div class="min-w-0 px-3 first:pl-0 sm:px-4">
+                                        <dt class="flex items-center gap-1 text-[11.5px] font-semibold tracking-[0.06em] text-white/75 uppercase">
+                                            <flux:icon :icon="$readout['icon']" variant="micro" class="size-3.5" aria-hidden="true" />
+                                            {{ $readout['label'] }}
+                                        </dt>
+                                        <dd class="mt-1 text-xl leading-tight font-extrabold tracking-[-0.02em] whitespace-nowrap tabular-nums sm:text-[22px]">
+                                            {{ number_format($this->metrics[$readout['key']]['now'], $readout['dec'], ',', ' ') }}<span class="ml-1 text-xs font-semibold tracking-normal text-white/80">{{ $readout['unit'] }}</span>
+                                        </dd>
+                                    </div>
+                                @endforeach
+                            </dl>
+                        </div>
 
                         {{-- After the live readings: rain only when the microphone hears it (dry goes unsaid), then the next hour. --}}
                         @if ($this->rainHeard || $forecast !== null)
