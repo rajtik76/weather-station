@@ -1651,7 +1651,7 @@
 			(embedded_fonts no)
 		)
 	)
-	(text "5 V USB charger feeds the DevKit Micro USB port"
+	(text "5 V USB charger → DC connector on the box\n→ base board J2 → DevKit VIN"
 		(exclude_from_sim no)
 		(at 17.78 76.2 0)
 		(effects
