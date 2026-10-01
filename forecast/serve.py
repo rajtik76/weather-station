@@ -23,18 +23,21 @@ POST /forecast
                       "temperature": {"low": .., "mid": .., "high": ..},
                       "humidity": {...}, "pressure": {...},
                       "rain_probability": 0.02,
-                      "base": {"temperature": {...}, "humidity": {...}}}, ...]}
+                      "base": {"temperature": {...}, "humidity": {...},
+                               "rain_probability": 0.02}}, ...]}
     issued_at is the latest reading's 10-minute window (UTC Unix seconds);
     correction the CORRECTION_VERSION of the station correction's logic;
     base is the forecast before the station correction, for the variables
-    it corrects, so the correction's worth can be scored.
+    it corrects, so the correction's worth can be scored, and the rain
+    chance as its classifier gave it, before nest_rain() capped it.
 
 POST /base
     {"longitude": 13.40, "since": 1789400000, "readings": [...]}
     -> {"model": "<trained_at>",
         "forecasts": [{"issued_at": 1789400000,
                        "horizons": [{"hours": 1, "temperature": {...},
-                                     "humidity": {...}}, ...]}, ...]}
+                                     "humidity": {...},
+                                     "rain_probability": 0.02}, ...]}, ...]}
     The forecast before correction for every reading from since on, to fill
     in base for forecasts stored before it was kept. The base models look
     48 hours back, so the readings should start that much before since.
@@ -217,8 +220,12 @@ def band(row: pd.Series, variable: str, n: int) -> dict:
 
 
 def base_bands(row: pd.Series, n: int) -> dict:
-    """The uncorrected forecast of the variables the station correction touches."""
-    return {NAMES[variable]: band(row, variable, n) for variable in CORRECTED_VARIABLES}
+    """The uncorrected forecast of the variables the station correction touches,
+    and the rain chance before nest_rain()."""
+    return {
+        **{NAMES[variable]: band(row, variable, n) for variable in CORRECTED_VARIABLES},
+        "rain_probability": round(float(row[f"rain_{n}h_raw"]), 3),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):

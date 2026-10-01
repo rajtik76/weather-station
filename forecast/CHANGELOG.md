@@ -48,3 +48,9 @@ Data ČHMÚ 10-minute, 2018-2024, 32 stations below 700 m · Server v3.4.0
   0.85 hPa (1.36); the 10-90 % range held 76-81 %. Rain Brier 0.103 against
   0.148 for climatology, onset AUC 0.79.
 - Missed the rain of 24 September 2026 at the balcony, 1-4 % beforehand.
+- Server v4.0.6: the 1 h rain chance is capped by the 2 h one. Alone it
+  gave 50-100 % on dry days at the balcony (94 % on the sunny morning of
+  1 October 2026, 1 % an hour either side) and never called a rain that
+  came; the longer horizons said 1-10 %. Rain is not corrected, so the
+  correction version stays 2. Each horizon's `base` keeps the classifier's
+  own `rain_probability`, so a capped run can be found in the database.

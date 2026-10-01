@@ -14,7 +14,7 @@ import joblib
 import pytest
 
 import serve
-from conftest import START, weather_frame
+from conftest import START, Constant, weather_frame
 from correction import CORRECTION_VERSION
 from serve import InvalidRequest, make_base, make_forecast
 
@@ -81,9 +81,10 @@ def test_a_forecast_has_the_shape_laravel_stores(service: dict) -> None:
             assert set(horizon[variable]) == BAND
             assert horizon[variable]["low"] <= horizon[variable]["mid"] <= horizon[variable]["high"]
         assert 0 <= horizon["rain_probability"] <= 1
-        # Only what the correction touches has a base; pressure and rain are not corrected.
-        assert set(horizon["base"]) == {"temperature", "humidity"}
+        # Only what the correction touches has a base, and rain as its classifier gave it.
+        assert set(horizon["base"]) == {"temperature", "humidity", "rain_probability"}
         assert set(horizon["base"]["temperature"]) == BAND
+        assert round(horizon["base"]["rain_probability"], 3) == horizon["base"]["rain_probability"]
     # Laravel stores this as json.
     assert json.loads(json.dumps(answer)) == answer
 
@@ -292,7 +293,7 @@ def test_base_forecasts_every_complete_window_from_since(service: dict) -> None:
     # Nine windows from since on, without the one missing its pressure.
     assert issued == [reading["timestamp"] - 37 for reading in payload[-10:] if reading["pressure"] is not None]
     horizon = answer["forecasts"][0]["horizons"][0]
-    assert set(horizon) == {"hours", "temperature", "humidity"}
+    assert set(horizon) == {"hours", "temperature", "humidity", "rain_probability"}
     assert set(horizon["temperature"]) == BAND
     assert [h["hours"] for h in answer["forecasts"][0]["horizons"]] == [1, 2, 3, 4, 5, 6]
 
@@ -390,3 +391,17 @@ def test_the_model_is_reloaded_only_when_its_file_changes(tmp_path: Path, monkey
 
     assert model.get()["trained_at"] == "second"
     assert len(loads) == 2
+
+
+def test_base_keeps_the_rain_chance_before_the_first_hour_was_capped(
+    service: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for n, chance in ((1, 0.94), (2, 0.01)):
+        monkeypatch.setitem(service["models"], f"rain_{n}h", Constant(chance))
+
+    answer = make_forecast({"longitude": LONGITUDE, "readings": readings(96)})
+
+    first, second = answer["horizons"][0], answer["horizons"][1]
+    assert first["rain_probability"] == 0.01
+    assert first["base"]["rain_probability"] == 0.94
+    assert second["rain_probability"] == second["base"]["rain_probability"] == 0.01

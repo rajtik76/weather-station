@@ -38,7 +38,12 @@ For each of temperature, humidity and pressure three quantile models - the
 that should hold four readings in five, narrow in settled weather and wide
 when it is not. For rain a classifier: the chance of at least 0.1 mm within
 the next n hours. The rain inputs are hidden on 30 % of the training rows,
-so the models cope when the balcony's rain source is missing.
+so the models cope when the balcony's rain source is missing. The service
+caps the 1 h chance by the 2 h one (`nest_rain()` in `forecast.py`): rain
+within an hour cannot be likelier than within two, and the 1 h classifier
+alone gave 50-100 % on dry balcony days - a sunny morning heating the sensor
+ten degrees in an hour, a gap in the readings - while every longer horizon
+said 1-10 %.
 
 **Correction for the station** (`correction.py`). A balcony is not a ČHMÚ
 screen on a lawn: morning sun, a warm wall and its own sensor. On every run
@@ -159,7 +164,7 @@ inputs. The answer:
                "humidity": {...}, "pressure": {...},
                "rain_probability": 0.023,
                "base": {"temperature": {"low": 12.1, "mid": 13.46, "high": 15.9},
-                        "humidity": {...}}}, ...]}
+                        "humidity": {...}, "rain_probability": 0.023}}, ...]}
 ```
 
 `issued_at` is the latest reading's ten-minute window, `model` the bundle's
@@ -167,8 +172,10 @@ inputs. The answer:
 the station correction, `correction` the version of the correction's logic
 (`CORRECTION_VERSION` in `correction.py`, raised with every change to it and
 logged in the changelog). `base` is the same forecast before the correction,
-for the two variables it corrects; pressure and rain are not corrected, so
-theirs is the one above. Malformed requests get a 422 with the reason.
+for the two variables it corrects; pressure is not corrected, so its is the
+one above. Its `rain_probability` is what the classifier said before
+`nest_rain()` capped the first hour, so a capped run shows in the database:
+`data->0->'base'->>'rain_probability'` above `data->0->>'rain_probability'`. Malformed requests get a 422 with the reason.
 `GET /health` answers `{"status": "ok", "model": ..., "correction": 2}`.
 
 ```
@@ -183,7 +190,7 @@ before the service returned `base`:
 {"model": "2026-09-24T08:40:43.136429+00:00",
  "forecasts": [{"issued_at": 1789400000,
                 "horizons": [{"hours": 1, "temperature": {...},
-                              "humidity": {...}}, ...]}, ...]}
+                              "humidity": {...}, "rain_probability": 0.023}, ...]}, ...]}
 ```
 
 The base models look 48 hours back and nothing else, so an answer is exactly

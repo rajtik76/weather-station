@@ -77,6 +77,7 @@ function baseAnswer(array $issuedAt, string $model = BACKFILL_MODEL): array
                 'hours' => $hours,
                 'temperature' => backfillBand(10.0 + $hours),
                 'humidity' => backfillBand(70.0 + $hours),
+                'rain_probability' => 0.1 * $hours,
             ], [1, 2]),
         ], $issuedAt),
     ];
@@ -110,7 +111,7 @@ it('fills in the base of stored forecasts from readings reaching three days befo
         && array_column($request['readings'], 'timestamp') === [$issued - 3 * 86_400, $issued + 605]);
 
     // The forecast shown stays as it was; only the base is added.
-    expect($first->refresh()->data[1])->toEqual([...storedHorizon(2), 'base' => ['temperature' => backfillBand(12.0), 'humidity' => backfillBand(72.0)]])
+    expect($first->refresh()->data[1])->toEqual([...storedHorizon(2), 'base' => ['temperature' => backfillBand(12.0), 'humidity' => backfillBand(72.0), 'rain_probability' => 0.2]])
         ->and(data_get($second->refresh()->data, '0.base.temperature'))->toEqual(backfillBand(11.0));
 });
 

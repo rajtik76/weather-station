@@ -76,7 +76,7 @@ class BackfillForecastBase
         $readings = new ServiceReadings($this->sensor->id)
             ->between($since - self::LOOKBACK_SECONDS, $span[array_key_last($span)]->issued_at + ChartWindow::STEP_SECONDS - 1);
 
-        /** @var array{model: string, forecasts: list<array{issued_at: int, horizons: list<array{hours: int, temperature: Band, humidity: Band}>}>} $answer */
+        /** @var array{model: string, forecasts: list<array{issued_at: int, horizons: list<array{hours: int, temperature: Band, humidity: Band, rain_probability?: float}>}>} $answer */
         $answer = Http::timeout(120)
             ->post($this->url('base'), [
                 'longitude' => config('forecast.longitude'),
@@ -104,10 +104,7 @@ class BackfillForecastBase
 
             $forecast->data = array_map(fn (array $horizon): array => [
                 ...$horizon,
-                'base' => [
-                    'temperature' => $byHours[$horizon['hours']]['temperature'],
-                    'humidity' => $byHours[$horizon['hours']]['humidity'],
-                ],
+                'base' => array_intersect_key($byHours[$horizon['hours']], array_flip(['temperature', 'humidity', 'rain_probability'])),
             ], $forecast->data);
             $forecast->save();
             $filled++;
