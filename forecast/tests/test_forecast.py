@@ -53,7 +53,7 @@ def test_only_the_bundles_horizons_and_features_are_used() -> None:
     forecast = predict(bundle, build_features(current, 13.4), current)
 
     assert {column.split("_")[1] for column in forecast.columns} == {"1h", "4h"}
-    assert len(forecast.columns) == 2 * (3 * 3 + 1)
+    assert len(forecast.columns) == 2 * (3 * 3 + 2)
 
 
 def test_a_fitted_bundle_gives_ordered_finite_ranges_and_probabilities(bundle: dict) -> None:
@@ -68,3 +68,30 @@ def test_a_fitted_bundle_gives_ordered_finite_ranges_and_probabilities(bundle: d
             assert (low <= mid).all()
             assert (mid <= high).all()
         assert forecast[f"rain_{n}h"].between(0, 1).all()
+
+
+def test_rain_within_the_first_hour_is_no_likelier_than_within_two() -> None:
+    current = weather_frame(5)
+    bundle = constant_bundle([1, 2, 3], low=-1.0, mid=0.0, high=1.0, rain=0.3)
+    # The 1 h classifier on a sunny morning: 94 % while the longer horizons say almost nothing.
+    bundle["models"]["rain_1h"] = Constant(0.94)
+    bundle["models"]["rain_2h"] = Constant(0.01)
+
+    forecast = predict(bundle, build_features(current, 13.4), current)
+
+    assert forecast["rain_1h"].tolist() == pytest.approx([0.01] * 5)
+    assert forecast["rain_2h"].tolist() == pytest.approx([0.01] * 5)
+    # What the classifier said stays beside it, so a capped run can be found.
+    assert forecast["rain_1h_raw"].tolist() == pytest.approx([0.94] * 5)
+    # Only the first hour is capped; the others keep what their models say.
+    assert forecast["rain_3h"].tolist() == pytest.approx([0.3] * 5)
+
+
+def test_a_first_hour_below_the_second_is_left_alone() -> None:
+    current = weather_frame(5)
+    bundle = constant_bundle([1, 2], low=-1.0, mid=0.0, high=1.0, rain=0.6)
+    bundle["models"]["rain_1h"] = Constant(0.2)
+
+    forecast = predict(bundle, build_features(current, 13.4), current)
+
+    assert forecast["rain_1h"].tolist() == pytest.approx([0.2] * 5)
