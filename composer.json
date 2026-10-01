@@ -2,12 +2,12 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "rajtik76/weather-station",
     "type": "project",
-    "description": "Home weather station: Laravel ingest API and dashboard for BME280 readings uploaded by an ESP32. The firmware lives in firmware/.",
+    "description": "Balcony weather station: Laravel ingest API and dashboard for readings from an ESP32 with an SHT4x sensor. The firmware lives in firmware/.",
     "keywords": [
         "weather-station",
         "iot",
         "esp32",
-        "bme280",
+        "sht4x",
         "laravel",
         "livewire"
     ],
