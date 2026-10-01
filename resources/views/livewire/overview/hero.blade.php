@@ -60,7 +60,7 @@
                     @if (abs($temperature['delta']) < 0.05)
                         steady.
                     @else
-                        {{ $temperature['delta'] > 0 ? 'rising' : 'falling' }} <span class="num font-mono">{{ \App\ValueObject\Figure::format(abs($temperature['delta']), 1) }}°C</span> an hour.
+                        {{ $temperature['delta'] > 0 ? 'rising' : 'falling' }} <span class="num font-mono">{{ \App\ValueObject\Figure::format(abs($temperature['delta']), 1) }} °C</span> an hour.
                     @endif
                 </p>
                 <dl class="num m-0 mt-6 font-mono text-[15px]">
