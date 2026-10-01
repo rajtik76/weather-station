@@ -5,18 +5,15 @@
 
 #include "transmission_type.h"
 
-// Closed windows awaiting confirmation, in RAM and mirrored to the flash
-// after every change, so a restart loses only the window being filled.
-//
-// A day of windows; past that the oldest goes for the newest.
+// A day of windows; past that the oldest goes.
 #define WINDOW_BUFFER_CAPACITY 144
 
 #define WINDOW_BUFFER_FILE "/windows.bin"
 
-// Call once, after stationFsBegin(). Returns how many windows came back.
+// Call once, after stationFsBegin(). Returns how many windows were restored.
 uint16_t windowBufferLoad();
 
-// False if the oldest had to go to make room.
+// False if the oldest was dropped.
 bool windowBufferAdd(const station_window_t& window);
 
 uint16_t windowBufferCount();
@@ -24,7 +21,7 @@ uint16_t windowBufferCount();
 // The oldest windows, at most TRANSMISSION_MAX_ENTRIES, oldest first.
 void windowBufferToTransmission(transmission_t& tx, const char* device);
 
-// Call only after the server confirmed the transmission.
+// Only after the server confirmed.
 void windowBufferDrop(uint8_t count);
 
 #endif

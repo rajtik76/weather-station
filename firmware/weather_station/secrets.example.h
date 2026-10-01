@@ -1,10 +1,9 @@
-// Copy to secrets.h and fill in. secrets.h is gitignored; if it ever lands
-// in a commit, rotate everything in it.
+// Copy to secrets.h; it is gitignored. If it lands in a commit, rotate everything in it.
 
 #ifndef SECRETS_H
 #define SECRETS_H
 
-// Sent as "sensor_name"; the server registers the sensor on first upload.
+// Sent as "sensor_name"; registered on first upload.
 #define DEVICE_ID "sensor-001"
 
 // Primary network.

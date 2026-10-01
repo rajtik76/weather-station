@@ -8,7 +8,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 
-// Any epoch below this means the clock is not set.
+// Epochs below this mean the clock is not set.
 static const uint32_t EPOCH_VALID_MIN = 1700000000UL;
 
 static char ring[LOG_RING_BYTES];
@@ -107,8 +107,7 @@ size_t logRingRead(char* out, size_t outLen) {
   size_t start = ringWrapped ? ringHead : 0;
   size_t available = ringWrapped ? LOG_RING_BYTES : ringHead;
 
-  // After a wrap the oldest bytes are the tail of a line that was partly
-  // overwritten; skip to the first whole one.
+  // After a wrap, skip the partly overwritten line.
   if (ringWrapped) {
     while (available > 0 && ring[start] != '\n') {
       start = (start + 1) % LOG_RING_BYTES;

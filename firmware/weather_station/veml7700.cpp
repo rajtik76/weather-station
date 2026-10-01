@@ -9,10 +9,8 @@
 #define VEML7700_REG_CONF 0x00
 #define VEML7700_REG_ALS 0x04
 
-// From dusk to full sun, most sensitive first. Resolution is 0.0042 lx per
-// count at gain 2 and 800 ms (Vishay's current datasheet), scaled by gain
-// and integration time. Conf: gain in bits 12:11 (x1 00, x2 01, x1/8 10,
-// x1/4 11), integration time in bits 9:6 (100 ms 0000, 25 ms 1100).
+// Most sensitive first. 0.0042 lx per count at gain 2 and 800 ms, scaled by gain and integration time.
+// Conf: gain bits 12:11 (x1 00, x2 01, x1/8 10, x1/4 11), integration time bits 9:6 (100 ms 0000, 25 ms 1100).
 typedef struct {
   uint16_t conf;
   float luxPerCount;
@@ -28,16 +26,14 @@ static const veml_range_t RANGES[] = {
 };
 static const uint8_t RANGE_COUNT = sizeof(RANGES) / sizeof(RANGES[0]);
 
-// Neighbouring ranges differ by at most 4x, so a step never lands straight
-// past the opposite threshold and the range does not flap.
+// Ranges differ by at most 4x, so the range does not flap.
 #define VEML7700_COUNTS_SATURATED 65535
 #define VEML7700_COUNTS_STEP_DOWN 50000
 #define VEML7700_COUNTS_STEP_UP 1000
 
-// Power-up plus one integration of the slowest range.
 #define VEML7700_START_MS 110
 
-// The middle one; the first read moves it where the light is.
+// Start in the middle.
 static uint8_t range = 2;
 static bool ready = false;
 
@@ -75,8 +71,7 @@ bool vemlBegin() {
   return true;
 }
 
-// The new range applies from the next integration; the next read is a
-// sample interval away, long after it finished.
+// Applies from the next integration.
 static void stepRange(uint8_t next) {
   if (writeConf(RANGES[next].conf)) {
     range = next;

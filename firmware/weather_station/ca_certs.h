@@ -1,17 +1,10 @@
 #ifndef CA_CERTS_H
 #define CA_CERTS_H
 
-// Trust anchors for the API endpoint. Let's Encrypt issues the server
-// certificate and renews it every couple of months, so what is pinned here
-// are the roots, never the leaf - a leaf pin would break uploads at every
-// renewal.
-//
-// Two roots on purpose. The server currently sends ISRG Root YR
-// cross-signed by ISRG Root X1, so either anchor validates the chain today.
-// When Let's Encrypt eventually drops the cross-sign, Root YR is the one
-// that keeps working; until then X1 covers clients that never see Root YR.
-//
-// Verified 2026-09-04 against the chain served by weather.rajtik.com:
+// Roots, never the leaf: Let's Encrypt renews it every couple of months.
+// Two on purpose: the server sends ISRG Root YR cross-signed by X1; once the cross-sign
+// is dropped, YR keeps working.
+// Verified 2026-09-04 against weather.rajtik.com:
 //   ISRG Root X1  SHA-256 96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:
 //                         CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
 //                 expires 2035-06-04

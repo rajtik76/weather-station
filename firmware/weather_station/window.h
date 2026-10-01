@@ -5,8 +5,7 @@
 
 #include "reading_types.h"
 
-// A window is an epoch slot WINDOW_SECONDS wide, so it lines up with the
-// dashboard's buckets and a reboot only shortens the one it falls in.
+// An epoch slot, so it lines up with the dashboard's buckets.
 #define WINDOW_SECONDS 600
 
 typedef struct {

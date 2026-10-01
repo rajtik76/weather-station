@@ -6,9 +6,7 @@
 
 #include "station_log.h"
 
-// Header then raw entries. Bump the version whenever station_window_t
-// changes shape, so an older file is discarded rather than read as garbage.
-// 2: noise per window (firmware 3.0). 3: illuminance (firmware 4.0).
+// Bump the version whenever station_window_t changes shape: an older file is discarded.
 #define WINDOW_BUFFER_FILE_MAGIC   0x574E4457UL  // "WNDW"
 #define WINDOW_BUFFER_FILE_VERSION 3
 
@@ -23,11 +21,8 @@ static uint16_t count = 0;
 
 #define WINDOW_BUFFER_SCRATCH WINDOW_BUFFER_FILE ".tmp"
 
-// Written whole into a scratch file that then replaces the old one, so a
-// power cut mid-write leaves the previous copy. Rename over the target
-// first (LittleFS does it in one step); only if the port refuses is the
-// old file removed first, and windowBufferLoad() falls back to the scratch
-// file for that gap.
+// Scratch file then rename, so a power cut mid-write leaves the previous copy.
+// If the rename over the target is refused, remove first; windowBufferLoad() recovers from the scratch file.
 static void persist() {
   const char* scratch = WINDOW_BUFFER_SCRATCH;
 
@@ -63,7 +58,6 @@ static void persist() {
   }
 }
 
-// False when the file is missing or not ours.
 static bool loadFrom(const char* path) {
   File f = LittleFS.open(path, "r");
   if (!f) {

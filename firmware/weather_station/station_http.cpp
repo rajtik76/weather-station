@@ -91,7 +91,7 @@ static void sendRing() {
   server.send(200, "text/plain", body);
 }
 
-// Both files, oldest first, streamed so neither has to fit in RAM.
+// Both files, oldest first, streamed.
 static void sendFlashLog() {
   const char* files[] = { LOG_FILE_PREVIOUS, LOG_FILE };
 

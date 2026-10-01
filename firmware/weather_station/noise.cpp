@@ -13,12 +13,7 @@
 #include "station_log.h"
 #include "window.h"
 
-// Core 0, away from the loop: core 1 keeps the sensors, the HTTP server and
-// the TLS upload, which would otherwise take the CPU from the FFT for
-// seconds at a time. On core 0 the task sits below the WiFi driver and
-// lwIP (priority 18 and up), so the radio always wins; it sleeps in the I2S
-// read and wakes for a few ms of FFT per 64 ms frame, so the idle task
-// still runs.
+// Core 0: core 1 runs sensors, HTTP and TLS, which would starve the FFT. Priority below the WiFi driver and lwIP (18+).
 #define NOISE_TASK_CORE 0
 #define NOISE_TASK_PRIORITY 5
 #define NOISE_TASK_STACK 6144
@@ -26,29 +21,24 @@
 // Bins below this carry the mic's DC offset and its drift, not sound.
 #define NOISE_LOWEST_HZ 20.0f
 
-// One slot is WINDOW_SECONDS long; a level per second.
 #define NOISE_MAX_SECONDS WINDOW_SECONDS
 
 #define NO_BAND 0xFF
 
-// I2S is read in pieces; a whole hop at once would need a buffer that size.
 #define NOISE_READ_SAMPLES 256
 
-// Hops dropped after the task wakes: two refill the history. With the clock
-// stopped as well, the mic is muted for 2^18 SCK cycles (256 ms at
-// 1.024 MHz), four more hops.
+// Hops dropped after wake: 2 refill the history; after a clock stop the mic is muted
+// 2^18 SCK cycles (256 ms at 1.024 MHz), 4 more hops.
 #define NOISE_HOPS_AFTER_PAUSE 2
 #define NOISE_HOPS_AFTER_HUSH 6
 
-// A parked task looks at its flag this often even without a notification.
 #define NOISE_PARK_POLL_MS 100
 
 static I2SClass i2s;
 static TaskHandle_t task = nullptr;
 
-// On the heap, ~40 kB with the FFT's twiddle table. Given back for every
-// upload: the TLS handshake needs it, and with it taken mbedTLS failed to
-// allocate (largest free block 36 kB) or hung until the watchdog fired.
+// Heap, ~40 kB with the twiddle table. Freed for every upload: with it held, mbedTLS
+// failed to allocate (largest free block 36 kB) or hung until the watchdog fired.
 static int32_t* raw;          // one I2S read
 static float* history;        // the last NOISE_FFT_SIZE samples, full scale = 1
 static float* spectrum;       // interleaved re/im for esp-dsp
@@ -59,8 +49,7 @@ static uint8_t* bandOfBin;
 // Converts a frame's summed |X|^2 to mean square: one-sided (x2), Hann power.
 static float frameScale;
 
-// Single precision throughout the task: the ESP32's FPU has no double, and
-// ~9400 frames a window sum to within 0.01 dB in float.
+// Float only in the task: the ESP32's FPU has no double.
 typedef struct {
   uint32_t slot;
   uint32_t frames;
@@ -83,18 +72,15 @@ static uint32_t secondStamp = 0;
 static uint32_t secondFrames = 0;
 static float secondSumA = 0;
 
-// The loop asks, the task parks at the top of its loop and says so; only
-// then are the buffers freed. The task wakes on a notification.
+// The loop asks, the task parks and says so; only then are the buffers freed.
 static volatile bool pauseRequested = false;
 static volatile bool paused = false;
 static bool buffersAllocated = false;
 static volatile uint8_t hopsAfterWake = NOISE_HOPS_AFTER_PAUSE;
 
-// noiseHush() parked the task itself (not an upload) and stopped the clock.
 static bool hushParked = false;
 static bool clockStopped = false;
 
-// Shared with the loop: the finished slot and the counters.
 static portMUX_TYPE shared = portMUX_INITIALIZER_UNLOCKED;
 static finished_t finished;
 static volatile uint32_t openSlot = 0;
@@ -108,25 +94,21 @@ static float aWeightPower(float f) {
   return ra * ra * powf(10.0f, 2.0f / 10.0f);
 }
 
-// The INMP441 equalizer from esp32-i2s-slm (ikostoski), a biquad designed at
-// 48 kHz, evaluated at f as a power ratio. It lifts what the mic's own
-// high-pass takes out: +10 dB at 25 Hz, +1.6 dB at 100 Hz, flat from 500 Hz.
-// Double, once at startup: the poles sit so close to the unit circle that
-// float loses the low end.
+// INMP441 equalizer from esp32-i2s-slm (ikostoski): a 48 kHz biquad evaluated at f, power ratio.
+// Double: the poles sit so close to the unit circle that float loses the low end.
 static float micCorrectionPower(float f) {
   const double gain = 1.00197834654696;
   const double b0 = gain, b1 = gain * -1.986920458344451, b2 = gain * 0.986963226946616;
   const double a1 = -1.995178510504166, a2 = 0.995184322194091;
   const double w = 2.0 * M_PI * f / 48000.0;
 
-  // H(e^jw) with z^-1 = cos w - j sin w.
   const double c1 = cos(w), s1 = sin(w), c2 = cos(2 * w), s2 = sin(2 * w);
   const double nr = b0 + b1 * c1 + b2 * c2, ni = -(b1 * s1 + b2 * s2);
   const double dr = 1.0 + a1 * c1 + a2 * c2, di = -(a1 * s1 + a2 * s2);
   return (float)((nr * nr + ni * ni) / (dr * dr + di * di));
 }
 
-// Computed per frame rather than kept as a table: the heap is the tight part.
+// Not a table: the heap is tight.
 static float hannAt(int i) {
   return 0.5f - 0.5f * cosf(2.0f * (float)M_PI * i / NOISE_FFT_SIZE);
 }
@@ -165,8 +147,7 @@ static float meanSquareToDb(float meanSquare) {
   return 10.0f * log10f(meanSquare) + NOISE_DBFS_TO_SPL + MIC_OFFSET_DB;
 }
 
-// Hundredths of a dB inside the protocol range. Clamping keeps the order
-// between the levels, so the server's checks still hold.
+// 0.01 dB, clamped to the protocol range; clamping keeps the order the server checks.
 static int16_t toProtocol(float db) {
   if (!isfinite(db)) {
     return NOISE_LEVEL_MIN;
@@ -205,8 +186,7 @@ static void finishSlot() {
   out.seconds = acc.levelCount;
   out.laeq = toProtocol(meanSquareToDb(acc.sumA / acc.frames));
 
-  // Nearest rank on the one-second levels: L90 is the level 90 % of the
-  // seconds exceed, so it sits low in the ascending order.
+  // Nearest rank on the one-second levels; L90 is exceeded 90 % of the time, so it sits low.
   memcpy(sorted, acc.levels, sizeof(float) * acc.levelCount);
   qsort(sorted, acc.levelCount, sizeof(float), compareFloat);
   const uint16_t last = acc.levelCount - 1;
@@ -225,8 +205,7 @@ static void finishSlot() {
   taskEXIT_CRITICAL(&shared);
 }
 
-// One frame over the last NOISE_FFT_SIZE samples. False when there was no
-// signal at all.
+// False when there was no signal at all.
 static bool analyseFrame(float& sumA, float sumBands[NOISE_BAND_COUNT]) {
   float mean = 0;
   for (int i = 0; i < NOISE_FFT_SIZE; i++) {
@@ -259,15 +238,11 @@ static void noiseTask(void*) {
   const uint32_t startedMs = millis();
   float frameBands[NOISE_BAND_COUNT];
 
-  // A fresh history is zeros; the frames over it would read low.
   uint8_t hopsToRefill = NOISE_HOPS_AFTER_PAUSE;
 
   while (true) {
     if (pauseRequested) {
-      // Re-checks the flag rather than trusting one notification: a waker
-      // that cleared it between our read and `paused = true` saw a running
-      // task and sent none, and a notification banked while running only
-      // costs one extra pass here.
+      // Re-check the flag, not one notification: a waker may have cleared it before `paused = true` and sent none.
       paused = true;
       while (pauseRequested) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(NOISE_PARK_POLL_MS));
@@ -278,7 +253,7 @@ static void noiseTask(void*) {
       continue;
     }
 
-    // A short read drops the hop; the history stays contiguous.
+    // A short read drops the hop.
     bool complete = true;
     memmove(history, history + NOISE_HOP, sizeof(float) * (NOISE_FFT_SIZE - NOISE_HOP));
     for (int filled = 0; filled < NOISE_HOP && complete; filled += NOISE_READ_SAMPLES) {
@@ -288,7 +263,7 @@ static void noiseTask(void*) {
         break;
       }
 
-      // 24-bit sample, left-aligned in the 32-bit slot, scaled to full scale 1.
+      // 24-bit sample left-aligned in 32 bits.
       for (int i = 0; i < NOISE_READ_SAMPLES; i++) {
         history[NOISE_FFT_SIZE - NOISE_HOP + filled + i] = (raw[i] >> 8) / 8388608.0f;
       }
@@ -303,7 +278,7 @@ static void noiseTask(void*) {
       continue;
     }
 
-    // A frame without a stamp cannot be filed into a slot.
+    // A frame without a stamp cannot be filed.
     if (millis() - startedMs < NOISE_WARMUP_MS || !stationClockIsSet()) {
       continue;
     }
@@ -382,14 +357,14 @@ bool noiseBegin() {
   resetAccumulator(0);
 
   i2s.setPins(NOISE_SCK_PIN, NOISE_WS_PIN, -1, NOISE_SD_PIN);
-  // Without the task nothing would ever give the buffers back for TLS.
+  // Without the task nothing gives the buffers back for TLS.
   if (!i2s.begin(I2S_MODE_STD, NOISE_SAMPLE_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
     releaseBuffers();
     logInfo("noise: I2S did not start, running without the microphone");
     return false;
   }
 
-  // Weakest driver, slowest edges: the clocks run 4 m next to the I2C pairs.
+  // Weakest drive: the clocks run 4 m next to the I2C pairs.
   gpio_set_drive_capability((gpio_num_t)NOISE_SCK_PIN, GPIO_DRIVE_CAP_0);
   gpio_set_drive_capability((gpio_num_t)NOISE_WS_PIN, GPIO_DRIVE_CAP_0);
 
@@ -420,7 +395,6 @@ bool noiseTake(uint32_t slot, noise_window_t& out, uint32_t waitMs) {
     }
     taskEXIT_CRITICAL(&shared);
 
-    // Only a slot the task is still filling is worth waiting for.
     if (found || !stats.running || openSlot != slot || millis() - start >= waitMs) {
       return found;
     }
@@ -432,8 +406,6 @@ noise_stats_t noiseStats() {
   return stats;
 }
 
-// The task finishes the frame it is on and parks; a hop is 64 ms and the
-// FFT a few more, so it answers well inside the wait.
 #define NOISE_PAUSE_WAIT_MS 1000
 
 void noisePause() {
@@ -447,7 +419,7 @@ void noisePause() {
     delay(5);
   }
 
-  // Freeing under a task still in the middle of a frame would corrupt the heap.
+  // Freeing under a task mid-frame would corrupt the heap.
   if (!paused) {
     logInfo("noise: task did not park, keeping its memory");
     return;
@@ -456,16 +428,12 @@ void noisePause() {
   releaseBuffers();
 }
 
-// The slot being filled goes on; it misses the seconds of the pause.
-// Only a parked task is woken; one that misses it sees the flag cleared on
-// its next poll, and a stray notification only costs the task one pass.
 void noiseResume() {
   if (task == nullptr || !pauseRequested) {
     return;
   }
 
   if (!buffersAllocated && !allocateBuffers()) {
-    // Stays parked; the next resume tries again.
     stats.running = false;
     logInfo("noise: no memory to resume, largest free block %u", (unsigned)ESP.getMaxAllocHeap());
     return;
@@ -474,17 +442,14 @@ void noiseResume() {
   stats.running = true;
   pauseRequested = false;
 
-  // A task that never parked (noisePause() gave up on it) is still running
-  // and must not get a notification it would bank.
+  // A task that never parked is still running: no notification to bank.
   if (paused) {
     xTaskNotifyGive(task);
   }
 }
 
-// Parks the task the same way as noisePause(), then stops the channel, which
-// stops SCK and WS. The buffers stay: this runs every reading, and freeing
-// ~40 kB twice a minute would only fragment the heap. A task already parked
-// by a failed resume is left to noiseResume(); only the clock is stopped.
+// Parks like noisePause(), then stops the channel (SCK and WS). Buffers stay: freeing 40 kB
+// twice a minute would fragment the heap. A task parked by a failed resume is left to noiseResume().
 void noiseHush() {
   if (task == nullptr) {
     return;
@@ -499,8 +464,7 @@ void noiseHush() {
     }
   }
 
-  // Stopping the channel under a task blocked in its read would leave the
-  // read to time out as a short one; only a parked task is safe.
+  // Only a parked task is safe: a blocked read would time out short.
   if (!paused) {
     logInfo("noise: task did not park, clock keeps running");
     return;
@@ -510,7 +474,7 @@ void noiseHush() {
 }
 
 void noiseUnhush() {
-  // Only a stopped clock mutes the mic; after a hush that timed out it never stopped.
+  // Only a stopped clock mutes the mic.
   const bool restarted = clockStopped;
   if (clockStopped) {
     i2s_channel_enable(i2s.rxChan());
@@ -524,7 +488,6 @@ void noiseUnhush() {
   hopsAfterWake = restarted ? NOISE_HOPS_AFTER_HUSH : NOISE_HOPS_AFTER_PAUSE;
   pauseRequested = false;
 
-  // Same as noiseResume(): the task also polls, so a missed wake costs 100 ms.
   if (paused) {
     xTaskNotifyGive(task);
   }

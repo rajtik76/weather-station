@@ -5,11 +5,10 @@
 
 #include "reading_types.h"
 
-// Bump whenever the JSON shape changes; the server keeps every version.
+// Bump whenever the JSON shape changes.
 #define TRANSMISSION_VERSION 4
 
-// The server takes up to 500; this keeps the JSON under the payload buffer
-// (TRANSMISSION_PAYLOAD_BYTES). An entry with noise is ~500 bytes of JSON.
+// The server takes up to 500; 16 keeps the JSON under TRANSMISSION_PAYLOAD_BYTES (~500 bytes per entry with noise).
 #define TRANSMISSION_MAX_ENTRIES 16
 #define TRANSMISSION_DEVICE_LEN  24
 #define TRANSMISSION_PAYLOAD_BYTES 16384

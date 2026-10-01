@@ -6,7 +6,7 @@
 #include "station_status.h"
 #include "transmission_type.h"
 
-// Returns bytes written excluding the terminator, 0 if the buffer was too small.
+// Bytes written excluding the terminator; 0 if the buffer was too small.
 static size_t transmissionToJson(const transmission_t& tx, const station_status_t& status,
                                  char* out, size_t outLen) {
   JsonDocument doc;
@@ -19,7 +19,7 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
     const station_window_t& w = tx.data[i];
     JsonObject entry = measurements.add<JsonObject>();
 
-    // The mean keeps the V1 name so the server aggregates both versions alike.
+    // The mean keeps the V1 name so the server aggregates versions alike.
     entry["timestamp"] = w.timestamp;
     entry["temperature"] = w.temperature;
     entry["temperature_min"] = w.temperature_min;
@@ -32,15 +32,14 @@ static size_t transmissionToJson(const transmission_t& tx, const station_status_
     entry["pressure_max"] = w.pressure_max;
     entry["samples"] = w.samples;
 
-    // Left out when the VEML7700 gave nothing for the window, like the noise.
+    // Left out when the VEML7700 gave nothing.
     if (w.illuminance_samples > 0) {
       entry["illuminance"] = w.illuminance;
       entry["illuminance_min"] = w.illuminance_min;
       entry["illuminance_max"] = w.illuminance_max;
     }
 
-    // Left out when the microphone gave nothing for the window; the server
-    // takes the entry without it.
+    // Left out when the microphone gave nothing.
     if (w.noise.seconds > 0) {
       JsonObject noise = entry["noise"].to<JsonObject>();
       noise["seconds"] = w.noise.seconds;

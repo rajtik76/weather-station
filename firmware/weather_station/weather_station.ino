@@ -26,61 +26,51 @@
 #include "window.h"
 #include "window_buffer.h"
 
-// Sent with every batch; bump it with each build that goes on a board, and
-// tag the commit fw/v<version>. The history is firmware/CHANGELOG.md.
+// Bump per flashed build; tag fw/v<version>.
 #define FIRMWARE_VERSION "4.0.0"
 
-// The IDE's board selection (build.board in boards.txt), e.g. ESP32C3_DEV,
-// DFROBOT_FIREBEETLE_2_ESP32C6, ESP32_DEV. Rides with every batch so the
-// server can tell which hardware sent what after a board swap.
+// Board id from the IDE (build.board), sent with every batch.
 #ifndef ARDUINO_BOARD
 #define ARDUINO_BOARD "unknown"
 #endif
 #define FIRMWARE_BOARD ARDUINO_BOARD
 
-// ESP32-WROOM-32 hardware I2C: SDA GPIO21, SCL GPIO22. The BMP280 sits on
-// the base board, the SHT4x at the end of the 4 m cable, on the same bus.
+// WROOM-32 hardware I2C (GPIO21/22); BMP280 on the base board, SHT4x at the end of the 4 m cable, same bus.
 #define I2C_SDA_PIN SDA
 #define I2C_SCL_PIN SCL
 
-// 4 m of cable to the SHT4x: slower edges than the default 100 kHz leave
-// room for the cable's capacitance and whatever the radio couples into it.
+// 20 kHz instead of 100: the 4 m cable's capacitance and radio coupling.
 #define I2C_CLOCK_HZ 20000
 
 #define API_URL "https://weather.rajtik.com/api/v1/measurement"
 
-// Twenty readings to a ten-minute window. Slow enough that self-heating
-// in forced mode stays negligible.
+// 20 readings per ten-minute window; slow enough that self-heating stays negligible.
 static const uint32_t SAMPLE_INTERVAL_MS = 30000;
 
-// How long closeWindow() waits for the noise task to close the same slot.
 static const uint32_t NOISE_TAKE_WAIT_MS = 500;
 
 static const uint32_t WIFI_TIMEOUT_MS = 15000;
 static const uint32_t NTP_TIMEOUT_MS = 10000;
 
-// Reconnect nudge while down; failover to the other network after that
-// long down; retry of the primary while on the backup.
+// Reconnect nudge; failover after this long down; retry of the primary while on the backup.
 static const uint32_t WIFI_RETRY_MS = 30000;
 static const uint32_t WIFI_FAILOVER_MS = 60000;
 static const uint32_t WIFI_PRIMARY_RETRY_MS = 3600000;
 
-// This many failures in a row while associated means the uplink behind
-// the AP is down, and the other network gets a turn.
+// This many failures in a row while associated: uplink behind the AP is down, switch network.
 static const uint32_t UPLOAD_RETRY_MS = 60000;
 static const uint16_t UPLOAD_FAILURES_BEFORE_SWITCH = 3;
 
-// An hour with a backlog and no successful upload: restart. The buffer is
-// on the flash, so it costs nothing, and the flash log says what happened.
+// Backlog and no successful upload for this long: restart (the buffer is on flash).
 static const uint32_t NO_UPLOAD_RESTART_MS = 3600000;
 
-// For a loop stuck in I2C or TLS. Long enough for a full backlog to go out.
+// Long enough for a full backlog to go out.
 static const uint32_t WATCHDOG_TIMEOUT_MS = 120000;
 
 // Display only; stamps are UTC.
 static const char* TZ_PRAGUE = "CET-1CEST,M3.5.0,M10.5.0/3";
 
-// The crystal drifts seconds a day and a stamp lands in the record as sent.
+// The crystal drifts seconds a day and the server stores stamps verbatim.
 static const uint32_t NTP_RESYNC_AFTER_S = 3600UL;
 
 // ---------------------------------------------------------------- status
@@ -103,12 +93,10 @@ static const char* resetReasonName(esp_reset_reason_t reason) {
   }
 }
 
-// Fills in the parts that change on their own; the rest is kept up to date
-// by whoever changes it.
 static void refreshStatus() {
   status.firmware = FIRMWARE_VERSION;
   status.board = FIRMWARE_BOARD;
-  status.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);  // 64-bit, no wrap at 49 days
+  status.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
   status.heap_free = ESP.getFreeHeap();
   status.heap_min = ESP.getMinFreeHeap();
   status.clock_set = stationClockIsSet();
@@ -131,25 +119,21 @@ static void refreshStatus() {
 static Adafruit_BMP280 bmp(&Wire);
 static Adafruit_SHT4x sht;
 
-// Pressure only: the BMP280 sits indoors next to the board, so its
-// temperature is the room's and never goes out.
+// Pressure only: it sits indoors, so its temperature is never sent.
 static bool bmp280Begin() {
-  // Boards ship with either address depending on how SDO is strapped.
+  // Address depends on the SDO strap.
   if (!bmp.begin(0x76) && !bmp.begin(0x77)) {
     logInfo("BMP280 not found");
     return false;
   }
 
-  // Forced mode, no oversampling or filtering; the window average does
-  // that on half-minute readings.
   bmp.setSampling(Adafruit_BMP280::MODE_FORCED,
                   Adafruit_BMP280::SAMPLING_X1,  // temperature, needed for the pressure compensation
-                  Adafruit_BMP280::SAMPLING_X1,  // pressure
+                  Adafruit_BMP280::SAMPLING_X1,
                   Adafruit_BMP280::FILTER_OFF);
   return true;
 }
 
-// Temperature and humidity, in the radiation shield outside.
 static bool sht4xBegin() {
   if (!sht.begin(&Wire)) {
     logInfo("SHT4x not found");
@@ -159,8 +143,7 @@ static bool sht4xBegin() {
   sht.setPrecision(SHT4X_HIGH_PRECISION);
   sht.setHeater(SHT4X_NO_HEATER);
 
-  // The first read after begin() fails more often than not (seen on the
-  // bench with sensors_check); spend it here rather than on the window.
+  // The first read after begin() often fails; spend it here.
   sensors_event_t humidity, temp;
   sht.getEvent(&humidity, &temp);
   return true;
@@ -172,14 +155,13 @@ static bool sensorsBegin() {
   bool bmpFound = bmp280Begin();
   bool shtFound = sht4xBegin();
 
-  // Not waited for: the station measures on without the light, and
-  // vemlRead() keeps trying.
+  // Not waited for; vemlRead() keeps trying.
   vemlBegin();
   return bmpFound && shtFound;
 }
 
 static bool readSensors(station_reading_t& out) {
-  // All I2C traffic, readPressure() included, happens with the mic clocks stopped.
+  // All I2C traffic happens with the mic clocks stopped.
   sensors_event_t humidityEvent, tempEvent;
   float p = NAN;
   uint32_t illuminance = 0;
@@ -187,7 +169,7 @@ static bool readSensors(station_reading_t& out) {
   const bool shtRead = sht.getEvent(&humidityEvent, &tempEvent);
   const bool bmpRead = shtRead && bmp.takeForcedMeasurement();
   if (bmpRead) {
-    p = bmp.readPressure();                      // Pa, already the unit the API takes
+    p = bmp.readPressure();                      // Pa, the unit the API takes
   }
   const bool lightRead = vemlRead(illuminance);
   noiseUnhush();
@@ -214,8 +196,7 @@ static bool readSensors(station_reading_t& out) {
   long humidity = lroundf(h * 100.0f);
   long pressure = lroundf(p);
 
-  // One out-of-range extreme would have the server reject the whole batch
-  // and block every window behind it.
+  // Out of range would get the whole batch rejected and block the queue.
   if (temperature < READING_TEMP_MIN || temperature > READING_TEMP_MAX ||
       humidity < READING_HUMIDITY_MIN || humidity > READING_HUMIDITY_MAX ||
       pressure < READING_PRESSURE_MIN || pressure > READING_PRESSURE_MAX) {
@@ -223,12 +204,12 @@ static bool readSensors(station_reading_t& out) {
     return false;
   }
 
-  out.timestamp = (uint32_t)time(nullptr);  // always UTC
+  out.timestamp = (uint32_t)time(nullptr);  // UTC
   out.temperature = (int16_t)temperature;
   out.humidity = (uint16_t)humidity;
   out.pressure = (uint32_t)pressure;
 
-  // Out of range goes the same way as a failed read: the reading stays, the light does not.
+  // Out-of-range light is dropped; the rest of the reading stays.
   out.has_illuminance = lightRead && illuminance <= READING_ILLUMINANCE_MAX;
   out.illuminance = out.has_illuminance ? illuminance : 0;
 
@@ -256,7 +237,6 @@ static uint8_t wifiNetworkCount() {
   return BACKUP_WIFI_SSID[0] == '\0' ? 1 : 2;
 }
 
-// Set by otaBegin(); the mDNS announcement reads it.
 static bool otaListening = false;
 
 static uint8_t wifiCurrent = 0;
@@ -265,10 +245,8 @@ static uint32_t wifiKickedMs = 0;
 static uint32_t wifiDownSinceMs = 0;  // when the current outage began; 0 while online
 static bool wifiEverBegan = false;
 
-// The driver's disconnect reason is the only place a wrong password or a
-// missing AP is said, and the core logs it below the release log level.
-// The handler runs on the event task, so it only notes and the loop logs
-// (reportWifiEvents()).
+// Disconnect reason is the only place a wrong password or missing AP shows up.
+// The handler runs on the event task: it only notes, the loop logs (reportWifiEvents()).
 static volatile bool wifiEventGotIp = false;
 static volatile bool wifiEventLostIp = false;
 static volatile bool wifiEventDisconnected = false;
@@ -291,9 +269,7 @@ static void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-// Once per reason, not per attempt: the core retries every few seconds and
-// would flush the flash log within the hour. Self-inflicted disconnects
-// are skipped.
+// Once per reason: the core retries every few seconds and would flush the flash log.
 static void reportWifiEvents() {
   static uint8_t lastReason = 0;
 
@@ -330,10 +306,9 @@ static bool waitForWifi(uint32_t timeoutMs) {
   return false;
 }
 
-// Tells a wrong password from an AP out of reach: -70 dBm is fine, -80
-// marginal, past -85 an association forms but a TLS upload does not survive.
+// -70 dBm is fine, -80 marginal, past -85 it associates but a TLS upload does not survive.
 static void reportVisibleAps() {
-  // A scan fails outright while the driver is associating.
+  // A scan fails while associating.
   WiFi.disconnect();
   delay(200);
 
@@ -356,8 +331,7 @@ static void reportVisibleAps() {
 
   WiFi.scanDelete();
 
-  // Back to trying the network the scan interrupted, with the kick timer
-  // restarted so the nudge does not land on the association forming.
+  // Resume the interrupted network; restart the kick timer so the nudge does not hit the forming association.
   wifiKickedMs = millis();
   WiFi.begin(WIFI_NETWORKS[wifiCurrent].ssid, WIFI_NETWORKS[wifiCurrent].pass);
 }
@@ -371,8 +345,7 @@ static void wifiConnectTo(uint8_t network) {
 
   logInfo("WiFi: joining %s (%s)", WIFI_NETWORKS[network].ssid, network == 0 ? "primary" : "backup");
 
-  // Nothing to leave on the first join; a disconnect there only sends the
-  // driver a stray event to answer while the association is forming.
+  // Not on the first join: a stray event while the association forms.
   if (wifiEverBegan) {
     WiFi.disconnect();
   }
@@ -396,15 +369,11 @@ static void wifiBegin() {
   WiFi.setHostname(STATION_HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
-  // The core re-associates by itself after a dropped link; the loop only
-  // steps in when that has not worked for a while.
   WiFi.setAutoReconnect(true);
   wifiConnectTo(0);
 }
 
-// Returns whether the station is online. Only the first association is
-// waited for, so the clock can be set before the first reading; later
-// drops are the core's to reconnect, nudged and then failed over.
+// Returns whether online. Only the first association is waited for; later drops are nudged, then failed over.
 static bool ensureWifi() {
   static bool wasConnected = false;
 
@@ -417,7 +386,7 @@ static bool ensureWifi() {
       stationHttpAnnounce(otaListening);
     }
 
-    // Back to the primary, only with an empty buffer so the try costs no data.
+    // Only with an empty buffer so the try costs no data.
     if (wifiCurrent != 0 && windowBufferCount() == 0 && millis() - wifiSwitchedMs >= WIFI_PRIMARY_RETRY_MS) {
       logInfo("WiFi: trying the primary again");
       wifiConnectTo(0);
@@ -433,7 +402,6 @@ static bool ensureWifi() {
     wifiDownSinceMs = millis();
   }
 
-  // Counted from the join attempt or the drop that began the outage.
   if (millis() - wifiDownSinceMs >= WIFI_FAILOVER_MS && wifiNetworkCount() > 1) {
     wifiSwitch("down too long");
     return false;
@@ -454,16 +422,13 @@ static bool ensureWifi() {
 
 static volatile bool ntpAnswered = false;
 
-// Noted by the override below, logged by reportClockStep() from the loop.
 static volatile bool clockStepPending = false;
 static volatile int32_t clockStepMs = 0;
 static volatile uint32_t clockStepOverS = 0;
 
-// Replaces the stock sntp_sync_time(), which steps the clock before the
-// callback sees the old reading. The step is the drift since the previous
-// sync. The first answer after boot is not counted: a cold boot steps from
-// 1970 and a soft reset's RTC clock is of unknown age. Runs on lwIP's task:
-// no logging here.
+// Replaces the stock sntp_sync_time() to read the clock before stepping it; the step is the drift.
+// The first answer after boot is skipped (steps from 1970, or an RTC clock of unknown age).
+// Runs on lwIP's task: no logging here.
 extern "C" void sntp_sync_time(struct timeval* tv) {
   struct timeval before;
   gettimeofday(&before, nullptr);
@@ -490,7 +455,6 @@ extern "C" void sntp_sync_time(struct timeval* tv) {
   ntpAnswered = true;
 }
 
-// Writes the correction the override noted, from the loop.
 static void reportClockStep() {
   if (!clockStepPending) {
     return;
@@ -500,9 +464,7 @@ static void reportClockStep() {
   logInfo("clock stepped %+ld ms after %lu s", (long)clockStepMs, (unsigned long)clockStepOverS);
 }
 
-// Called whenever online, not only while the clock is unset: the clock
-// survives a software restart in the RTC, and a start gated on it would
-// never happen on such a boot.
+// Whenever online, never gated on the clock: it survives a software restart in the RTC.
 static void sntpBegin() {
   static bool started = false;
 
@@ -516,7 +478,7 @@ static void sntpBegin() {
   started = true;
 }
 
-// Waits on the answer, not on the clock looking plausible.
+// Waits on the SNTP answer, not on the clock looking plausible.
 static bool syncClock(uint32_t timeoutMs) {
   sntpBegin();
 
@@ -554,18 +516,15 @@ static bool postTransmission(const char* payload) {
   status.last_post_code = code;
   status.last_post_at = (uint32_t)time(nullptr);
 
-  // A negative code is a client side failure, not an HTTP status - most
-  // often the TLS handshake, which is the interesting one here.
+  // Negative: client side failure, most often the TLS handshake.
   if (code < 0) {
-    // mbedTLS says why the handshake failed; the largest free block says
-    // whether its buffers fitted at all.
+    // The largest free block says whether the TLS buffers fitted.
     char tlsError[96];
     int tlsCode = client.lastError(tlsError, sizeof(tlsError));
     logInfo("POST -> %d, transport error: %s; TLS %d: %s; largest free block %u",
             code, http.errorToString(code).c_str(), tlsCode, tlsError, (unsigned)ESP.getMaxAllocHeap());
   } else if (code == 401 || code == 422) {
-    // 422 means the payload does not match the contract. Without the body
-    // there is no way to tell which field the server refused.
+    // 422: payload does not match the contract; the body names the field.
     logInfo("POST -> %d: %s", code, http.getString().c_str());
   } else {
     logInfo("POST -> %d", code);
@@ -580,8 +539,7 @@ static uint32_t lastUploadOkMs = 0;
 
 static void uploadBatches(char* payload, size_t payloadLen);
 
-// Oldest first, one batch per POST, stops at the first failure. The server
-// upserts, so a batch whose answer got lost is safe to send again.
+// Oldest first, stops at the first failure. The server upserts: resending is safe.
 static void uploadBuffered() {
   static char payload[TRANSMISSION_PAYLOAD_BYTES];
 
@@ -592,7 +550,7 @@ static void uploadBuffered() {
     return;
   }
 
-  // The noise task's buffers are what TLS needs: FFT between uploads, not during.
+  // TLS needs the noise task's buffers.
   noisePause();
   uploadBatches(payload, sizeof(payload));
   noiseResume();
@@ -641,8 +599,7 @@ static void closeWindow() {
     return;
   }
 
-  // The reading that closed this window is already in the next slot, and
-  // the noise task closes a slot on its first frame past the boundary.
+  // The noise task closes a slot on its first frame past the boundary.
   if (noiseTake(window.slot, entry.noise, NOISE_TAKE_WAIT_MS)) {
     logInfo("noise %lu: LAeq %d  LAmax %d  LA10 %d  LA90 %d  (0.01 dB)  s=%u",
             (unsigned long)window.slot, entry.noise.laeq, entry.noise.lamax,
@@ -669,7 +626,6 @@ static void closeWindow() {
   }
 }
 
-// Between windows, so the restart loses one reading at most.
 static void restartIfStuck() {
   if (!uploadConfigured() || windowBufferCount() == 0 || millis() - lastUploadOkMs < NO_UPLOAD_RESTART_MS) {
     return;
@@ -682,10 +638,8 @@ static void restartIfStuck() {
 
 // ---------------------------------------------------------------- ota
 
-// The open window is closed into the buffer first and the noise task is
-// paused, so the transfer has the CPU and the memory. The upload blocks the loop, so the
-// watchdog is fed from the progress callback; a stalled transfer still
-// trips it. Off without a password.
+// OTA blocks the loop: the progress callback feeds the watchdog, a stalled transfer still trips it.
+// Off without a password.
 static void otaBegin() {
   if (OTA_PASSWORD[0] == '\0') {
     logInfo("no OTA password set, OTA off");
@@ -695,8 +649,7 @@ static void otaBegin() {
   ArduinoOTA.setHostname(STATION_HOSTNAME);
   ArduinoOTA.setPort(STATION_OTA_PORT);
   ArduinoOTA.setPassword(OTA_PASSWORD);
-  // The HTTP module owns mDNS and re-announces on every association;
-  // it advertises the OTA service alongside its own.
+  // The HTTP module owns mDNS and advertises OTA too.
   ArduinoOTA.setMdnsEnabled(false);
 
   ArduinoOTA.onStart([]() {
@@ -729,7 +682,7 @@ static void watchdogBegin() {
     .trigger_panic = true,
   };
 
-  // The core may have started the watchdog already, with its own timeout.
+  // The core may have started it with its own timeout.
   if (esp_task_wdt_reconfigure(&config) != ESP_OK) {
     esp_task_wdt_init(&config);
   }
@@ -741,12 +694,11 @@ void setup() {
   Serial.begin(115200);
 
 #if ARDUINO_USB_CDC_ON_BOOT
-  // On a board that routes Serial through the chip's own USB, a write
-  // blocks until a host drains it. Zero means write and move on.
+  // Native USB Serial blocks until a host drains it.
   Serial.setTxTimeoutMs(0);
 #endif
 
-  delay(1000);  // give the serial bridge time to attach
+  delay(1000);  // serial bridge attach
 
   stationFsBegin();
   status.reset_reason = resetReasonName(esp_reset_reason());
@@ -758,13 +710,11 @@ void setup() {
     logInfo("%u windows restored from the flash", restored);
   }
 
-  // Without the sensors there is nothing to run, and the log has said why.
   while (!sensorsBegin()) {
     delay(5000);
   }
 
-  // The station runs on without the microphone; the windows go out
-  // without noise and the log says why.
+  // Runs on without the microphone.
   noiseBegin();
 
   watchdogBegin();
@@ -775,9 +725,7 @@ void setup() {
     reportVisibleAps();
   }
 
-  // After wifiBegin(): the server opens a socket, and the TCP/IP stack
-  // only exists once WiFi.mode() has brought it up - before that the
-  // socket call asserts on a lock that is not there yet.
+  // After wifiBegin(): the TCP/IP stack must exist before the socket (asserts on a missing lock).
   stationHttpBegin(&status, refreshStatus);
   otaBegin();
 }
@@ -795,7 +743,7 @@ void loop() {
     sntpBegin();
   }
 
-  // No reading until the clock is set; its window cannot be known otherwise.
+  // No reading until the clock is set: the window is unknown without it.
   if (!stationClockIsSet()) {
     if (online) {
       syncClock(NTP_TIMEOUT_MS);
@@ -810,8 +758,7 @@ void loop() {
 
     station_reading_t reading;
     if (readSensors(reading)) {
-      // Off the reading's own stamp: an SNTP step or the measurement
-      // itself can cross a slot boundary since the top of the loop.
+      // Off the reading's own stamp: an SNTP step can cross a slot boundary.
       uint32_t slot = windowSlotOf(reading.timestamp);
 
       if (windowOpen && slot != window.slot) {
@@ -819,7 +766,7 @@ void loop() {
         windowOpen = false;
         restartIfStuck();
 
-        // Send at once; the retry timer covers a failure.
+        // Send at once.
         lastUploadAttemptMs = 0;
       }
 

@@ -5,11 +5,9 @@
 
 #include <ArduinoJson.h>
 
-// Served whole on the LAN; a subset rides with every batch so a stall can
-// be read back from the server afterwards.
 typedef struct {
   const char* firmware;       // FIRMWARE_VERSION
-  const char* board;          // FIRMWARE_BOARD, the IDE's board selection
+  const char* board;          // FIRMWARE_BOARD
   const char* reset_reason;   // why the board last booted
   uint32_t uptime_s;
   uint32_t heap_free;         // bytes
@@ -22,10 +20,10 @@ typedef struct {
 
   bool online;
   char ssid[33];              // the last network seen; kept while offline
-  char ip[16];                // likewise
+  char ip[16];
   int8_t rssi;                // dBm, 0 when offline
   uint8_t wifi_network;       // 0 primary, 1 backup
-  uint16_t wifi_switches;     // how many times the station changed network
+  uint16_t wifi_switches;
 
   uint16_t buffered;          // windows waiting for the server
   uint16_t upload_failures;   // POSTs failed in a row

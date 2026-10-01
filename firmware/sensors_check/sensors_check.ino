@@ -1,6 +1,4 @@
-// Standalone check of all four sensors on the WROOM-32 station: BMP280 on the base,
-// SHT4x, VEML7700 and INMP441 at the end of the FTP cable. One status line every 2 s; a sensor
-// that is missing is retried every pass, so a fixed joint shows up without a reset.
+// Bench check of all four sensors; a missing one is retried every pass.
 
 #include <Wire.h>
 #include <ESP_I2S.h>
@@ -18,25 +16,24 @@
 #define BMP280_ADDR 0x76
 #define VEML7700_ADDR 0x10
 
-// VEML7700 registers, driven raw so the check needs no extra library.
+// VEML7700 registers, driven raw.
 #define VEML7700_REG_CONF 0x00
 #define VEML7700_REG_ALS 0x04
 #define VEML7700_REG_WHITE 0x05
 
-// Gain 1/8 and 25 ms integration: the least sensitive setting, so full sun does not
-// saturate (~140 klx at 2.1504 lx per count, Vishay app note, datasheet rev. 1.8).
+// Least sensitive setting (gain 1/8, 25 ms): full sun does not saturate (~140 klx).
 #define VEML7700_CONF_GAIN_1_8_IT_25MS 0x1300
 #define VEML7700_LUX_PER_COUNT 2.1504f
 #define VEML7700_IT_MS 25
 #define SAMPLE_RATE 16000
 #define FRAMES_PER_READ 1024
 
-// The mic sits muted for 2^18 SCK cycles after the clock starts: 256 ms at 1.024 MHz.
+// The mic is muted for 2^18 SCK cycles after the clock starts: 256 ms at 1.024 MHz.
 #define WARMUP_MS 300
 
 #define PASS_MS 2000
 
-// Same as the station firmware: slow enough for the 4 m cable.
+// As in the station firmware: the 4 m cable.
 #define I2C_CLOCK_HZ 20000
 
 static Adafruit_BMP280 bmp(&Wire);
@@ -137,7 +134,7 @@ static bool vemlRead(uint8_t reg, uint16_t& value) {
 static bool vemlBegin() {
   if (!vemlWrite(VEML7700_REG_CONF, VEML7700_CONF_GAIN_1_8_IT_25MS)) return false;
 
-  delay(VEML7700_IT_MS * 2 + 5);  // power-up plus one full integration
+  delay(VEML7700_IT_MS * 2 + 5);  // power-up plus one integration
   return true;
 }
 
@@ -158,8 +155,7 @@ static void reportVeml() {
   Serial.printf("| VEML7700 %8.1f lx (als %5u white %5u)  ", als * VEML7700_LUX_PER_COUNT, als, white);
 }
 
-// Samples are 24-bit, left-aligned in a 32-bit slot. Returns the AC rms of one slot,
-// or -1 when the slot is dead (all zero, all ones or constant).
+// Samples are 24-bit, left-aligned in 32. AC rms of one slot, -1 when dead (constant).
 static double slotRms(size_t slot, size_t count) {
   int32_t min = INT32_MAX;
   int32_t max = INT32_MIN;
@@ -211,7 +207,7 @@ static void reportMic() {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);  // give the USB serial time to attach
+  delay(1000);  // USB serial attach
 
   Serial.println();
   Serial.printf("Sensors check - I2C SDA=%d SCL=%d, I2S SCK=%d WS=%d SD=%d\n",
@@ -224,18 +220,18 @@ void setup() {
   i2s.setPins(I2S_SCK_PIN, I2S_WS_PIN, -1, I2S_SD_PIN);
   i2sReady = i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO);
   if (i2sReady) {
-    // Same as the station firmware: weakest driver on the clocks that share the cable with I2C.
+    // As in the station firmware: weakest drive on the clocks that share the cable with I2C.
     gpio_set_drive_capability((gpio_num_t)I2S_SCK_PIN, GPIO_DRIVE_CAP_0);
     gpio_set_drive_capability((gpio_num_t)I2S_WS_PIN, GPIO_DRIVE_CAP_0);
     delay(WARMUP_MS);
-    i2s.readBytes((char*)frames, sizeof(frames));  // drop the muted start-up samples
+    i2s.readBytes((char*)frames, sizeof(frames));  // drop the muted start
   }
 }
 
 void loop() {
   const uint32_t start = millis();
 
-  // I2C only with the mic clocks stopped, as in the station firmware (noiseHush()).
+  // I2C only with the mic clocks stopped (noiseHush() in the station firmware).
   if (i2sReady) i2s_channel_disable(i2s.rxChan());
   reportBmp();
   reportSht();
@@ -243,7 +239,7 @@ void loop() {
   if (i2sReady) {
     i2s_channel_enable(i2s.rxChan());
     delay(WARMUP_MS);
-    i2s.readBytes((char*)frames, sizeof(frames));  // drop what the DMA held and the muted start
+    i2s.readBytes((char*)frames, sizeof(frames));  // drop stale DMA data and the muted start
   }
   reportMic();
   Serial.println();

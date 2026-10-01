@@ -67,13 +67,12 @@ bool windowClose(const window_t& w, station_window_t& out) {
   out.pressure_max = w.p_max;
   out.samples = w.samples;
 
-  // Its own count: readings where only the light failed still went in.
   out.illuminance_samples = w.l_samples;
   out.illuminance = w.l_samples > 0 ? (uint32_t)meanOf(w.l_sum, w.l_samples) : 0;
   out.illuminance_min = w.l_min;
   out.illuminance_max = w.l_max;
 
-  // The microphone runs on its own clock; the caller fills this in.
+  // The caller fills in noise.
   memset(&out.noise, 0, sizeof(out.noise));
 
   return true;
