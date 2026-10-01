@@ -87,6 +87,42 @@ final readonly class Trace
         return new self($points);
     }
 
+    /**
+     * Round values at the first of `$steps` that gives one to five labels,
+     * or the coarsest one when none does.
+     *
+     * @param  callable(float): float  $y  a value's place in the box
+     * @param  non-empty-list<float>  $steps  fine to coarse
+     * @return list<array{value: float, y: float}>
+     */
+    public static function ticks(float $low, float $high, callable $y, array $steps = [1.0, 2.0, 5.0, 10.0]): array
+    {
+        foreach ($steps as $step) {
+            $values = [];
+
+            for ($index = (int) ceil($low / $step - 1e-9); $index * $step <= $high + 1e-9; $index++) {
+                $values[] = round($index * $step, 2);
+            }
+
+            if ($values !== [] && count($values) <= 5) {
+                break;
+            }
+        }
+
+        // No round value inside a very narrow range: label its own ends.
+        if ($values === []) {
+            $values = array_values(array_unique([round($low, 2), round($high, 2)]));
+        }
+
+        return array_map(fn (float $value): array => ['value' => $value, 'y' => $y($value)], $values);
+    }
+
+    /** The box's y for a value on the scale `spanning()` lays between `$low` and `$high`. */
+    public static function levelOf(float $value, float $low, float $high): float
+    {
+        return self::level($value, $low, $high);
+    }
+
     /** Where a value sits in the box, y growing down. A flat series sits in the middle rather than dividing by zero. */
     private static function level(float $value, float $low, float $high): float
     {

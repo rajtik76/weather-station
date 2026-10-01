@@ -14,13 +14,16 @@
     @else
         @php($trace = \App\ValueObject\Trace::spanning($temperature['trace']))
         @php($newest = $trace->points[array_key_last($trace->points)])
+        @php($traceLow = min($temperature['trace']))
+        @php($traceHigh = max($temperature['trace']))
+        @php($ticks = \App\ValueObject\Trace::ticks($traceLow, $traceHigh, fn (float $value): float => \App\ValueObject\Trace::levelOf($value, $traceLow, $traceHigh), [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]))
         <div class="overflow-hidden rounded-[10px] border border-line bg-screen lg:grid lg:grid-cols-[minmax(0,1fr)_320px]">
             <figure class="m-0 min-w-0 border-b border-line lg:border-r lg:border-b-0">
                 <figcaption class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 font-mono text-[13px] text-ink-3 sm:px-6">
                     <span class="flex items-center gap-2"><span class="swatch bg-ch1"></span><span class="text-ink">CH1</span><span>Temperature, last 24 h</span></span>
                     <span class="num">min {{ \App\ValueObject\Figure::format($temperature['dayMin'], 1) }} · max {{ \App\ValueObject\Figure::format($temperature['dayMax'], 1) }} °C</span>
                 </figcaption>
-                <div class="relative mx-6 mt-4 mb-3 h-[240px] sm:mx-7 sm:h-[340px]">
+                <div class="relative ml-[calc(1.5rem+52px)] mr-6 mt-4 mb-3 h-[240px] sm:ml-[calc(1.75rem+52px)] sm:mr-7 sm:h-[340px]">
                     <svg class="graticule absolute inset-0 h-full w-full" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
                         @foreach (range(0, 100, 10) as $x)
                             <line x1="{{ $x }}" y1="0" x2="{{ $x }}" y2="80" style="stroke: var({{ in_array($x, [0, 50, 100], true) ? '--grid-2' : '--grid' }})" />
@@ -39,10 +42,13 @@
                         <svg class="layer phosphor" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--trace: var(--ch1)">
                             <path d="{{ $trace->line() }}" style="fill: none; stroke: var(--ch1); stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round" />
                         </svg>
+                        @foreach ($ticks as $tick)
+                            <span class="ylab" style="top: {{ $tick['y'] }}%">{{ \App\ValueObject\Figure::format($tick['value'], 1) }} °C</span>
+                        @endforeach
                         <span class="trig" style="left: {{ $newest['x'] }}%; top: {{ $newest['y'] }}%; color: var(--ch1)" aria-hidden="true"></span>
                     </div>
                 </div>
-                <div class="num flex justify-between gap-4 px-5 pb-4 font-mono text-[13px] text-ink-3 sm:px-6">
+                <div class="num flex justify-between gap-4 pr-5 pb-4 pl-[calc(1.5rem+52px)] font-mono text-[13px] text-ink-3 sm:pr-6 sm:pl-[calc(1.75rem+52px)]">
                     <span>24 h ago</span>
                     <span class="text-ink-2">now</span>
                 </div>

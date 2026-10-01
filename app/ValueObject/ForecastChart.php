@@ -67,7 +67,7 @@ final readonly class ForecastChart
             median: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['t'])], $horizons)],
             high: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tHigh'])], $horizons)],
             low: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tLow'])], $horizons)],
-            ticks: self::ticks($low, $high, $y),
+            ticks: Trace::ticks($low, $high, $y),
             hours: array_map(fn (array $hour): array => [
                 'x' => $hourX($hour),
                 'y' => $y($hour['t']),
@@ -102,26 +102,5 @@ final readonly class ForecastChart
     public function now(): array
     {
         return $this->median[0];
-    }
-
-    /**
-     * Whole degrees at a step of 1, 2 or 5, whichever gives three to five labels.
-     *
-     * @param  callable(float): float  $y
-     * @return list<Tick>
-     */
-    private static function ticks(float $low, float $high, callable $y): array
-    {
-        foreach ([1, 2, 5, 10] as $step) {
-            $first = (int) ceil($low / $step) * $step;
-            $last = (int) floor($high / $step) * $step;
-            $values = $first > $last ? [] : range($first, $last, $step);
-
-            if (count($values) <= 5) {
-                break;
-            }
-        }
-
-        return array_map(fn (int $value): array => ['value' => (float) $value, 'y' => $y((float) $value)], $values);
     }
 }
