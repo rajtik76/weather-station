@@ -66,7 +66,6 @@ it('picks up a newer forecast on the next poll', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
     $overview = Livewire::test(Overview::class)->assertSee('11:00')->assertDontSee('11:10');
 
-    // Ten minutes on: the station uploads, the service answers, the page polls.
     $this->travel(10)->minutes();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);

@@ -6,13 +6,10 @@ namespace App\Queries;
 
 use App\Models\StationReport;
 
-/**
- * One sensor's newest `station` object, as the firmware sent it. By id, the
- * order they arrived in: a report describes the board when it uploaded.
- */
+/** One sensor's newest `station` object, by id: a report describes the board at upload time. */
 final readonly class LatestStationReport
 {
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     public function find(): ?StationReport

@@ -13,18 +13,16 @@ use App\ValueObject\RainDetector;
 use Illuminate\Support\Facades\DB;
 
 /**
- * How the stored forecasts of one sensor did against what it then measured,
- * per horizon. The truth for "n hours ahead" is the ten-minute window that
- * starts n hours after the forecast's own window, the same pairing the
- * models were trained on; a slot the station stamped twice counts by its
- * first reading, as the service reads it.
+ * Scores one sensor's stored forecasts against what it then measured, per horizon.
+ * Truth for "n hours ahead" is the ten-minute window starting n hours after the
+ * forecast's own window (the models' training pairing); a slot stamped twice
+ * counts by its first reading.
  *
- * A forecast hour is scored when the window n hours on was measured, twice:
- * as shown, and as the base model made it before the station correction
- * (`base`, missing on forecasts stored before the service returned it and
- * on those of a model the service no longer runs). Both are scored on the
- * hours that have a base, so the gap between them is what the correction
- * has learnt from the station's own misses.
+ * Each horizon is scored as shown and as `base` (before station correction), both
+ * on hours that have a base. Skill is how much smaller the miss is than the naive
+ * guess (the forecast window's reading carried n hours on): 0 is no better, below
+ * 0 worse. Misses are summed before dividing; a forecast whose own window went
+ * unmeasured is left out of skill and misses only.
  *
  * The headline is the skill: how much smaller the forecast's miss was than
  * the naive guess's, the reading in the forecast's own window taken as the
@@ -33,13 +31,10 @@ use Illuminate\Support\Facades\DB;
  * weigh as much as a front. A forecast whose own window went unmeasured has
  * no guess to beat and is left out of the skill and the misses only.
  *
- * Beside it, how often the reading landed inside the 10-90 % range - eight
- * in ten is on target, all of them a range drawn too wide - and how wide the
- * range was. Rain, on the same hours, which the correction does not touch:
- * the mean chance given when it rained and when it stayed dry. The balcony
- * has no gauge, so the truth is the microphone (RainDetector) - a window of
- * rain it heard within the n hours - and hours it did not listen through are
- * left out of the rain figures only.
+ * Rain truth is the microphone (RainDetector) within the n hours; hours it did not
+ * listen through are left out of the rain figures only. Days carry the model name
+ * or correction version that took over that day; a null correction is skipped.
+ * `byHour` buckets the shown forecast by the local hour it was for.
  *
  * Each horizon comes over the whole span and by the local day the forecast
  * was made, so the skill reads as a line through time. A day a new model
@@ -75,12 +70,11 @@ final readonly class ForecastAccuracy
 {
     private const int STEP = ChartWindow::STEP_SECONDS;
 
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**
-     * Forecasts issued from $since on; a horizon shows once at least one of
-     * them has come true.
+     * Forecasts issued from $since on; a horizon shows once one has come true.
      *
      * @return list<Score>
      */
@@ -96,7 +90,7 @@ final readonly class ForecastAccuracy
             return [];
         }
 
-        // As far as the longest stored horizon reaches past the newest forecast.
+        // Reach of the longest stored horizon past the newest forecast.
         $longest = (int) $forecasts->flatMap(fn (Forecast $forecast): array => array_column($forecast->data, 'hours'))->max();
         [$temperatures, $heard, $rainy] = $this->windows($since, $forecasts->last()->issued_at + $longest * 3600);
 
@@ -158,9 +152,8 @@ final readonly class ForecastAccuracy
     }
 
     /**
-     * One read of the windows: each slot's temperature in °C, the slots the
-     * microphone listened through, and the ones it heard rain in. A slot
-     * stamped twice keeps its first reading, as the service's grid does.
+     * Per slot: temperature in °C, slots the microphone listened through, slots it heard rain in.
+     * A slot stamped twice keeps its first reading, as the service's grid does.
      *
      * @return array{0: array<int, float>, 1: array<int, true>, 2: array<int, true>}
      */
@@ -207,8 +200,7 @@ final readonly class ForecastAccuracy
     }
 
     /**
-     * Whether rain was heard in the windows after the forecast's up to n hours
-     * on; null unless the microphone heard every one of them.
+     * Null unless the microphone heard every window up to n hours on.
      *
      * @param  array<int, true>  $heard
      * @param  array<int, true>  $rainy

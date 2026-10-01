@@ -11,10 +11,7 @@ enum ChartRange: string
     case Week = 'week';
     case Month = 'month';
 
-    /**
-     * The smallest preset that covers a span; bucket width and label
-     * precision key off it. Anything wider than a month falls to the month.
-     */
+    /** Smallest preset covering a span; anything wider falls to Month. */
     public static function forSpan(int $seconds): self
     {
         foreach (self::cases() as $range) {
@@ -36,11 +33,7 @@ enum ChartRange: string
         };
     }
 
-    /**
-     * Bucket width in seconds. Never finer than the station's ten-minute
-     * cadence, never wider than an hour: a month of hourly means still
-     * shows each day's swing, which is why the window stops at a month.
-     */
+    /** Bucket width in seconds; never finer than the ten-minute cadence, never wider than an hour. */
     public function bucketSeconds(): int
     {
         return match ($this) {

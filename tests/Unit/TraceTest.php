@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\ValueObject\Trace;
 
 it('spans the box and keeps the extremes off its edges', function (): void {
-    // Lowest at the bottom margin, highest at the top one, y growing down.
     expect(Trace::spanning([10.0, 20.0, 15.0])->line())->toBe('M0,92L50,8L100,50');
 });
 

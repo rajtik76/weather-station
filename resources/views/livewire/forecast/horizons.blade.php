@@ -1,6 +1,3 @@
-{{-- Every hour ahead side by side, as shown; the range width beside the base
-     model's, on the hours that have one (Scoreboard), and the same model's
-     skill on the ČHMÚ reference station once it has one. --}}
 @php($rows = $this->scoreboard)
 @php($hasReference = array_filter(array_column($rows, 'referenceSkill'), fn (?float $skill): bool => $skill !== null) !== [])
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="horizons-h">

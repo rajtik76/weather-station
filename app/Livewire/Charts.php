@@ -19,12 +19,7 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 
 /**
- * The charts page: every channel over one window the reader chose, the whole
- * record above it, the newest windows and the board's report below. It holds
- * the window, the zoom and the channel switches; the data comes from the
- * queries. It does not poll: a zoomed reader must not have the strips move.
- *
- * `#[Computed]` methods are declared as properties for Larastan.
+ * The charts page; does not poll, so a zoomed reader's strips hold still.
  *
  * @phpstan-import-type BucketRow from ChartRow
  * @phpstan-import-type NoiseRow from ChartRow
@@ -52,7 +47,7 @@ class Charts extends StationPage
 {
     private const int RECENT_TRANSMISSIONS = 3;
 
-    /** Zoomed window as UTC epochs, null to follow the default. Instants, not preset steps, so a drag can land anywhere. */
+    /** Zoomed window as UTC epochs, null for the default; instants so a drag can land anywhere. */
     #[Url]
     public ?int $from = null;
 
@@ -60,9 +55,7 @@ class Charts extends StationPage
     public ?int $to = null;
 
     /**
-     * Which lines the shared strip draws. Locked so the last-channel guard
-     * cannot be bypassed with `$wire.set()`; not #[Url], so a reload starts
-     * from the defaults.
+     * Locked so `$wire.set()` cannot bypass the last-channel guard; not #[Url].
      *
      * @var array<string, bool>
      */
@@ -110,7 +103,6 @@ class Charts extends StationPage
         $this->channels = ChannelSelection::of($this->channels)->toggle($channel)->toArray();
     }
 
-    /** The template disables that switch; toggleChannel() holds when it does not. */
     public function isLastChannel(string $channel): bool
     {
         return ChannelSelection::of($this->channels)->isLast($channel);
@@ -159,8 +151,6 @@ class Charts extends StationPage
     }
 
     /**
-     * Only for a sensor with noise strips to mark.
-     *
      * @return list<array{0: int, 1: int}>
      */
     #[Computed]
@@ -191,7 +181,7 @@ class Charts extends StationPage
     }
 
     /**
-     * The window in the navigator's own axis units (see LocalTime::wallClockMs).
+     * In the navigator's axis units (LocalTime::wallClockMs).
      *
      * @return array{from: int, to: int}
      */
@@ -248,7 +238,7 @@ class Charts extends StationPage
         return ChartWindow::of($this->from, $this->to);
     }
 
-    /** Sorts, clamps to the present and bounds the span: both ends arrive from the query string and from stray drags. */
+    /** Sorts, clamps to the present and bounds the span; the ends come from the query string. */
     private function normaliseWindow(): void
     {
         $window = ChartWindow::normalised($this->from, $this->to);

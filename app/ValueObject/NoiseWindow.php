@@ -7,8 +7,7 @@ namespace App\ValueObject;
 use UnexpectedValueException;
 
 /**
- * Protocol V3's optional "noise" object: one third-octave spectrum and four
- * summary levels over the same ten-minute window as the V2 fields beside it.
+ * Protocol V3's optional "noise" object: one third-octave spectrum and four summary levels over the ten-minute window.
  */
 final readonly class NoiseWindow
 {

@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * The overview's forecast chart: the last six hours as measured on the left
- * half, the forecast's median and its 10-90 % range on the right, both on one
- * temperature scale. Coordinates are percentages of a 100 × 100 box, y growing
- * down, so the SVG stretches it with `preserveAspectRatio="none"` and HTML
- * labels sit at the same numbers.
+ * The overview's forecast chart: the last six hours measured on the left, the forecast median and 10-90 % range on the right. Coordinates are percentages of a 100 × 100 box, y growing down.
  *
  * @phpstan-import-type Hour from ForecastHours
  *
@@ -18,12 +14,11 @@ namespace App\ValueObject;
  */
 final readonly class ForecastChart
 {
-    /** Seconds of history on the left half; the forecast's six hours fill the right one. */
+    /** Seconds of history on the left half. */
     public const int HISTORY_SECONDS = 6 * 3600;
 
     private const int HORIZON_HOURS = 6;
 
-    /** Room above and below the data, as a share of its range. */
     private const float PADDING = 0.12;
 
     /**
@@ -55,7 +50,7 @@ final readonly class ForecastChart
         $low = min($values) - $span * self::PADDING;
         $high = max($values) + $span * self::PADDING;
         $y = fn (float $value): float => round(($high - $value) / ($high - $low) * 100, 2);
-        // By the hour's own epoch, not its number: a forecast issued a window before the newest reading lands that much left.
+        // By the hour's epoch, not its number: a forecast issued a window early lands left.
         $hourX = fn (array $hour): float => round(50 + ($hour['at'] - $now['at']) / (self::HORIZON_HOURS * 3600) * 50, 2);
         $start = ['x' => 50.0, 'y' => $y($now['t'])];
 
@@ -88,14 +83,13 @@ final readonly class ForecastChart
         return Trace::through($this->median)->line();
     }
 
-    /** Out along the top of the range, back along its bottom. */
     public function band(): string
     {
         return Trace::through($this->high)->band(Trace::through($this->low));
     }
 
     /**
-     * Where "now" sits: the newest reading, at the middle of the box.
+     * The newest reading, at the middle of the box.
      *
      * @return Point
      */

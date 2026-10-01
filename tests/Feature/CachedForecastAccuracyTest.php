@@ -35,8 +35,6 @@ function cachedAccuracyForecast(Sensor $sensor, int $issuedAt): void
 }
 
 /**
- * How many forecasts each horizon scored, keyed by its hours.
- *
  * @return array<int, int>
  */
 function cachedAccuracyCounts(Sensor $sensor): array

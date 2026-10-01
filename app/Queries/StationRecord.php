@@ -9,16 +9,13 @@ use App\ValueObject\Readout;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * One sensor's stored readings as the pages read them outside the charts:
- * the newest one, and a stretch of them in display units. By the station's
- * own stamp throughout - a buffered batch arrives late and says nothing
- * about when the sensor was read.
+ * One sensor's readings outside the charts, by the station's own stamp (a buffered batch arrives late).
  *
  * @phpstan-import-type DayRow from Readout
  */
 final readonly class StationRecord
 {
-    /** With no sensor the id is null and nothing matches, which is the empty page. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     public function newest(): ?Measurement
@@ -27,8 +24,6 @@ final readonly class StationRecord
     }
 
     /**
-     * Every reading from $from on, oldest first, as the day readouts read them.
-     *
      * @return list<DayRow>
      */
     public function readoutsSince(int $from): array
@@ -37,8 +32,6 @@ final readonly class StationRecord
     }
 
     /**
-     * Every reading's temperature from $from on, oldest first, by its stamp.
-     *
      * @return list<array{at: int, t: float}>
      */
     public function temperaturesSince(int $from): array

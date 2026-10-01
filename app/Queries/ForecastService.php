@@ -8,9 +8,7 @@ use App\Models\Forecast;
 use Illuminate\Support\Facades\Http;
 
 /**
- * The forecast service (forecast/serve.py) over HTTP. Holds only the address:
- * what to send and what a failed call means is for the job that asks. Every
- * call throws on an error status; a refused connection throws too.
+ * The forecast service (forecast/serve.py) over HTTP; every call throws on an error status or refused connection.
  *
  * @phpstan-import-type Horizon from Forecast
  * @phpstan-import-type Band from Forecast
@@ -29,8 +27,6 @@ final readonly class ForecastService
     }
 
     /**
-     * The next hours from the readings sent, the station correction included.
-     *
      * @param  array<string, mixed>  $payload
      * @return Issued
      */
@@ -41,7 +37,7 @@ final readonly class ForecastService
     }
 
     /**
-     * The base models alone, for every forecast the readings allow.
+     * Base models alone, for every forecast the readings allow.
      *
      * @param  array<string, mixed>  $payload
      * @return BaseAnswer

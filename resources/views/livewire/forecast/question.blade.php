@@ -1,5 +1,3 @@
-{{-- The page's question and the verdict's three figures: the shown forecast,
-     Verdict::HOURS ahead, over the last month. --}}
 @php($verdict = $this->verdict)
 <section class="page-wrap pt-10 sm:pt-14" aria-labelledby="question-h">
     <div class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-end lg:gap-16">

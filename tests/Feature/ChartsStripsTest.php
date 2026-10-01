@@ -13,7 +13,6 @@ it('keeps the dew point off until the reader asks for it', function (): void {
 
     $component = Livewire::test(Charts::class);
 
-    // Derived, so off by default; the label is the switch.
     expect($component->html())
         ->toContain('data-hidden-channels="[&quot;d&quot;]"')
         ->toContain('aria-pressed="false"');
@@ -32,7 +31,6 @@ it('never lets the shared strip go blank', function (): void {
     $component = Livewire::test(Charts::class)
         ->call('toggleChannel', 't');
 
-    // The last line on cannot be switched off.
     expect($component->html())
         ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"')
         ->toMatch('/toggleChannel\(\'h\'\)"[^>]*disabled/')
@@ -76,14 +74,12 @@ it('draws temperature and humidity on one strip and pressure on another', functi
 
     $html = Livewire::test(Charts::class)->html();
 
-    // Two canvases, three headers.
     expect(substr_count($html, 'data-canvas'))->toBe(2)
         ->and(substr_count($html, 'data-strip="th"'))->toBe(1)
         ->and(substr_count($html, 'data-strip="p"'))->toBe(1)
         ->and($html)->toContain('Temperature, °C')
         ->toContain('Humidity, %')
         ->toContain('Pressure, MSL, hPa')
-        // The tail follows the charts.
         ->and(Str::after($html, 'data-canvas'))->toContain('when they arrived')
         ->and(Str::before($html, 'data-canvas'))->not->toContain('when they arrived');
 });
@@ -107,15 +103,12 @@ it('labels the shared strip with each channel and its unit', function (): void {
 
     $html = Livewire::test(Charts::class)->html();
 
-    // Pinned between the payload and the canvas; the transmissions print the same figures below.
     $headers = Str::before(Str::after($html, 'data-chart-rows'), 'aria-label="Pressure, MSL history"');
 
     expect($headers)->toContain('Temperature, °C')
         ->toContain('Dew point, °C')
         ->toContain('Humidity, %')
-        // Labels only.
         ->not->toContain('21,50')
         ->not->toContain('48,00')
-        // Pressure heads its own strip.
         ->not->toContain('Pressure, MSL');
 });

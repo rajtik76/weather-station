@@ -8,8 +8,7 @@ use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
 /**
- * Protocol V2: a ten-minute window per entry. The mean keeps the V1 keys so
- * the dashboard's SQL aggregates both versions with one expression.
+ * Protocol V2: a ten-minute window per entry. The mean keeps the V1 keys so SQL aggregates both versions with one expression.
  */
 final readonly class MeasurementDataV2 implements MeasurementData
 {
@@ -53,8 +52,7 @@ final readonly class MeasurementDataV2 implements MeasurementData
     }
 
     /**
-     * A minimum above the mean is a firmware fault, not a reading. The
-     * validator replaces the wildcard with the entry's own index.
+     * A minimum above the mean is a firmware fault. The validator replaces the wildcard with the entry's own index.
      */
     public static function validationRules(): array
     {

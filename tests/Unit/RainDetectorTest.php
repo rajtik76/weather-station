@@ -5,9 +5,6 @@ declare(strict_types=1);
 use App\ValueObject\RainDetector;
 
 /**
- * A flat 30 dB spectrum with the 8 kHz band and the shield's 1 kHz band set,
- * and the 1 kHz neighbours at 40 dB.
- *
  * @return list<float|null>
  */
 function rainSpectrum(?float $high, ?float $ring): array

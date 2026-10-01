@@ -43,7 +43,6 @@ it('averages the noise in a bucket as energy', function (): void {
 
     $sensor = Sensor::factory()->create();
 
-    // Two windows in one half-hour bucket of the week view.
     foreach ([[5000, 5500, 4500, 6000, 3000], [6000, 6500, 5500, 7000, 4000]] as $slot => [$laeq, $la10, $la90, $lamax, $band]) {
         Measurement::factory()->for($sensor)->v3()->create([
             'timestamp' => $start->getTimestamp() + $slot * 600,
@@ -67,7 +66,6 @@ it('weights the noise in a bucket by the seconds each window heard', function ()
 
     $sensor = Sensor::factory()->create();
 
-    // A full window at 50 dB, and half a minute after a boot at 80 dB.
     foreach ([[5000, 5500, 4500, 6000, 3000, 600], [8000, 8500, 7500, 9000, 6000, 30]] as $slot => [$laeq, $la10, $la90, $lamax, $band, $seconds]) {
         Measurement::factory()->for($sensor)->v3()->create([
             'timestamp' => $start->getTimestamp() + $slot * 600,
@@ -98,7 +96,6 @@ it('folds the noise strips like the others', function (): void {
 it('marks the waterfall slots the microphone heard rain in', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
-    // On the hour and half past: slot starts at any bucket width the default range picks.
     $rain = now()->subMinutes(60)->getTimestamp();
     $wetRoad = now()->subMinutes(30)->getTimestamp();
 
@@ -106,14 +103,12 @@ it('marks the waterfall slots the microphone heard rain in', function (): void {
         Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $timestamp, 'data' => (string) $window]);
     }
 
-    // The slot's wall-clock ms, as the waterfall's cells are placed, and its epoch.
     Livewire::test(Charts::class)->assertSet('rainSlots', [[LocalTime::of($rain)->wallClockMs(), $rain]]);
 });
 
 it('keeps a shower on a wide bucket among dry windows', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
-    // One bucket of the month view: an hour.
     $hour = now()->subHours(2)->getTimestamp();
 
     // Traffic loud around 1 kHz in the dry windows: averaged in, it would drown the shield's ring.

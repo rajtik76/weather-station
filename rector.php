@@ -18,7 +18,6 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         __DIR__.'/bootstrap/cache',
-        // Config and route files are plain returns/closures; strict_types adds only noise.
         SafeDeclareStrictTypesRector::class => [
             __DIR__.'/bootstrap',
             __DIR__.'/config',

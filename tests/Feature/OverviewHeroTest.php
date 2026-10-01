@@ -44,7 +44,6 @@ it('reads the day\'s extremes off the samples rather than the means', function (
         ->assertSeeInOrder(['Measure · CH1', '21,5'])
         ->assertSeeInOrder(['Min', '1,1 °C', 'Max', '24,9 °C'])
         ->assertSee('min 1,1 · max 24,9 °C')
-        // Humidity's card takes its extremes off the samples too.
         ->assertSeeInOrder(['Humidity', 'min', '44,0', 'max', '93,0']);
 });
 
@@ -107,7 +106,6 @@ it('reads the light into the hero with the day\'s brightest and darkest sample',
         ]);
     }
 
-    // Now, then the 24 h extremes off the samples, not the means.
     $this->get(route('overview'))
         ->assertOk()
         ->assertSeeInOrder(['Light, in the shield', '1 235', 'lx', 'min', '0', 'max', '6 100']);
@@ -137,7 +135,6 @@ it('draws the last day under each readout', function (): void {
 
     $html = Livewire::test(Overview::class)->html();
 
-    // Temperature has the big graticule; humidity and pressure one card each, with a trace.
     expect($html)->toContain('last 24 h · 10 min windows')
         ->and(substr_count($html, '<article'))->toBe(3)
         ->and(substr_count($html, 'stroke-width: 1.6px'))->toBe(3);

@@ -7,16 +7,13 @@ namespace App\ValueObject;
 use App\Queries\ForecastAccuracy;
 
 /**
- * The reference station's skill laid beside the balcony's: per horizon for
- * the verdict table, and per day of the balcony's own score for the skill
- * chart, matched by date, so the two lines share one axis. A day or horizon
- * the reference has no score for is null and draws as a gap.
+ * The reference station's skill beside the balcony's, per horizon and per day matched by date, so both lines share one axis. Missing is null and draws as a gap.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  */
 final readonly class ReferenceSkill
 {
-    /** A day row's skill column, as ForecastAccuracy lays it out. */
+    /** A day row's skill column in ForecastAccuracy. */
     private const int DAY_SKILL = 2;
 
     /**

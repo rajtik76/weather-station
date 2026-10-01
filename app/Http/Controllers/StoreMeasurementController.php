@@ -53,7 +53,7 @@ class StoreMeasurementController extends Controller
         return response()->json(['stored' => $upserted], JsonResponse::HTTP_CREATED);
     }
 
-    /** After the response, so a slow monitor never delays the device; swallowed on failure. */
+    /** After the response so it never delays the device; failures swallowed. */
     private function pingHeartbeat(): void
     {
         $url = config('sensor.heartbeat_url');
@@ -65,7 +65,7 @@ class StoreMeasurementController extends Controller
         dispatch(fn () => rescue(fn () => Http::timeout(5)->get($url)))->afterResponse();
     }
 
-    /** After the response too: the service takes about a second. Unset URL means no forecasts. */
+    /** After the response: the service takes about a second. No URL, no forecasts. */
     private function forecast(Sensor $sensor): void
     {
         $url = config('forecast.url');

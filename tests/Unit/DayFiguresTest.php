@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\ValueObject\DayFigures;
 
 /**
- * One ten-minute entry of the day, extremes a whole degree either side of the mean unless given.
- *
  * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
  */
 function dayEntry(float $temperature, ?float $tMin = null, ?float $tMax = null, ?float $noise = null, ?float $light = null, ?float $lightMin = null, ?float $lightMax = null): array
@@ -36,7 +34,6 @@ it('summarises temperature, humidity and pressure, and leaves out noise and ligh
 it('measures the change against the entry an hour back, six slots before the newest', function (): void {
     $day = array_map(fn (int $step): array => dayEntry(10.0 + $step), range(0, 9));
 
-    // Ten entries, the newest 19 and the one at index 3 is 13.
     expect(DayFigures::of($day)->metrics()['t']['delta'])->toBe(6.0);
 });
 
@@ -67,7 +64,6 @@ it('summarises noise from the entries that heard some', function (): void {
         dayEntry(10.0),
     ])->metrics();
 
-    // The silent entries are not slots: the trace and the extremes are the heard levels only.
     expect($metrics['n'])->toBe(['now' => 52.0, 'delta' => 6.5, 'dayMin' => 45.5, 'dayMax' => 52.0, 'trace' => [45.5, 52.0]]);
 });
 

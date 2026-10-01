@@ -5,14 +5,9 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * Hears rain in a noise window's third-octave spectrum. What the microphone
- * picks up is mostly drops from the roof on the plastic radiation shield:
- * loud at the top of the spectrum, with the shield ringing around 1 kHz.
- * Tyres on a wet road are just as loud at 8 kHz but do not ring the shield,
- * so both conditions are needed. Drizzle too fine to drip is not heard.
- *
- * Calibrated on the rain of 24 September 2026 against the ČHMÚ gauge at
- * Plzeň-Mikulka and the owner's own log; thresholds belong to this mounting.
+ * Hears rain in a noise window's third-octave spectrum: drops on the plastic radiation shield are loud at 8 kHz and ring the shield around 1 kHz.
+ * Tyres on a wet road are as loud at 8 kHz but do not ring it, so both are needed.
+ * Calibrated on the rain of 24 September 2026; thresholds belong to this mounting.
  */
 final readonly class RainDetector
 {
@@ -29,7 +24,7 @@ final readonly class RainDetector
     private const float MIN_RING_DB = 2.0;
 
     /**
-     * The bands as the protocol stores them, in hundredths of dB.
+     * Bands in hundredths of a dB.
      *
      * @param  list<int>  $bands
      */

@@ -1,6 +1,4 @@
-/* The instrument look (mockup B, "Oscilloscope"): every page's shell.
-   Every quantity is a channel with one colour everywhere: CH1 temperature,
-   CH2 humidity, CH3 pressure, CH4 noise, AUX light. */
+/* The instrument look: every page's shell. One colour per channel: CH1 temperature, CH2 humidity, CH3 pressure, CH4 noise, AUX light. */
 
 @theme inline {
     --color-bg: var(--bg);
@@ -111,7 +109,6 @@
     vertical-align: middle;
 }
 
-/* Main navigation: the page shown gets a 2 px rule, like a selected softkey. */
 .instrument .navlink {
     position: relative;
     color: var(--ink-3);
@@ -133,7 +130,6 @@
     border-radius: 2px;
 }
 
-/* The electron: the station's pulse, breathing between uploads. */
 .instrument .electron {
     display: inline-block;
     width: 7px;
@@ -159,7 +155,6 @@
     vector-effect: non-scaling-stroke;
 }
 
-/* Static charts: stretched SVG layers in a plot box, HTML labels around them. */
 .instrument .plot {
     position: absolute;
 }
@@ -223,7 +218,6 @@
     border: 2px solid var(--ch1);
 }
 
-/* The trigger point: the electron at the newest sample, with a slow ring. */
 .instrument .trig {
     position: absolute;
     width: 9px;
@@ -252,7 +246,6 @@
     }
 }
 
-/* Wiring diagram: the station drawn on the screen's graticule. */
 .instrument .sch {
     font-family: "Red Hat Mono", ui-monospace, monospace;
 }
@@ -383,7 +376,6 @@
     }
 }
 
-/* The forecast pipeline: one wire through the steps, the electron travelling along it. */
 .instrument .flow-h {
     position: relative;
     height: 1px;
@@ -417,7 +409,6 @@
     }
 }
 
-/* Segmented control, like a scope's softkeys: the one pressed is inverted. */
 .instrument .seg {
     display: inline-flex;
     border: 1px solid var(--line-2);
@@ -446,7 +437,6 @@
     color: var(--screen);
 }
 
-/* Tables in the measurement style. */
 .instrument .mtable {
     width: 100%;
     border-collapse: collapse;

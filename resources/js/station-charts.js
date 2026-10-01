@@ -29,16 +29,7 @@ echarts.use([
     CanvasRenderer,
 ]);
 
-/**
- * One ECharts instance per strip, all built on one frame (chartOption) with
- * one tooltip and one crosshair across them. A zoom is a server round trip:
- * the selected epochs go to Livewire, which re-queries at the bucket width
- * the new span needs.
- *
- * This file is the wiring: it reads the payload into the shared state, mounts
- * the strips and the navigator, and repaints on a poll, a theme switch or a
- * Livewire navigation. What a strip draws lives in charts/strips/.
- */
+/** Wiring: payload into the shared state, strips and navigator mounted. What a strip draws lives in charts/strips/. */
 
 let mounting = false;
 
@@ -91,8 +82,7 @@ function render(payload, force) {
 
     state.lightRows = parsed(payload.dataset.lightRows);
 
-    // Heard from the same windows as the noise rows, so it changes only with them:
-    // neither paintKey() nor the observer needs it.
+    // Changes only with the noise rows: neither paintKey() nor the observer needs it.
     state.rainSlots = parsed(payload.dataset.noiseRain);
 
     state.stripSteps.clear();
@@ -104,7 +94,7 @@ function render(payload, force) {
 
     mountNavigator(payload, component);
 
-    // Most polls change nothing in this window; do not repaint under the pointer.
+    // Do not repaint under the pointer when a poll changed nothing.
     if (!force && paintKey(payload) === painted) {
         return;
     }
@@ -114,7 +104,7 @@ function render(payload, force) {
     // No mouseout comes for a line that is rebuilt.
     state.hovered = null;
 
-    // The noise strips come and go with the window; a chart whose canvas left the page goes too.
+    // The noise strips come and go with the window.
     charts.forEach((chart, key) => {
         if (!document.body.contains(chart.getDom())) {
             disposeStrip(key);
@@ -163,12 +153,7 @@ function disposeStrip(key) {
     charts.delete(key);
 }
 
-/**
- * Livewire rewrites the payload attributes on every poll. The navigator's
- * are watched too: a zoomed window's channel payload never changes while
- * the record keeps growing. Attributes only, never childList: ECharts
- * appends to the body on setOption and the observer would loop.
- */
+/** Attributes only, never childList: ECharts appends to the body on setOption and the observer would loop. */
 function watchPayload() {
     new MutationObserver(() => mount()).observe(document.body, {
         subtree: true,
@@ -192,5 +177,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("livewire:navigated", () => mount(true));
 window.addEventListener("resize", resizeNavigator);
-// The grid sides are baked into every option; crossing the breakpoint repaints them.
+// Grid sides are baked into every option.
 narrowScreen.addEventListener("change", () => mount(true));

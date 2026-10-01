@@ -7,18 +7,11 @@ const OSM_ATTRIBUTION =
 
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-/** The page's ink, read at paint time so a theme switch repaints the circle. */
 function ink() {
     return token("--ink") || "#18181b";
 }
 
-/**
- * Render the area the station reports from, as a circle and nothing else.
- *
- * There is deliberately no marker at the centre. A dot on the exact
- * coordinates would defeat the circle: the radius stops meaning "somewhere in
- * here" and starts meaning "here, and here is the middle of the ring".
- */
+/** A circle and no marker at the centre: a dot on the exact coordinates would defeat the circle's "somewhere in here". */
 function createStationMap(el) {
     const lat = Number.parseFloat(el.dataset.lat);
     const lng = Number.parseFloat(el.dataset.lng);
@@ -31,7 +24,6 @@ function createStationMap(el) {
     const map = L.map(el, {
         center: [lat, lng],
         zoom: 13,
-        // A static picture: the circle is the whole message, nothing to explore.
         dragging: false,
         touchZoom: false,
         doubleClickZoom: false,

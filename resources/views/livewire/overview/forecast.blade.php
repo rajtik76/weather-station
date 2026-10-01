@@ -1,6 +1,3 @@
-{{-- The measured hours run into the forecast's median and its 10-90 % range;
-     the verdict beside it is the last 30 days, six hours ahead. Both panels
-     share one height: the chart column stretches, its chart area takes the rest. --}}
 @php($chart = $this->forecastChart)
 @php($verdict = $this->verdict)
 @php($drop = '<svg class="shrink-0 text-ch2" width="10" height="13" viewBox="0 0 10 13" aria-hidden="true"><path d="M5 .8C5 .8 1 5.8 1 8.6a4 4 0 0 0 8 0C9 5.8 5 .8 5 .8Z" fill="currentColor" /></svg>')

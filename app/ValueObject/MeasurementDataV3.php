@@ -8,8 +8,7 @@ use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
 /**
- * Protocol V3: a V2 window plus an optional "noise" object, present only
- * when the microphone produced data for that ten minutes.
+ * Protocol V3: a V2 window plus an optional "noise" object.
  */
 final readonly class MeasurementDataV3 implements CarriesNoise
 {
@@ -65,8 +64,7 @@ final readonly class MeasurementDataV3 implements CarriesNoise
     }
 
     /**
-     * The V2 rules plus the noise object, optional as a whole and complete
-     * once present - the same shape as the "station" report.
+     * The V2 rules plus the noise object, optional as a whole, complete once present.
      */
     public static function validationRules(): array
     {

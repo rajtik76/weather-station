@@ -7,31 +7,23 @@ namespace App\ValueObject;
 use App\Enums\ChartRange;
 
 /**
- * The span the strips show, as UTC epochs. Both ends of a zoom arrive from
- * the query string and from drags that may have been stray clicks, so they
- * go through normalised() before they are kept.
+ * The span the strips show, as UTC epochs. Ends arrive from the query string, so they go through normalised().
  */
 final readonly class ChartWindow
 {
-    /** What the page opens on while nothing is zoomed. */
     public const ChartRange DEFAULT_RANGE = ChartRange::Week;
 
-    /** Reporting interval of the station. */
+    /** Reporting interval, seconds. */
     public const int STEP_SECONDS = 600;
 
-    /** Four readings; fewer would not make a line. */
+    /** Four readings: fewer make no line. */
     private const int MIN_SPAN_SECONDS = 4 * self::STEP_SECONDS;
 
-    /**
-     * A month. A strip is ~1000 px wide; hourly means over a month still
-     * show a day's swing, anything wider averages it away. The navigator
-     * spans the whole record regardless.
-     */
+    /** A month: hourly means over it still show a day's swing, wider averages it away. */
     private const int MAX_SPAN_SECONDS = 2592000;
 
     private function __construct(public int $from, public int $to) {}
 
-    /** The zoom where it is set, the default range up to now where it is not. */
     public static function of(?int $from, ?int $to): self
     {
         $now = now()->getTimestamp();
@@ -40,9 +32,7 @@ final readonly class ChartWindow
     }
 
     /**
-     * Ordered, at least MIN_SPAN, at most MAX_SPAN, not in the future. Too
-     * wide is clipped from the front: the newer end is the one chosen. Null
-     * unless both ends are given, so the default keeps following now.
+     * Ordered, MIN_SPAN to MAX_SPAN, not in the future; too wide is clipped from the front. Null unless both ends are given.
      */
     public static function normalised(?int $from, ?int $to): ?self
     {
@@ -64,7 +54,7 @@ final readonly class ChartWindow
         return $this->to - $this->from;
     }
 
-    /** The preset the span falls to; bucket width and label precision key off it. */
+    /** Bucket width and label precision key off it. */
     public function range(): ChartRange
     {
         return ChartRange::forSpan($this->span());

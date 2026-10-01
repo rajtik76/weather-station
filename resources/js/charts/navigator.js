@@ -6,13 +6,12 @@ import { state } from "./state";
 import { CHART_FONT, basePalette, colourFor, isDark } from "./theme";
 import { blockWheel } from "./zoom";
 
-/** The navigator's chart, null until it is first mounted. */
 let overviewChart = null;
 
 /** True while we position the slider ourselves, so its datazoom echo is not taken for a drag. */
 let settingWindow = false;
 
-/** The window the page last showed, as epochs; a slider that lands back on it needs no query. */
+/** Epochs; a slider that lands back on it needs no query. */
 let applied = { from: null, to: null };
 
 function navigatorOption(from, to) {
@@ -23,14 +22,11 @@ function navigatorOption(from, to) {
         textStyle: { fontFamily: CHART_FONT },
         useUTC: true,
         grid: { ...gridSides(), top: 4, height: 44 },
-        // Two x axes: the slider narrows the one it drives to the window, so
-        // that one is hidden and a second, pinned to the record's ends like
-        // the shadow, carries the labels and the event lines.
+        // The slider narrows the axis it drives, so that one is hidden and a second, pinned to the record's ends, carries labels and event lines.
         xAxis: [
             { type: "time", show: false },
             {
                 type: "time",
-                // A second x axis defaults to the opposite side.
                 position: "bottom",
                 min: "dataMin",
                 max: "dataMax",
@@ -83,7 +79,6 @@ function navigatorOption(from, to) {
                 lineStyle: { width: 0 },
                 data: state.overview.map((row) => [row[COLUMN.time], row[COLUMN.t]]),
             },
-            // The same rows on the unzoomed axis, so labels and event lines span what the shadow does.
             {
                 type: "line",
                 xAxisIndex: 1,
@@ -113,7 +108,6 @@ function bindNavigator(component) {
 
         clearTimeout(pending);
 
-        // Only the resting place is worth a query.
         pending = setTimeout(() => {
             const zoom = overviewChart.getOption().dataZoom?.[0];
 
@@ -128,7 +122,6 @@ function bindNavigator(component) {
                 return;
             }
 
-            // Landed where it started.
             const unchanged =
                 applied.from !== null &&
                 Math.abs(from - applied.from) < 60 &&

@@ -26,11 +26,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * What every page of the redesign reads about the selected station: its
- * newest reading for the header, the newest forecast with the chart around
- * it, and how the last month of forecasts scored.
- *
- * `#[Computed]` methods are declared as properties for Larastan.
+ * What every page reads about the selected station.
  *
  * @phpstan-import-type Hour from ForecastHours as ForecastHour
  * @phpstan-import-type Answer from Verdict
@@ -54,10 +50,10 @@ abstract class StationPage extends Component
 {
     private const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
-    /** How far back the forecasts are scored against what came. */
+    /** Days of forecasts scored. */
     public const int ACCURACY_DAYS = 30;
 
-    /** Sensor slug, null for the first registered. Slug rather than id so the link survives a reseed. */
+    /** Slug rather than id so links survive a reseed; null picks the first sensor. */
     #[Url]
     public ?string $sensor = null;
 
@@ -72,8 +68,6 @@ abstract class StationPage extends Component
     }
 
     /**
-     * The stations the picker offers (Stations).
-     *
      * @return Collection<int, Sensor>
      */
     #[Computed]
@@ -88,7 +82,6 @@ abstract class StationPage extends Component
         return $this->sensors->firstWhere('slug', $this->sensor) ?? $this->sensors->first();
     }
 
-    /** The header's picker shows only once there is a choice. */
     #[Computed]
     public function hasSensorChoice(): bool
     {
@@ -96,8 +89,7 @@ abstract class StationPage extends Component
     }
 
     /**
-     * The selected sensor carried into a link to another page, nothing while
-     * there is only one, so the default keeps a clean URL.
+     * Empty with a single sensor to keep URLs clean.
      *
      * @return array{sensor?: string}
      */
@@ -106,7 +98,7 @@ abstract class StationPage extends Component
         return $this->hasSensorChoice && $this->sensor !== null ? ['sensor' => $this->sensor] : [];
     }
 
-    /** By the station's own stamp: a buffered batch arrives late and says nothing about when the sensor was read. */
+    /** By the station's own stamp: a buffered batch arrives late. */
     #[Computed]
     public function newestMeasurement(): ?Measurement
     {
@@ -127,7 +119,7 @@ abstract class StationPage extends Component
     }
 
     /**
-     * The newest forecast, only while it starts from the station's current record.
+     * Only while the forecast starts from the station's newest reading.
      *
      * @return array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null
      */
@@ -153,7 +145,6 @@ abstract class StationPage extends Component
         ];
     }
 
-    /** The last six hours as measured, then the forecast from the newest reading on. */
     #[Computed]
     public function forecastChart(): ?ForecastChart
     {
@@ -170,8 +161,6 @@ abstract class StationPage extends Component
     }
 
     /**
-     * The last month's forecasts scored against the readings that followed, per horizon.
-     *
      * @return list<Score>
      */
     #[Computed]
@@ -190,8 +179,6 @@ abstract class StationPage extends Component
     }
 
     /**
-     * The newest `station` object of the selected sensor, as the firmware sent it.
-     *
      * @return Report|null
      */
     #[Computed]
@@ -202,20 +189,20 @@ abstract class StationPage extends Component
         return $report instanceof StationReport ? BoardReport::of($report)->toArray() : null;
     }
 
-    /** The footer's copyright year, by the station's clock: on New Year's Eve UTC is an hour behind. */
+    /** Local year: UTC lags an hour on New Year's Eve. */
     #[Computed]
     public function currentYear(): int
     {
         return now(LocalTime::TIMEZONE)->year;
     }
 
-    /** The selected sensor's readings; with no sensor the id is null and nothing matches, which is the empty page. */
+    /** Null id matches nothing. */
     protected function record(): StationRecord
     {
         return new StationRecord($this->selectedSensor?->id);
     }
 
-    /** The picker is bound to the property, so it must hold a real slug or the select shows blank. */
+    /** The picker is bound to the property: it must hold a real slug or the select shows blank. */
     private function normaliseSensor(): void
     {
         unset($this->selectedSensor);

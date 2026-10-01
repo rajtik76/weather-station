@@ -11,10 +11,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * The `station` object of one upload, one row per batch.
+ * The `station` object of one upload.
  *
  * @property int $sensor_id
- * @property array<string, mixed> $data The `station` object as the firmware sent it
+ * @property array<string, mixed> $data
  */
 #[Fillable(['sensor_id', 'data'])]
 class StationReport extends Model

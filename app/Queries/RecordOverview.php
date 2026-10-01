@@ -9,12 +9,8 @@ use App\ValueObject\ChartRow;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * One sensor's whole record for the navigator, thinned to one real reading
- * per six hours once it is large enough to need it - it shows where the
- * window sits, and averaging would be work for nothing. The newest reading
- * always stays: the slider's axis ends on the last row, and without it the
- * right handle stops at the first reading of the newest bucket, up to six
- * hours short of now.
+ * The whole record for the navigator, thinned to one reading per six hours when large.
+ * The newest reading always stays, or the slider's right handle stops up to six hours short.
  *
  * @phpstan-import-type ReadingRow from ChartRow
  */
@@ -22,15 +18,14 @@ final readonly class RecordOverview
 {
     private const int BUCKET_SECONDS = 21600;
 
-    /** Below this the record is drawn whole: shorter than one bucket it would thin to a single point. */
+    /** Below this the record is drawn whole. */
     private const int UNTHINNED_ROWS = 1500;
 
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**
-     * `$newest` is the newest reading's stamp the page already holds, kept
-     * whatever bucket it falls in.
+     * `$newest` is the newest reading's stamp, kept whatever bucket it falls in.
      *
      * @return list<ReadingRow>
      */

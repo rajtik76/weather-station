@@ -9,9 +9,7 @@ use JsonSerializable;
 use Stringable;
 
 /**
- * One stored entry in protocol units. Every version exposes a value, its
- * extremes and a sample count per channel; a single V1 reading is its own
- * min and max with one sample, so versions aggregate alike.
+ * One stored entry in protocol units: a value, extremes and sample count per channel, in every version.
  */
 interface MeasurementData extends JsonSerializable, Stringable
 {
@@ -48,7 +46,7 @@ interface MeasurementData extends JsonSerializable, Stringable
     public static function validationRules(): array;
 
     /**
-     * Widened for V3's nested "noise" object, which mixes scalar levels with a "bands" list.
+     * Widened for V3's nested "noise" object.
      *
      * @return array<string, int|array<string, int|list<int>>>
      */

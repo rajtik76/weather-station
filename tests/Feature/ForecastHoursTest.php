@@ -7,8 +7,6 @@ use App\ValueObject\ForecastHours;
 use Illuminate\Support\Facades\Date;
 
 /**
- * One stored horizon around the given median, a degree either side.
- *
  * @return array<string, mixed>
  */
 function forecastHoursHorizon(int $hours, float $mid, float $rain = 0.0): array

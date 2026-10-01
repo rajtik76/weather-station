@@ -16,8 +16,6 @@ use function Pest\Laravel\freezeTime;
 use function Pest\Laravel\postJson;
 
 /**
- * A noise object the firmware would send, one field overridden.
- *
  * @param  array<string, int|list<int>>  $overrides
  * @return array<string, int|list<int>>
  */

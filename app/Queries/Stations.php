@@ -7,11 +7,7 @@ namespace App\Queries;
 use App\Models\Sensor;
 use Illuminate\Database\Eloquent\Collection;
 
-/**
- * The stations a page can show, for its sensor picker: every sensor but the
- * ČHMÚ reference (Sensor::stations()), oldest registration first, so the
- * original station stays the default.
- */
+/** Stations for the picker, oldest first so the original stays the default. */
 final readonly class Stations
 {
     /**

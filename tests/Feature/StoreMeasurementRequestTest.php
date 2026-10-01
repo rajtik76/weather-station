@@ -194,8 +194,6 @@ describe('measurements', function (): void {
 
 describe('protocol V2', function (): void {
     /**
-     * A window the firmware would send, one field overridden.
-     *
      * @param  array<string, int|string|null>  $overrides
      * @return array<string, mixed>
      */
@@ -279,8 +277,6 @@ describe('protocol V2', function (): void {
 
 describe('protocol V3', function (): void {
     /**
-     * A window the firmware would send under V3, one field overridden.
-     *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
@@ -302,8 +298,6 @@ describe('protocol V3', function (): void {
     }
 
     /**
-     * A noise object the firmware would send, one field overridden.
-     *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
@@ -376,8 +370,6 @@ describe('protocol V3', function (): void {
 
 describe('protocol V4', function (): void {
     /**
-     * A window the firmware would send under V4, one field overridden.
-     *
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */

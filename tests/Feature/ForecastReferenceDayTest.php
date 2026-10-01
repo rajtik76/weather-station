@@ -20,8 +20,6 @@ beforeEach(function (): void {
 });
 
 /**
- * Two windows of a ČHMÚ day file, 00:00 and 00:10 UTC, 12 °C and rising by a tenth.
- *
  * @return array<string, mixed>
  */
 function referenceDayFile(string $date): array
@@ -38,8 +36,6 @@ function referenceDayFile(string $date): array
 }
 
 /**
- * ČHMÚ publishing the given days, and the service answering /base for the given windows.
- *
  * @param  list<string>  $published  Y-m-d
  * @param  list<int>  $issuedAt
  */
@@ -59,8 +55,6 @@ function fakeReference(array $published, array $issuedAt): void
 }
 
 /**
- * What /base with full answers for the given windows: one hour ahead, 12 °C.
- *
  * @param  list<int>  $issuedAt
  * @return array<string, mixed>
  */
@@ -93,7 +87,7 @@ it('forecasts a day of the reference station from it and the two days before', f
     expect(dispatch_sync(new ForecastReferenceDay($day)))->toBe(2);
 
     $reference = Sensor::query()->where('name', 'Plzeň-Mikulka (ČHMÚ)')->sole();
-    // Stored as a station would send them: hundredths and pascals.
+    // As a station sends them: hundredths and pascals.
     $first = Measurement::query()->where('sensor_id', $reference->id)->orderBy('timestamp')->first();
     expect(Measurement::query()->where('sensor_id', $reference->id)->count())->toBe(6)
         ->and($first?->timestamp)->toBe(CarbonImmutable::parse('2026-09-28', 'UTC')->getTimestamp())
@@ -131,7 +125,7 @@ it('replaces a day run again instead of adding to it', function (): void {
 
 it('drops what ČHMÚ took back when a day is run again', function (): void {
     $day = CarbonImmutable::parse('2026-09-30', 'UTC');
-    // The next night 00:10 is gone from the 30th, and the service answers one window less.
+    // 00:10 is gone from the 30th, so the service answers one window less.
     $revised = referenceDayFile('2026-09-30');
     $revised['data']['data']['values'] = array_values(array_filter(
         $revised['data']['data']['values'],

@@ -19,7 +19,7 @@ class AuthenticateSensor
         $expected = config('sensor.api_token');
         $provided = $request->bearerToken();
 
-        // Missing configuration must deny, never wave everyone through.
+        // Unset token must deny, not wave everyone through.
         if (! is_string($expected) || $expected === '' || $provided === null) {
             return $this->unauthorized();
         }

@@ -34,7 +34,7 @@ it('shows the current readings and polls for new ones', function (): void {
         ->assertSee('wire:poll.60s', false)
         ->assertSeeInOrder(['Measure · CH1', '21,5'])
         ->assertSeeInOrder(['Humidity', '48,0'])
-        // 97 389 Pa at 345 m and 21,50 °C reduces to 1013,5 hPa.
+        // 97 389 Pa at 345 m, 21,50 °C -> 1013,5 hPa.
         ->assertSeeInOrder(['Pressure, MSL', '1 013,5'])
         ->assertDontSee('Waiting for the first reading');
 });
@@ -60,7 +60,7 @@ it('draws the next six hours with their range and rain chance', function (): voi
 
     $this->get(route('overview'))
         ->assertOk()
-        // 08:00 UTC is 10:00 in Prague in September.
+        // CEST: 08:00 UTC is 10:00.
         ->assertSeeInOrder(['11:00', '13,8', '12,3-15,3', '4 %', 'rain'])
         ->assertSeeInOrder(['12:00', '14,2', '12,7-15,7', '50 %', 'rain'])
         ->assertDontSee('No forecast from the current readings yet');

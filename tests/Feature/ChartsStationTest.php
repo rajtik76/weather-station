@@ -63,7 +63,6 @@ it('lists the last three transmissions as the station sent them', function (): v
     $this->get(route('charts'))
         ->assertOk()
         ->assertSee('Last 3 windows')
-        // Fixed-point integers as received.
         ->assertSee('"temperature":2134')
         ->assertSee('5812')
         ->assertSee('97389')
@@ -74,7 +73,6 @@ it('lists the last three transmissions as the station sent them', function (): v
         // Arrival time, Prague: 11:55 UTC is 12:55 in March.
         ->assertSee('15.3.2026 12:55')
         ->assertDontSee('15.3.2026 11:50')
-        // The oldest of four is off the tail.
         ->assertDontSee('1901');
 });
 
@@ -92,7 +90,6 @@ it('lists a V2 packet under its own keys', function (): void {
         ),
     ]);
 
-    // Extremes and sample count beside the mean.
     $this->get(route('charts'))
         ->assertOk()
         ->assertSee('"temperature_min":2101')
@@ -112,7 +109,6 @@ it('dates the tail by arrival, not by the measurement', function (): void {
 
     $html = Livewire::test(Charts::class)->html();
 
-    // The tail reads the arrival: 11:58 UTC, 12:58 in Prague.
     expect(Str::after($html, 'aria-label="Last transmissions"'))
         ->toContain('15.3.2026 12:58')
         ->not->toContain('15.3.2026 12:30');

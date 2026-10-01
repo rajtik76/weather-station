@@ -16,12 +16,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 
 /**
- * The forecast page: how the model works, the forecast now, and how the last
- * month of forecasts scored, by horizon and in detail for one of them, beside
- * the same model on the ČHMÚ reference station (ForecastReferenceDay). It does
- * not poll - the scores move once per upload and the reader is studying them.
- *
- * `#[Computed]` methods are declared as properties for Larastan.
+ * The forecast page; does not poll, so the reader's scores hold still.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  * @phpstan-import-type Row from Scoreboard
@@ -36,13 +31,10 @@ use Livewire\Attributes\Title;
 #[Title('Balcony Station Forecast')]
 class Forecast extends StationPage
 {
-    /**
-     * The horizon the detail charts read, in hours. Livewire state, not #[Url],
-     * so a reload starts from the verdict's own horizon.
-     */
+    /** Detail charts' horizon in hours; not #[Url], so a reload starts from the verdict's. */
     public int $horizon = Verdict::HOURS;
 
-    /** Every render: the chosen horizon may not have come true yet. */
+    /** Re-checked every render: the chosen horizon may not have come true yet. */
     public function render(): View
     {
         $shown = $this->score['hours'] ?? null;
@@ -64,7 +56,7 @@ class Forecast extends StationPage
     }
 
     /**
-     * The reference station's month, scored like the balcony's; empty until its job has run.
+     * Empty until the reference job has run.
      *
      * @return list<Score>
      */
@@ -77,8 +69,6 @@ class Forecast extends StationPage
     }
 
     /**
-     * The reference's skill on each day of the chosen horizon's chart.
-     *
      * @return list<?float>
      */
     #[Computed]
@@ -88,8 +78,7 @@ class Forecast extends StationPage
     }
 
     /**
-     * The chosen horizon's score, or the longest one scored while it has not
-     * come true yet; render() then moves the choice onto it.
+     * The chosen horizon's score, else the longest scored; render() moves the choice onto it.
      *
      * @return Score|null
      */

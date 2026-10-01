@@ -44,9 +44,6 @@ class MeasurementFactory extends Factory
         ];
     }
 
-    /**
-     * A V2 window: a mean per channel with the extremes around it.
-     */
     public function v2(): static
     {
         return $this->state(function (): array {
@@ -72,10 +69,6 @@ class MeasurementFactory extends Factory
         });
     }
 
-    /**
-     * A V3 window, same shape as V2. No "noise" object: firmware sends one
-     * only when the microphone produced data for that ten minutes.
-     */
     public function v3(): static
     {
         return $this->state(function (): array {
@@ -101,10 +94,6 @@ class MeasurementFactory extends Factory
         });
     }
 
-    /**
-     * A V4 window with light behind the shield, from night to a bright
-     * morning. No "noise" object, as in v3().
-     */
     public function v4(): static
     {
         return $this->state(function (): array {

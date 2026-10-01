@@ -1,5 +1,3 @@
-{{-- What a single station cannot see (forecast/README.md), and the models and
-     corrections that ran here, read off the stored forecasts (ForecastChanges). --}}
 @php($changes = $this->changes)
 <section class="page-wrap mt-20 grid gap-14 sm:mt-24 lg:grid-cols-2 lg:gap-16">
     <div aria-labelledby="limits-h">

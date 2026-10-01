@@ -1,7 +1,4 @@
-{{-- How the station is wired, sensors to this page. The beads are data on
-     the move in their channel's colour: SHT4x sends CH1 and CH2 back to back,
-     every I2C bead runs at one speed and they are staggered so none overlaps,
-     and one bead leaves the ESP32 per upload. SMIL, hidden under reduced motion. --}}
+{{-- SMIL, hidden under reduced motion. --}}
 @php($report = $this->stationReport)
 <figure class="m-0 mt-12">
     <div class="overflow-x-auto rounded-[10px] border border-line">
@@ -94,7 +91,7 @@
           <text x="814" y="106" class="t-fn">Livewire, this page</text>
           <path d="M960 245H970V92H962" class="sch-wire" marker-end="url(#sch-arrow)"/>
 
-          <!-- Electrons: one bead per reading. On I2C they all move at the same speed, spaced so none overlaps; one bead leaves the ESP32 per upload -->
+          <!-- Electrons: one bead per reading; I2C beads share one speed and are staggered, one bead leaves the ESP32 per upload -->
           <g class="bead b-ch1"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-0.2s" dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
           <g class="bead b-ch2"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
           <g class="bead b-aux"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.6s" dur="3s" repeatCount="indefinite" path="M224 190H262V145H540"/></g>

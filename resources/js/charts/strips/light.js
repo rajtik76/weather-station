@@ -3,10 +3,7 @@ import { LIGHT_COLUMN } from "../rows";
 import { state } from "../state";
 import { BAND_OPACITY, colourFor } from "../theme";
 
-/**
- * A log axis has no zero, and a dark night reads 0 lx. Anything below this
- * is drawn on it; the tooltip still prints the value as measured.
- */
+/** A log axis has no zero and a dark night reads 0 lx, so lower values are drawn here; the tooltip prints the measured one. */
 const LIGHT_FLOOR = 0.01;
 
 function lightColour() {
@@ -33,10 +30,7 @@ function floorLux(value) {
     return value === null ? null : Math.max(value, LIGHT_FLOOR);
 }
 
-/**
- * The mean over the min-max band on a log axis: dusk and noon are four
- * orders apart, and on a linear axis every night would be one flat line.
- */
+/** Log axis: dusk and noon are four orders apart, on a linear one every night is flat. */
 function lightOption(strip, colours) {
     const colour = lightColour();
     const time = (row) => row[LIGHT_COLUMN.time];
@@ -88,7 +82,6 @@ function lightOption(strip, colours) {
     };
 }
 
-/** The light strip: the mean over its min-max band on a log axis. */
 export const lightStrip = {
     key: "light",
     option: lightOption,

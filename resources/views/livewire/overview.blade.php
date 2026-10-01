@@ -1,5 +1,3 @@
-{{-- The only page that polls: one upload per ten minutes does not need a
-     websocket, and the charts pages hold a window the reader chose. --}}
 <div wire:poll.60s class="instrument min-h-screen">
     @include('livewire.overview.header')
 

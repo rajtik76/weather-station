@@ -7,10 +7,7 @@ namespace App\ValueObject;
 use App\Queries\ForecastAccuracy;
 
 /**
- * The page's answer: the forecast as shown, six hours ahead, against the
- * naive guess, and every horizon's skill beside it so the six is not the
- * only number picked. Independent of the accuracy panel's horizon choice,
- * so the headline never changes under the reader's pointer.
+ * The page's answer: six hours ahead against the naive guess, plus every horizon's skill. Independent of the accuracy panel's horizon choice.
  *
  * @phpstan-type Answer array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}
  *
@@ -18,10 +15,10 @@ use App\Queries\ForecastAccuracy;
  */
 final readonly class Verdict
 {
-    /** The horizon the page's question asks about; the verdict falls back to the longest scored until it has come true. */
+    /** The verdict falls back to the longest scored horizon until this one has come true. */
     public const int HOURS = 6;
 
-    /** A day of forecasts, one per ten minutes: fewer and the verdict says it is too early. */
+    /** A day of forecasts, one per ten minutes; fewer is "too early". */
     private const int MIN_FORECASTS = 144;
 
     /**

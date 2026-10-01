@@ -5,15 +5,11 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * A series laid out as SVG path data in a 100 × 100 box, y growing down: the
- * traces the server draws itself: the readout sparklines and the forecast
- * chart's lines and range. The SVG stretches the box with
- * `preserveAspectRatio="none"`, so the coordinates double as percentages for
- * anything positioned over it.
+ * A series as SVG path data in a 100 × 100 box, y growing down; the coordinates double as percentages for anything positioned over it.
  */
 final readonly class Trace
 {
-    /** Room above and below the data, in box units, so a line never runs along an edge. */
+    /** Padding above and below the data, in box units. */
     private const float MARGIN = 8.0;
 
     /**
@@ -22,8 +18,7 @@ final readonly class Trace
     private function __construct(public array $points) {}
 
     /**
-     * Evenly from edge to edge, scaled to the values' own extremes unless
-     * `$low`/`$high` are given. A single value draws as a flat line.
+     * Scaled to the values' own extremes unless `$low`/`$high` are given.
      *
      * @param  non-empty-list<float>  $values
      */
@@ -40,8 +35,6 @@ final readonly class Trace
     }
 
     /**
-     * Points already laid out in the box, for a chart that places them itself.
-     *
      * @param  non-empty-list<array{x: float, y: float}>  $points
      */
     public static function through(array $points): self
@@ -58,7 +51,6 @@ final readonly class Trace
         ));
     }
 
-    /** The region between this line and a lower one over the same x positions. */
     public function band(self $lower): string
     {
         $back = array_map(
@@ -88,8 +80,7 @@ final readonly class Trace
     }
 
     /**
-     * Round values at the first of `$steps` that gives one to five labels,
-     * or the coarsest one when none does.
+     * Round values at the first of `$steps` that gives one to five labels, else the coarsest.
      *
      * @param  callable(float): float  $y  a value's place in the box
      * @param  non-empty-list<float>  $steps  fine to coarse
@@ -123,7 +114,7 @@ final readonly class Trace
         return self::level($value, $low, $high);
     }
 
-    /** Where a value sits in the box, y growing down. A flat series sits in the middle rather than dividing by zero. */
+    /** A flat series sits in the middle rather than dividing by zero. */
     private static function level(float $value, float $low, float $high): float
     {
         $share = $high > $low ? ($value - $low) / ($high - $low) : 0.5;

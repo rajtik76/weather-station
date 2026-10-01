@@ -1,9 +1,6 @@
 import { state } from "./state";
 
-/**
- * Row layout from the server: wall-clock ms, °C, %, hPa, dew point, epoch,
- * then a min-max pair per channel on strip rows only. A missed slot is nulls.
- */
+/** Wall-clock ms, °C, %, hPa, dew point, epoch, then a min-max pair per channel (strip rows only). A missed slot is nulls. */
 export const COLUMN = {
     time: 0,
     t: 1,
@@ -19,16 +16,13 @@ export const COLUMN = {
     pMax: 11,
 };
 
-/**
- * Noise row from the server: wall-clock ms, epoch, LAeq, LA10, LA90, LAmax,
- * then the 26 third-octave bands, all dB. A slot without noise is nulls.
- */
+/** Wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, then 26 third-octave bands, all dB. A slot without noise is nulls. */
 export const NOISE_COLUMN = { time: 0, epoch: 1, laeq: 2, la10: 3, la90: 4, lamax: 5, band: 6 };
 
-/** Light row from the server: wall-clock ms, epoch, mean, min, max, all lx. A slot without light is nulls. */
+/** Wall-clock ms, epoch, mean, min, max, all lx. A slot without light is nulls. */
 export const LIGHT_COLUMN = { time: 0, epoch: 1, mean: 2, min: 3, max: 4 };
 
-/** Event row: wall-clock ms, title, CSS colour or null. */
+/** Wall-clock ms, title, CSS colour or null. */
 export const EVENT = { time: 0, title: 1, colour: 2 };
 
 export function nearestRow(list, time, column = COLUMN.time) {
@@ -59,7 +53,7 @@ export function rowAt(time) {
     return nearestRow(state.rows, time);
 }
 
-/** Wall-clock ms back to a real epoch. The offset changes with DST, so it is read off the nearest row, which carries both. */
+/** The DST offset is read off the nearest row, which carries both clocks. */
 export function epochFromWallMs(list, milliseconds) {
     const row = nearestRow(list, milliseconds);
 
@@ -72,7 +66,7 @@ export function epochFromWallMs(list, milliseconds) {
     return Math.round(milliseconds / 1000) - offsetSeconds;
 }
 
-/** Median spacing between rows, to tell a gap from a step. Read off the rows because the bucket width varies with the window. */
+/** Median spacing between rows; the bucket width varies with the window. */
 export function typicalStep(list, column = COLUMN.time) {
     if (list.length < 2) {
         return 0;

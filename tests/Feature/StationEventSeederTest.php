@@ -22,7 +22,6 @@ it('seeds events every seeded station marks in its default week', function (stri
     expect($times)->toHaveCount(6)
         ->and($times->first())->toBeGreaterThan($newest - 7 * 86_400)
         ->and($times->last())->toBeLessThanOrEqual($newest)
-        // Two side by side, so the chart shows how neighbouring icons sit.
         ->and($times->sliding(2)->contains(fn (Collection $pair): bool => $pair->last() - $pair->first() <= 3600))->toBeTrue();
 
     /** @var Charts $charts */

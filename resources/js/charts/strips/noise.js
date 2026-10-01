@@ -16,7 +16,6 @@ function noiseLines(row) {
     ];
 }
 
-/** LAeq over the LA90 to LA10 band - the level most of the window sat in - with LAmax dotted above. */
 function noiseOption(strip, colours) {
     const colour = noiseColour();
     const time = (row) => row[NOISE_COLUMN.time];
@@ -72,7 +71,6 @@ function noiseOption(strip, colours) {
     };
 }
 
-/** The noise strip: LAeq over the LA90 to LA10 band, LAmax dotted. */
 export const noiseStrip = {
     key: "noise",
     option: noiseOption,

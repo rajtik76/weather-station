@@ -7,8 +7,6 @@ use App\ValueObject\ForecastChart;
 const CHART_NOW = 1_790_000_000;
 
 /**
- * An hour of a forecast issued at $issuedAt, by default from the newest reading.
- *
  * @return array{hours: int, at: int, clock: string, t: float, tLow: float, tHigh: float, rain: int}
  */
 function chartHour(int $hours, float $t, float $low, float $high, int $rain = 5, int $issuedAt = CHART_NOW): array
@@ -46,7 +44,6 @@ it('starts the median and its range at the newest reading', function (): void {
 it('lays every line on one scale, warmer higher up', function (): void {
     $chart = sampleChart();
 
-    // 16 °C, the top of the range, sits above the 14 °C now, and 10 °C below it.
     expect($chart->high[1]['y'])->toBeLessThan($chart->now()['y'])
         ->and($chart->measured[0]['y'])->toBeGreaterThan($chart->now()['y'])
         ->and($chart->measured[0]['y'])->toBe($chart->low[2]['y']);
@@ -76,7 +73,7 @@ it('carries each hour\'s clock, median and rain chance for the labels', function
 });
 
 it('places each hour by its own time when the forecast started before the newest reading', function (): void {
-    // Issued half an hour before the newest reading: one hour ahead is half an hour from now.
+    // Issued half an hour before the newest reading.
     $chart = ForecastChart::of(
         [['at' => CHART_NOW - 3600, 't' => 10.0], ['at' => CHART_NOW, 't' => 11.0]],
         [chartHour(1, 12.0, 11.0, 13.0, issuedAt: CHART_NOW - 1800)],

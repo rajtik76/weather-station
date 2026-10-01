@@ -16,9 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 /**
- * One stored horizon: the temperature band, the rain chance, and the base
- * model's temperature band as `[low, mid, high]` when the service sent one.
- *
  * @param  array{0: float, 1: float, 2: float}|null  $base
  * @return array<string, mixed>
  */
@@ -89,8 +86,6 @@ beforeEach(function (): void {
 });
 
 /**
- * A day with nothing scored.
- *
  * @return list<string|int|null>
  */
 function emptyDay(string $date, ?string $tookOver = null, ?int $correction = null): array
@@ -109,7 +104,6 @@ it('scores each horizon against the window that came n hours later, overall, by 
         'data' => [
             scoredHorizon(1, 12.0, 12.8, 13.5),
             scoredHorizon(2, 12.5, 13.0, 14.0),
-            // Nothing measured three hours on: not scored.
             scoredHorizon(3, 12.0, 13.0, 14.0),
         ],
     ]);
@@ -187,7 +181,6 @@ it('marks a model that took over before any of its forecasts came true', functio
     measuredAt($sensor, $issued, 1200);
     measuredAt($sensor, $issued + 3600, 1300);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'model' => '2026-09-20T08:00:00+00:00', 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
-    // An hour ago: nothing it forecast has come true yet.
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toBe([

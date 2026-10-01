@@ -22,8 +22,6 @@ beforeEach(function (): void {
 });
 
 /**
- * What forecast/serve.py answers, trimmed to one horizon.
- *
  * @return array<string, mixed>
  */
 function serviceForecast(int $issuedAt): array

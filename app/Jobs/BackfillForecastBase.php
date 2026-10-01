@@ -12,18 +12,10 @@ use App\ValueObject\ChartWindow;
 use Illuminate\Foundation\Bus\Dispatchable;
 
 /**
- * Fills in `base` - the forecast before the station correction - on the
- * sensor's forecasts stored before the service returned it. The base models
- * read only the last 48 hours, so the service's /base recomputes them from
- * the readings exactly as they were made; the correction learns from the
- * whole history and is not recomputed, so the stored forecast stays as it
- * was shown.
- *
- * A week of forecasts per request, with three days of readings before it.
- * Only the forecasts of the model the service runs now (`/health`) are
- * asked for: another model's base is gone with it, and asking again on
- * every run would fill nothing. A forecast is filled only when the answer
- * has every horizon it stores. Answers how many forecasts it filled in.
+ * Fills `base` (the forecast before station correction) on forecasts stored without it.
+ * Only forecasts of the model the service runs now (`/health`) are asked for;
+ * a forecast is filled only when the answer covers every horizon it stores.
+ * Returns how many were filled.
  */
 class BackfillForecastBase
 {

@@ -11,9 +11,6 @@ use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
 /**
- * One forecast at 08:00 UTC on 24.9., 12 °C then and 13 °C an hour on,
- * scored one hour ahead against the band given.
- *
  * @param  array{0: float, 1: float, 2: float}  $band
  */
 function scoredOneHourAhead(Sensor $sensor, array $band): void

@@ -37,7 +37,6 @@ it('labels readings in Czech local time, not UTC', function (): void {
 
     $this->get(route('charts'))
         ->assertOk()
-        // 12:00 UTC + 2 h, as milliseconds (see LocalTime::wallClockMs).
         ->assertSee('1784124000000')
         ->assertSee('15.7.2026 14:00');
 });
@@ -52,7 +51,6 @@ it('labels readings in standard time outside the summer window', function (): vo
 
     $this->get(route('charts'))
         ->assertOk()
-        // 12:00 UTC + 1 h, as milliseconds.
         ->assertSee('1768482000000')
         ->assertSee('15.1.2026 13:00');
 });
@@ -68,7 +66,6 @@ it('averages a long range into buckets', function (): void {
 
     $sensor = Sensor::factory()->create();
 
-    // A day of ten-minute slots, +0,1 °C per slot so every bucket's mean differs.
     foreach (range(0, 143) as $slot) {
         Measurement::factory()->for($sensor)->create([
             'timestamp' => $start->getTimestamp() + $slot * 600,
@@ -86,7 +83,6 @@ it('averages a long range into buckets', function (): void {
         range(0, 23),
     ));
 
-    // First bucket: slots 0-5, 10,00 to 10,50 °C, mean 10,25. Whole numbers decode as integers.
     $first = $month[$start->getTimestamp()];
 
     expect($first[1])->toBe(10.25)
@@ -122,7 +118,6 @@ it('draws a missed slot as a hole rather than joining its neighbours', function 
 
     $sensor = Sensor::factory()->create();
 
-    // 11:30 and 11:50 arrived; the 11:40 upload never did.
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(30)->getTimestamp()]);
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 
@@ -130,7 +125,6 @@ it('draws a missed slot as a hole rather than joining its neighbours', function 
         ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
         ->html());
 
-    // Thirteen slots 10:00-12:00, the missed ones as nulls.
     $byEpoch = array_combine(array_column($rows, 5), $rows);
 
     expect($rows)->toHaveCount(13)
@@ -150,7 +144,6 @@ it('counts stored readings in the footer, not slots', function (): void {
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(3)->getTimestamp()]);
 
-    // Thirteen slots, two filled; the third reading is outside the window.
     Livewire::test(Charts::class)
         ->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp())
         ->assertSee('2 records')
@@ -169,7 +162,6 @@ it('plots pressure at the sensor\'s own resolution', function (): void {
     // Whole pascals are hundredths of a hectopascal; tenths drew a staircase.
     expect(chartRows($html))->toContain('1013.62');
 
-    // Readouts and tail print tenths.
     expect($html)->toContain('1 013,6');
 });
 
@@ -181,7 +173,6 @@ it('carries the dew point in the chart payload', function (): void {
 
     $html = Livewire::test(Charts::class)->html();
 
-    // 21,50 °C at 48 % condenses at about 10 °C.
     $row = array_values(filledBuckets($html))[0];
 
     expect($row)->toHaveCount(12)

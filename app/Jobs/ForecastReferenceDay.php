@@ -16,20 +16,11 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Forecasts one UTC day of the ČHMÚ reference station (config
- * forecast.reference) the way the balcony is forecast, so the two can be
- * scored side by side: every 10-minute window of the day gets the six hours
- * ahead, and stored with the station's readings the accuracy pairs them
- * like the balcony's. The base models look 48 hours back, so the two days
- * before are fetched too; the service's /base answers the model alone - the
- * reference has no station correction to learn.
- *
- * A day run again replaces itself, removals included: ČHMÚ revises unchecked
- * values and may drop one, so each published day's readings and the day's
- * forecasts are deleted and written anew rather than upserted over. A day
- * ČHMÚ no longer publishes keeps what was stored. The rain
- * gauge goes to the service but is not stored: the protocol has no field for
- * it. Answers how many forecasts it stored; a day not published yet gives none.
+ * Forecasts one UTC day of the ČHMÚ reference station (forecast.reference) with
+ * the base model only, so it can be scored beside the balcony. Re-running a day
+ * deletes and rewrites its readings and forecasts, since ČHMÚ revises or drops
+ * values. The rain gauge goes to the service but is not stored. Returns how many
+ * forecasts were stored; an unpublished day gives none.
  *
  * @phpstan-import-type Reading from ChmiRecentDay
  */
@@ -37,7 +28,7 @@ class ForecastReferenceDay
 {
     use Dispatchable;
 
-    /** Days before the forecast one, for the models' 48 hours of history. */
+    /** Days fetched before the forecast day: the models need 48 hours of history. */
     private const int LOOKBACK_DAYS = 2;
 
     public function __construct(public CarbonImmutable $day) {}
@@ -98,8 +89,7 @@ class ForecastReferenceDay
     }
 
     /**
-     * The day's readings as published now, in protocol V1 as a station would
-     * send them: hundredths of °C and %, pascals.
+     * Stored as protocol V1: hundredths of °C and %, pascals.
      *
      * @param  non-empty-list<Reading>  $readings
      */

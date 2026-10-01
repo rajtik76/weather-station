@@ -18,8 +18,6 @@ beforeEach(function (): void {
 });
 
 /**
- * The service running BACKFILL_MODEL, answering /base with the given answer.
- *
  * @param  array<string, mixed>|null  $answer
  */
 function fakeService(?array $answer = null): void
@@ -30,7 +28,6 @@ function fakeService(?array $answer = null): void
     ]);
 }
 
-/** How many times /base was asked. */
 function baseRequests(): int
 {
     return Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/base'))->count();
@@ -45,8 +42,6 @@ function backfillBand(float $mid): array
 }
 
 /**
- * A stored horizon, with a base when given its temperature middle.
- *
  * @return array<string, mixed>
  */
 function storedHorizon(int $hours, ?float $base = null): array
@@ -62,8 +57,6 @@ function storedHorizon(int $hours, ?float $base = null): array
 }
 
 /**
- * What /base answers for the given windows, the temperature middle 10 + hours.
- *
  * @param  list<int>  $issuedAt
  * @return array<string, mixed>
  */
@@ -110,7 +103,6 @@ it('fills in the base of stored forecasts from readings reaching three days befo
         && $request['since'] === $issued
         && array_column($request['readings'], 'timestamp') === [$issued - 3 * 86_400, $issued + 605]);
 
-    // The forecast shown stays as it was; only the base is added.
     expect($first->refresh()->data[1])->toEqual([...storedHorizon(2), 'base' => ['temperature' => backfillBand(12.0), 'humidity' => backfillBand(72.0), 'rain_probability' => 0.2]])
         ->and(data_get($second->refresh()->data, '0.base.temperature'))->toEqual(backfillBand(11.0));
 });
@@ -127,7 +119,6 @@ it('does not ask for a forecast that has its base, one made by a model the servi
     Artisan::call('forecast:backfill-base');
     expect(Artisan::output())->toContain("{$sensor->name}: 0 forecasts given their base");
 
-    // Asking again on every run would fill nothing.
     expect(baseRequests())->toBe(0)
         ->and(data_get($kept->refresh()->data, '0.base.temperature'))->toEqual(backfillBand(12.5))
         ->and($older->refresh()->data[0])->not->toHaveKey('base');
@@ -137,7 +128,6 @@ it('leaves a forecast whose horizons the answer does not all have, and fills the
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     backfillReading($sensor, $issued);
-    // The answer carries +1 and +2 h only.
     $longer = Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'model' => BACKFILL_MODEL, 'data' => [storedHorizon(1), storedHorizon(3)]]);
     $filled = Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 600, 'model' => BACKFILL_MODEL, 'data' => [storedHorizon(1)]]);
     fakeService(baseAnswer([$issued, $issued + 600]));

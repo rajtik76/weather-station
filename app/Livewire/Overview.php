@@ -15,10 +15,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 
 /**
- * The front page of the redesign: what the station reads now, the next six
- * hours and how well that forecast has scored. The only page that polls.
- *
- * `#[Computed]` methods are declared as properties for Larastan.
+ * The front page; the only one that polls.
  *
  * @phpstan-import-type DayRow from Readout
  * @phpstan-import-type Figures from DayFigures
@@ -33,7 +30,7 @@ use Livewire\Attributes\Title;
 #[Title('Balcony Station')]
 class Overview extends StationPage
 {
-    /** The map blurs the balcony into a circle this wide: the page is public. */
+    /** Blurs the public map into a circle this wide. */
     private const int LOCATION_RADIUS_METRES = 800;
 
     public function render(): View
@@ -42,8 +39,7 @@ class Overview extends StationPage
     }
 
     /**
-     * The trailing 24 hours, or the newest reading alone when the station has
-     * been quiet for longer.
+     * The trailing 24 hours, or the newest reading alone if the station is quieter than that.
      *
      * @return list<DayRow>
      */
@@ -69,9 +65,7 @@ class Overview extends StationPage
     }
 
     /**
-     * The day's noise and light that the newest window no longer carries: a
-     * dead microphone or light sensor leaves the day's figures standing, and
-     * their "now" is then the last value read, not the present.
+     * Noise and light channels with day figures but missing from the newest window, so their "now" is stale.
      *
      * @return list<string>
      */
@@ -92,10 +86,7 @@ class Overview extends StationPage
         return $this->newestMeasurement === null ? null : Readout::of($this->newestMeasurement->data)->dewPoint();
     }
 
-    /**
-     * Whether the microphone hears rain in the newest window. Null without a
-     * spectrum or while the station is silent: neither may read as a dry sky.
-     */
+    /** Null without a spectrum or while the station is silent: neither may read as a dry sky. */
     #[Computed]
     public function rainHeard(): ?bool
     {

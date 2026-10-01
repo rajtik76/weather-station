@@ -8,13 +8,10 @@ use DateTimeInterface;
 use Illuminate\Support\Facades\Http;
 
 /**
- * One UTC day of a ČHMÚ station's 10-minute record from the open data's
- * `recent` series (CC BY 4.0, ČHMÚ), in the forecast service's units: °C, %,
- * hPa at station level and mm of rain in the ten minutes. A value of a
- * quality the models were not trained on is left out, as fetch_chmi.py does
- * (0 good, 3 estimated, 5 unknown are kept), and a window without all three
- * of temperature, humidity and pressure is left out with it. A day not
- * published yet, or no longer kept, is the empty list.
+ * One UTC day of a ČHMÚ station's 10-minute `recent` open data (CC BY 4.0, ČHMÚ) in the
+ * service's units: °C, %, hPa, mm of rain per window. Quality kept as in
+ * fetch_chmi.py (0 good, 3 estimated, 5 unknown); windows lacking T, H or P are dropped.
+ * An unpublished or expired day is `[]`.
  *
  * @phpstan-type Reading array{timestamp: int, temperature: float, humidity: float, pressure: float, rain: ?float}
  */

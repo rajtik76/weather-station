@@ -7,8 +7,6 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 
 /**
- * A ČHMÚ day file holding the given `[element, UTC time, value, quality]` rows.
- *
  * @param  list<array{0: string, 1: string, 2: int|float|string|null, 3: ?float}>  $rows
  * @return array<string, mixed>
  */
@@ -29,7 +27,6 @@ it('reads a day of windows in the service\'s units, oldest first', function (): 
         ['H', '2026-09-30T00:00:00Z', 90, 0.0],
         ['P', '2026-09-30T00:00:00Z', 972.5, 0.0],
         ['SRA10M', '2026-09-30T00:00:00Z', 0.2, 0.0],
-        // Elements the service does not read.
         ['TMA', '2026-09-30T00:00:00Z', 11.9, 0.0],
         ['RGLB10', '2026-09-30T00:00:00Z', 0, 0.0],
     ]))]);

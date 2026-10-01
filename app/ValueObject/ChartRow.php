@@ -8,17 +8,14 @@ use App\Models\Measurement;
 use App\Queries\MeasurementBuckets;
 
 /**
- * The rows station-charts.js draws. Positional arrays to keep the JSON
- * payload small. A bucket row is `[wall-clock ms, t, h, p, dew point, epoch,
- * tMin, tMax, hMin, hMax, pMin, pMax]` with nulls for an empty slot; a
- * reading row stops after the epoch.
+ * Positional arrays for station-charts.js, to keep the JSON small; nulls fill an empty slot.
+ * Bucket row: `[wall-clock ms, t, h, p, dew point, epoch, tMin, tMax, hMin, hMax, pMin, pMax]`; a reading row stops after the epoch.
+ * Noise row: `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB.
+ * Light row: `[wall-clock ms, epoch, lx, lx min, lx max]`.
  *
  * @phpstan-type ReadingRow array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}
  * @phpstan-type BucketRow array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}
- * A noise row is `[wall-clock ms, epoch, LAeq, LA10, LA90, LAmax, 26 bands]` in dB,
- * nulls for a slot without noise.
  * @phpstan-type NoiseRow list<int|float|null>
- * A light row is `[wall-clock ms, epoch, lx, lx min, lx max]`, nulls for a slot without light.
  * @phpstan-type LightRow array{0: int, 1: int, 2: ?float, 3: ?float, 4: ?float}
  *
  * @phpstan-import-type Bucket from MeasurementBuckets
@@ -28,10 +25,7 @@ use App\Queries\MeasurementBuckets;
 final readonly class ChartRow
 {
     /**
-     * The averages go back into a measurement in protocol units so reduction
-     * and dew point run through the same code as a single reading. Pressure
-     * extremes are reduced with the bucket's mean temperature; the sample
-     * that read them kept none of its own.
+     * Averages go back through a measurement in protocol units, so reduction matches a single reading. Pressure extremes use the bucket's mean temperature.
      *
      * @param  Bucket  $bucket
      * @return BucketRow
@@ -67,8 +61,7 @@ final readonly class ChartRow
     }
 
     /**
-     * Tenths of a dB: the band spread is tens of dB, and the payload is 26
-     * numbers a slot.
+     * Tenths of a dB.
      *
      * @param  NoiseBucket  $bucket
      * @return NoiseRow
@@ -98,7 +91,7 @@ final readonly class ChartRow
     }
 
     /**
-     * Lux with two decimals: dusk reads hundredths, noon tens of thousands.
+     * Lux with two decimals.
      *
      * @param  LightBucket  $bucket
      * @return LightRow
@@ -117,8 +110,6 @@ final readonly class ChartRow
     }
 
     /**
-     * A single reading, for the navigator.
-     *
      * @return ReadingRow
      */
     public static function reading(Measurement $measurement): array

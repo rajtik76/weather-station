@@ -30,6 +30,5 @@ Artisan::command('forecast:reference {--days=1 : UTC days to forecast, ending ye
     }
 })->purpose('Forecast the ČHMÚ reference station over the last days of its published record');
 
-// ČHMÚ publishes a day shortly after midnight UTC and may revise it the next
-// day, so each night forecasts yesterday and redoes the day before.
+// ČHMÚ may revise a day after publishing it: redo the day before too.
 Schedule::command('forecast:reference --days=2')->dailyAt('01:00');

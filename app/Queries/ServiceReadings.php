@@ -7,18 +7,13 @@ namespace App\Queries;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
-/**
- * One sensor's readings in the forecast service's units: °C, % and hPa at
- * station level. Read by protocol key like MeasurementBuckets, so a renamed
- * field has to change this too.
- */
+/** Readings in the forecast service's units (°C, %, hPa); reads protocol keys directly, so a renamed field must change this too. */
 final readonly class ServiceReadings
 {
     public function __construct(private int $sensorId) {}
 
     /**
-     * Oldest first, both ends included. No end reads through the newest, a
-     * reading the station's clock stamped ahead of the server's included.
+     * Oldest first, both ends included; no `$until` reads through the newest, even one stamped ahead.
      *
      * @return list<array{timestamp: int, temperature: float, humidity: float, pressure: float}>
      */

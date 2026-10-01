@@ -6,11 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * The record as it stood before sensors were a table: names on the rows,
- * events belonging to nothing. Migrations after the two that created those
- * tables are rolled back so the data can be written in the old shape.
- */
+/** The record as before sensors were a table; later migrations are rolled back to write the old shape. */
 function schemaBeforeSensors(): void
 {
     Artisan::call('migrate:reset');
@@ -84,7 +80,6 @@ it('refuses to guess which sensor an event belongs to, and finishes once told', 
     expect(fn () => Artisan::call('migrate'))
         ->toThrow(RuntimeException::class, 'set station_events.sensor_id by hand');
 
-    // The rerun picks up where it stopped instead of tripping over its own column.
     $south = DB::table('sensors')->where('name', 'bme280-south')->value('id');
     DB::table('station_events')->update(['sensor_id' => $south]);
 

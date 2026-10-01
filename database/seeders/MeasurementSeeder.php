@@ -24,11 +24,6 @@ class MeasurementSeeder extends Seeder
     private const int SAMPLES_PER_WINDOW = 20;
 
     /**
-     * Two stations on the same month: the second is warmer, drier, starts
-     * mid-month and is V2 throughout, the first switches to V2 on
-     * `v2FromDay`, to V3 with noise on `v3FromDay` and to V4 with light on
-     * `v4FromDay` as the real one did.
-     *
      * @var list<array{name: string, description: string, warmerBy: float, drierBy: float, skipDays: int, v2FromDay: int, v3FromDay: ?int, v4FromDay: ?int, sunSpikes: bool, firmware: string, board: ?string}>
      */
     private const array SENSORS = [
@@ -60,53 +55,33 @@ class MeasurementSeeder extends Seeder
         ],
     ];
 
-    /**
-     * LAeq per local hour in dB: a quiet night, the morning and afternoon
-     * rush on a street a block away, and the evening winding down.
-     */
+    /** LAeq per local hour, dB. */
     private const array NOISE_BY_HOUR = [42, 41, 40, 40, 41, 44, 50, 56, 58, 57, 56, 56, 57, 56, 56, 57, 58, 59, 57, 54, 51, 48, 46, 44];
 
-    /**
-     * Each third-octave band against the LAeq, in 0.01 dB, 25 Hz to 8 kHz:
-     * the mean of the real station's first V3 windows. Unweighted bands, so
-     * the low end sits above the A-weighted total.
-     */
+    /** Third-octave bands 25 Hz to 8 kHz against LAeq, 0.01 dB; unweighted, so the low end sits above LAeq. */
     private const array BAND_OFFSETS = [935, 775, 556, 718, 315, -173, -304, -655, -1038, -980, -1169, -1245, -1157, -1053, -1187, -1013, -814, -709, -810, -1287, -1793, -2166, -2428, -2582, -2632, -3279];
 
-    /**
-     * Showers the microphone hears, as [from, to] hours before the end of the
-     * record: an hour and a half the day before, half an hour two days back.
-     * Relative to the end because the record ends at the seed time.
-     */
+    /** Showers as [from, to] hours before the end of the record. */
     private const array SHOWERS = [[20.0, 18.5], [44.0, 43.5]];
 
-    /** The seeded station's site, for the sun's height. */
     private const float LATITUDE = 49.73;
 
     private const float LONGITUDE = 13.40;
 
-    /**
-     * Open-sky illuminance on a clear day, lx: at the horizon, and what
-     * the sun adds per unit of the sine of its height.
-     */
+    /** Open-sky illuminance, lx: at the horizon, and added per unit of sin(sun height). */
     private const float HORIZON_LUX = 400.0;
 
     private const float SUN_LUX = 110_000.0;
 
-    /** The share of the open sky that reaches the VEML7700 behind the shield's louvers. */
+    /** Share of open sky reaching the VEML7700 behind the louvers. */
     private const float SHIELD_SHARE = 0.08;
 
-    /** The morning sun shines straight through the east louvers until this local hour. */
+    /** Local hour until which the morning sun shines straight through the east louvers. */
     private const int MORNING_SUN_UNTIL = 10;
 
     private const float MORNING_SUN_GAIN = 4.0;
 
-    /**
-     * Real hourly observations for Plzen-Slovany (Open-Meteo, 345 m), 744
-     * points, interpolated to ten minutes and jittered. Real data because a
-     * model gets pressure wrong at once: 1013 hPa is sea level, a BME280 at
-     * 345 m reads ~977.
-     */
+    /** Real hourly Open-Meteo data for Plzen-Slovany (345 m): station pressure is ~977 hPa, not sea level 1013. */
     public function run(): void
     {
         $observations = $this->observations();
@@ -114,15 +89,15 @@ class MeasurementSeeder extends Seeder
         $perHour = 3600 / self::STEP_SECONDS;
         $count = $hours * $perHour;
 
-        // Fixed seed, so a reseed returns the same month.
+        // Fixed seed: a reseed returns the same month.
         mt_srand(1898);
 
-        // Last closed slot; a V2 stamp near the end of an open one would lie in the future.
+        // Last closed slot: a stamp in an open one would lie in the future.
         $end = (int) (floor(now()->getTimestamp() / self::STEP_SECONDS) - 1) * self::STEP_SECONDS;
         $start = $end - ($count - 1) * self::STEP_SECONDS;
 
         foreach (self::SENSORS as $station) {
-            // Model events are off in seeders; the slug is passed by hand.
+            // Model events are off in seeders: pass the slug by hand.
             $sensor = Sensor::query()->firstOrCreate(
                 ['name' => $station['name']],
                 ['slug' => Sensor::uniqueSlug($station['name']), 'description' => $station['description']],
@@ -139,7 +114,7 @@ class MeasurementSeeder extends Seeder
                 $humidity = $this->between($observations['humidity_pct'], $hour, $into) - $station['drierBy'] + mt_rand(-20, 20) / 100;
                 $pressure = $this->between($observations['pressure_hpa'], $hour, $into) + mt_rand(-3, 3) / 100;
 
-                // Protocol units.
+                // Protocol units: 0.01.
                 $t = (int) round($temperature * 100);
                 $h = (int) round(max(0.0, min(100.0, $humidity)) * 100);
                 $p = (int) round($pressure * 100);
@@ -156,7 +131,7 @@ class MeasurementSeeder extends Seeder
                 $rows[] = [
                     'sensor_id' => $sensor->id,
                     'protocol_version' => $version->value,
-                    // Stamped by the last reading, half a minute short of the slot's end.
+                    // Stamped by the last reading, 30 s short of the slot's end.
                     'timestamp' => $version === ProtocolVersion::V1 ? $slot : $slot + self::STEP_SECONDS - 30,
                     'data' => (string) match ($version) {
                         ProtocolVersion::V1 => new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p),
@@ -176,7 +151,6 @@ class MeasurementSeeder extends Seeder
                 Measurement::insert($chunk);
             }
 
-            // A report for the last upload, so the station block has something to show.
             StationReport::query()->create([
                 'sensor_id' => $sensor->id,
                 'data' => array_filter([
@@ -198,10 +172,6 @@ class MeasurementSeeder extends Seeder
         }
     }
 
-    /**
-     * A V2 window around a mean. Under the sun the maximum runs away from
-     * the mean while the minimum stays put, and the humidity minimum drops.
-     */
     private function window(int $t, int $h, int $p, bool $inSun): MeasurementDataV2
     {
         $tSpike = $inSun ? mt_rand(80, 320) : 0;
@@ -221,12 +191,6 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /**
-     * A V3 window's noise around the hour's level. One window in twelve
-     * holds a loud event - a truck, a siren - that lifts the mean a little
-     * and the maximum a lot. A window cut short by its upload heard a few
-     * seconds less than ten minutes.
-     */
     private function noise(int $slot, bool $isShowering): NoiseWindow
     {
         $isLoud = mt_rand(0, 11) === 0;
@@ -287,12 +251,7 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /**
-     * The window's light behind the shield, in 0.01 lx: open sky by the
-     * sun's height, a cloud cover that holds for the hour, the morning sun
-     * straight through the east louvers, and a dim city glow at night. The
-     * extremes spread with the clouds passing during the ten minutes.
-     */
+    /** Light behind the shield, 0.01 lx. */
     private function light(int $slot, bool $isShowering): LightWindow
     {
         $height = $this->sunHeight($slot + intdiv(self::STEP_SECONDS, 2));
@@ -303,8 +262,7 @@ class MeasurementSeeder extends Seeder
             default => self::HORIZON_LUX + self::SUN_LUX * sin(deg2rad($height)),
         };
 
-        // One cover per hour, so a cloudy stretch lasts; a shower is dark.
-        // Off a hash of the hour, not mt_rand(), which would need reseeding.
+        // One cover per hour, off a hash of the hour (not mt_rand(), which would need reseeding); a shower is dark.
         $cover = $isShowering ? 0.12 : 0.25 + 0.75 * (crc32((string) intdiv($slot, 3600)) % 1000) / 999;
 
         $isMorningSun = $height > 3.0 && $this->localHour($slot) < self::MORNING_SUN_UNTIL && $cover > 0.7;
@@ -320,11 +278,7 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /**
-     * The sun's height above the horizon in degrees: declination by the day
-     * of the year and the hour angle by solar time, the equation of time
-     * left out - a quarter of an hour at most, nothing a seeded curve shows.
-     */
+    /** Sun height in degrees; equation of time left out. */
     private function sunHeight(int $timestamp): float
     {
         $day = (int) gmdate('z', $timestamp) + 1;
@@ -354,7 +308,6 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /** Hours of direct sun on the balcony. */
     private function inAfternoonSun(int $slot): bool
     {
         $hour = $this->localHour($slot);

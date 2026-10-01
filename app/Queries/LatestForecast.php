@@ -8,18 +8,12 @@ use App\Models\Forecast;
 use App\Models\Measurement;
 use App\ValueObject\ChartWindow;
 
-/**
- * One sensor's newest forecast, only while it starts from the station's
- * current record: a station that went quiet has nothing to forecast from,
- * and an old forecast would read as today's. A row without hours has
- * nothing to show either.
- */
+/** One sensor's newest forecast, hidden once stale (it would read as today's) or empty. */
 final readonly class LatestForecast
 {
-    /** A forecast shows only while it starts this close to the newest reading. */
     private const int FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     public function startingFrom(Measurement $newest): ?Forecast

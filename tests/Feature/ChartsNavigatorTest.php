@@ -13,8 +13,7 @@ use Livewire\Livewire;
 it('draws the navigator for a record shorter than one thinning bucket', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Three hours of drifting stamps: no row lies near a six-hour boundary,
-    // and thinning by epoch phase left the navigator empty.
+    // Drifting stamps, no row near a six-hour boundary: thinning by epoch phase left the navigator empty.
     $sensor = Sensor::factory()->create();
 
     foreach (range(1, 18) as $slot) {
@@ -32,8 +31,6 @@ it('thins the navigator to one point per bucket once the record is long', functi
     $data = (string) new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389);
     $sensor = Sensor::factory()->create();
 
-    // Eleven days of drifting uploads: 44 six-hour buckets, first row of each,
-    // and the newest reading on top.
     $rows = collect(range(1, 1584))->map(fn (int $slot): array => [
         'sensor_id' => $sensor->id,
         'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
@@ -54,7 +51,6 @@ it('ends the thinned navigator on the newest reading', function (): void {
     $sensor = Sensor::factory()->create();
     $newest = now()->subMinutes(10)->getTimestamp() + 122;
 
-    // The newest bucket opened at 06:00; its first row is six hours old.
     Measurement::insert(collect(range(1, 1584))->map(fn (int $slot): array => [
         'sensor_id' => $sensor->id,
         'timestamp' => now()->subMinutes($slot * 10)->getTimestamp() + 122,
@@ -62,7 +58,6 @@ it('ends the thinned navigator on the newest reading', function (): void {
         'data' => $data,
     ])->all());
 
-    // Another station's later reading must not stand in for this one's.
     Measurement::factory()->create(['timestamp' => now()->getTimestamp()]);
 
     $epochs = array_column(navigatorRows(Livewire::test(Charts::class)->html()), 5);

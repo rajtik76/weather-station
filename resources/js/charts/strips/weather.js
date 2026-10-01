@@ -3,11 +3,7 @@ import { COLUMN } from "../rows";
 import { state } from "../state";
 import { BAND_OPACITY, colourFor, mixColours } from "../theme";
 
-/**
- * `axis`: the channel whose value axis this one shares (dew point reads the
- * temperature's). `band`: row columns with the min and max sample behind the
- * mean; the dew point is derived and has none.
- */
+/** `axis`: the channel whose value axis this one shares. `band`: row columns of the min and max sample (dew point is derived, has none). */
 const CHANNELS = [
     {
         key: "t",
@@ -47,11 +43,7 @@ const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
 
 const isShown = (channel) => !state.hidden.has(channel.key);
 
-/**
- * One line: its colour. Two lines: a gradient from the first's colour at the
- * top to the second's at the bottom, spread over the data range because
- * ECharts hands a label its value, not its position.
- */
+/** Two lines share an axis: a gradient over the data range, because ECharts hands a label its value, not its position. */
 function axisLabelStyle(axis, channels) {
     const readers = channels.filter((entry) => entry.axis === axis.key);
 
@@ -80,7 +72,6 @@ function axisLabelStyle(axis, channels) {
     };
 }
 
-/** Only the strip's own channels, and of those only the ones switched on. */
 function weatherLines(row, strip) {
     return strip.channels
         .map(channelFor)
@@ -93,7 +84,7 @@ function weatherLines(row, strip) {
         }));
 }
 
-/** Min and max under the mean, only where they differ (V1 rows have no spread). */
+/** Empty where min equals max (V1 rows have no spread). */
 function spreadText(row, channel) {
     const [low, high] = spreadOf(row, channel);
 
@@ -114,8 +105,7 @@ function spreadOf(row, channel) {
 
 function weatherOption(strip, colours) {
     const channels = strip.channels.map(channelFor).filter(isShown);
-    // One axis per distinct `axis` among the drawn lines, in declared order,
-    // so the temperature axis keeps the left whichever of its lines is on.
+    // Declared order, so the temperature axis keeps the left whichever of its lines is on.
     const wanted = new Set(channels.map((entry) => entry.axis));
     const axes = [...new Set(strip.channels.map((key) => channelFor(key).axis))]
         .filter((key) => wanted.has(key))
@@ -127,7 +117,6 @@ function weatherOption(strip, colours) {
             scale: true,
             position: index === 0 ? "left" : "right",
             axisLabel: { fontSize: 10, ...axisLabelStyle(entry, channels) },
-            // Grid lines from the first axis only.
             splitLine: {
                 show: index === 0,
                 lineStyle: { color: colours.grid },
@@ -146,7 +135,6 @@ function weatherOption(strip, colours) {
                 name: entry.label,
                 yAxisIndex: axes.findIndex((axis) => axis.key === entry.axis),
                 showSymbol: false,
-                // Derived line, dashed.
                 lineStyle: {
                     width: 1.5,
                     color: colourFor(entry.key),
@@ -159,11 +147,7 @@ function weatherOption(strip, colours) {
     };
 }
 
-/**
- * ECharts has no band series: an invisible line along the minimum and the
- * spread stacked on it with its area filled. Both silent; the tooltip reads
- * the extremes off the row.
- */
+/** ECharts has no band series: an invisible minimum line with the spread stacked on it, area filled. */
 function bandSeries(channel, yAxisIndex) {
     if (!channel.band) {
         return [];
@@ -202,7 +186,6 @@ function bandSeries(channel, yAxisIndex) {
     ];
 }
 
-/** The temperature strip: temperature, humidity and the derived dew point. Carries the event icons. */
 export const temperatureStrip = {
     key: "th",
     events: true,
@@ -213,7 +196,7 @@ export const temperatureStrip = {
     time: COLUMN.time,
 };
 
-/** The pressure strip; on the temperature strip's axis its 40 hPa range would be a flat line. */
+/** Own strip: on the temperature axis its 40 hPa range would be a flat line. */
 export const pressureStrip = {
     key: "p",
     channels: ["p"],

@@ -59,7 +59,6 @@ it('averages the light in a bucket with the extremes of its windows', function (
 
     $sensor = Sensor::factory()->create();
 
-    // Three windows in one half-hour bucket of the week view.
     Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $start->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
     Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $start->getTimestamp() + 600, 'data' => (string) litWindow(300_000, 250_000, 400_000)]);
     // A window whose VEML7700 gave nothing does not pull the mean down.
@@ -71,7 +70,6 @@ it('averages the light in a bucket with the extremes of its windows', function (
     $html = Livewire::test(Charts::class)->html();
     $row = lightBuckets($html)[$start->getTimestamp()];
 
-    // Lux: the mean of the means, the lowest minimum and the highest maximum.
     expect(array_slice($row, 2))->toEqual([2000.0, 800.0, 4000.0])
         ->and($html)->toContain('Light in the shield, lx');
 });

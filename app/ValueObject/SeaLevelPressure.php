@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * Station pressure reduced to mean sea level. Hypsometric formula with the
- * measured temperature rather than the standard atmosphere's 15 °C: a frost
- * or a heatwave is a few hPa at this height.
+ * Station pressure reduced to sea level, by the hypsometric formula with the measured temperature rather than the standard 15 °C: a frost or heatwave is a few hPa.
  */
 final readonly class SeaLevelPressure
 {

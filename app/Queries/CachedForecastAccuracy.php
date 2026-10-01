@@ -8,15 +8,9 @@ use App\Models\Forecast;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * ForecastAccuracy kept until the next forecast: it comes with the upload
- * that completes new scores. Fifteen minutes at most, for when the service
- * is down and none comes.
- *
- * One key per sensor, the forecast it was scored at inside the value: a key
- * per forecast is never read again once the next one comes, and the
- * database store only deletes an expired row it reads, so the table grew by
- * a row every ten minutes. The span scored is in the value too, so a
- * caller asking for another one does not read this one's scores.
+ * ForecastAccuracy cached until the next forecast, 15 minutes at most.
+ * One key per sensor with the forecast and span inside the value: the database
+ * store only deletes expired rows it reads, so a key per forecast grows the table.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  */
@@ -31,11 +25,11 @@ final readonly class CachedForecastAccuracy
 
     private const int TTL_MINUTES = 15;
 
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**
-     * The last $days of forecasts scored; empty until one has come true.
+     * Empty until a forecast has come true.
      *
      * @return list<Score>
      */

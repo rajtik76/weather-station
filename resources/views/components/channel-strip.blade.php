@@ -1,7 +1,4 @@
-{{-- One chart strip in the instrument look: the channel's label and legend
-     (the slot), the fold and the ECharts canvas. Every strip goes through it:
-     station-charts.js finds the canvas by data-strip, and the fold is Alpine
-     state, not a round trip. --}}
+{{-- station-charts.js finds the canvas by data-strip; the fold is Alpine state, not a round trip. --}}
 @props([
     'key',
     'label',
@@ -29,10 +26,9 @@
         </button>
     </div>
 
-    {{-- Hidden, not removed: ECharts keeps its instance and resizes once the box has a size again. --}}
+    {{-- Hidden, not removed: ECharts keeps its instance and resizes when the box has a size again. --}}
     <div id="strip-{{ $key }}" x-bind:class="{ hidden: collapsed }">
-        {{-- ECharts owns everything below; a morph would tear out the canvas.
-             Touch pans only vertically, so a sideways finger drag selects a span to zoom into. --}}
+        {{-- ECharts owns everything below; a morph would tear out the canvas. Touch pans only vertically, so a sideways drag selects a span. --}}
         <div
             wire:ignore
             data-strip="{{ $key }}"

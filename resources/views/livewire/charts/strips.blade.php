@@ -1,6 +1,4 @@
-{{-- The navigator and every strip on one screen, one frame and one crosshair
-     (station-charts.js). Pressure has its own strip: a 40 hPa spread is a flat
-     line beside the others. The dew point is derived, so it starts off. --}}
+{{-- The dew point is derived, so it starts off. --}}
 @php($hasNoise = $this->noise !== [])
 @php($weatherChannels = [
     ['key' => 't', 'ch' => 'CH1', 'colour' => '--ch1', 'label' => 'Temperature, °C'],
@@ -50,7 +48,6 @@
         <div class="mt-5 space-y-8">
             <x-channel-strip key="th" label="Temperature and humidity" channel="CH1 · CH2" height="h-72 sm:h-80">
                 @foreach ($weatherChannels as $channel)
-                    {{-- The label is the switch; the last one on is disabled instead. --}}
                     @php($shown = $this->channels[$channel['key']] ?? false)
                     @php($last = $this->isLastChannel($channel['key']))
                     <button
@@ -77,7 +74,7 @@
                 <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>Pressure, MSL, hPa</span>
             </x-channel-strip>
 
-            {{-- Protocol 3 only: a sensor that never sent noise has no strips; a window before it has them empty. --}}
+            {{-- Protocol 3 only: no strips for a sensor that never sent noise. --}}
             @if ($hasNoise)
                 <x-channel-strip key="noise" label="Noise" channel="CH4" height="h-48 sm:h-56">
                     <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch4" aria-hidden="true"></span>LAeq, dB(A)</span>
@@ -87,7 +84,6 @@
 
                 <x-channel-strip key="spectrum" label="Noise spectrum" channel="FFT" height="h-72 sm:h-80">
                     <span class="text-ink-2">Third-octave spectrum, 25 Hz to 8 kHz</span>
-                    {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
                     <span class="flex items-center gap-2 text-ink-3">
                         <span data-spectrum-low wire:ignore></span>
                         <span data-spectrum-scale wire:ignore class="h-2 w-24 rounded-full" aria-hidden="true"></span>
@@ -96,8 +92,7 @@
                 </x-channel-strip>
             @endif
 
-            {{-- Protocol 4 only, and only for a sensor that ever sent light. The VEML7700 sits behind
-                 the shield's louvers, so the lux are the shield's, not the open sky's: read the shape. --}}
+            {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers: the lux are the shield's, read the shape. --}}
             @if ($this->light !== [])
                 <x-channel-strip key="light" label="Light" channel="AUX" height="h-48 sm:h-56">
                     <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx, log scale</span>

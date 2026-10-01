@@ -13,14 +13,12 @@
     --font-mono: "Red Hat Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Leaflet: strip the default chrome so the map reads as part of the instrument. */
 .leaflet-container {
     background: var(--bg);
     font-family: var(--font-mono);
     cursor: default;
 }
 
-/* OpenStreetMap ships one colourful style; calm it down and invert it for dark mode. */
 .leaflet-tile-pane {
     filter: grayscale(1) contrast(0.82) brightness(1.08);
 }

@@ -1,6 +1,3 @@
-{{-- The measured hours running into the forecast's median and its 10-90 %
-     range, with each hour's figures and rain chance underneath. Shared by the
-     overview and the forecast page; it grows to fill a flex column. --}}
 @props([
     'chart',
     'horizons',

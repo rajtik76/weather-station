@@ -8,7 +8,6 @@ use App\ValueObject\NoiseWindow;
 /** 08:00 UTC on 24.9.2026, 10:00 in Prague. */
 const CHART_ROW_BUCKET = 1_790_236_800;
 
-/** The same slot as milliseconds of local wall-clock time. */
 const CHART_ROW_WALL_CLOCK_MS = 1_790_244_000_000;
 
 /**

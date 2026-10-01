@@ -25,11 +25,9 @@ it('seeds the first station\'s last days with noise the API accepts', function (
         ->orderBy('timestamp')
         ->get();
 
-    // Three days of ten-minute windows, every one with noise.
     expect($windows)->toHaveCount(3 * 144)
         ->and($windows->every(fn (Measurement $window): bool => $window->data instanceof CarriesNoise && $window->data->noise instanceof NoiseWindow))->toBeTrue();
 
-    // Sent back through the endpoint under their own version, the seeded windows pass the real validation.
     foreach ($windows->groupBy(fn (Measurement $window): int => $window->data->protocolVersion->value) as $version => $batch) {
         foreach ($batch->chunk(500) as $chunk) {
             postJson('api/v1/measurement', [
@@ -56,7 +54,6 @@ it('seeds the first station\'s last day with light that follows the sun', functi
         ? $window->data->light->illuminance
         : -1);
 
-    // A day of windows, every one with light, dark at night and bright by day.
     expect($windows)->toHaveCount(144)
         ->and($lux->min())->toBeGreaterThanOrEqual(0)->toBeLessThan(100)
         ->and($lux->max())->toBeGreaterThan(100_000);

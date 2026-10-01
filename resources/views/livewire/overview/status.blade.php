@@ -1,4 +1,3 @@
-{{-- The board's own report, as the firmware sent it; nothing here is derived on the server. --}}
 @php($report = $this->stationReport)
 @if ($report !== null)
     <section class="page-wrap mt-16" aria-labelledby="acq-h">

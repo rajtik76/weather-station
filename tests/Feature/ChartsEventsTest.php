@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
 it('marks station events on the charts in Czech local time', function (): void {
-    // 10:00 UTC in July is 12:00 in Prague (CEST, UTC+2).
+    // 10:00 UTC in July is 12:00 in Prague.
     StationEvent::factory()->create([
         'occurred_at' => Date::parse('2026-07-15 10:00:00', 'UTC'),
         'title' => 'Radiation shield fitted',
@@ -18,7 +18,6 @@ it('marks station events on the charts in Czech local time', function (): void {
 
     $html = Livewire::test(Charts::class)->html();
 
-    // Shifted like the readings, so the mark lands where they do.
     expect(chartEvents($html))->toBe([
         [1784116800000, 'Radiation shield fitted', '#71717a'],
     ]);

@@ -7,10 +7,7 @@ namespace App\ValueObject;
 use UnexpectedValueException;
 
 /**
- * The hero readouts off the trailing day: now, the change over the last
- * hour, the day's extremes and the sparkline. Day min and max come off the
- * entries' extremes, not their means: the coldest sample sits below the
- * coldest ten-minute mean.
+ * The hero readouts off the trailing day. Day min and max come off the entries' extremes, not their means.
  *
  * @phpstan-type Figures array{now: float, delta: float, dayMin: float, dayMax: float, trace: non-empty-list<float>}
  *
@@ -36,8 +33,7 @@ final readonly class DayFigures
     }
 
     /**
-     * Noise (`n`) and light (`l`) only when the day holds some: older rows,
-     * a dead microphone or no VEML7700 carry none.
+     * Noise (`n`) and light (`l`) only when the day holds some.
      *
      * @return array<string, Figures>
      */
@@ -62,8 +58,7 @@ final readonly class DayFigures
     }
 
     /**
-     * The day's LAeq, its extremes included: a window has no quietest
-     * sample, and LAmax is a single door slam, not the loudest ten minutes.
+     * A window has no quietest sample, and LAmax is a single door slam, not the loudest ten minutes.
      *
      * @return Figures|null
      */
@@ -81,8 +76,7 @@ final readonly class DayFigures
     }
 
     /**
-     * The day's light off each entry's extremes, like the weather channels:
-     * the 24 h max is the brightest sample, not the brightest mean.
+     * The 24 h max is the brightest sample, not the brightest mean.
      *
      * @return Figures|null
      */
@@ -115,11 +109,10 @@ final readonly class DayFigures
 
         return [
             'now' => $now,
-            // Against one hour ago (six slots), or the oldest point if the day is shorter.
+            // One hour ago (six slots), or the oldest point if the day is shorter.
             'delta' => $now - (float) $day[max(0, count($day) - 7)],
             'dayMin' => min($lows),
             'dayMax' => max($highs),
-            // The day's means, oldest first, for the readout's sparkline.
             'trace' => $day,
         ];
     }

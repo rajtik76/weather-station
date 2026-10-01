@@ -1,4 +1,3 @@
-{{-- The same chart as the overview's, here with when it was made. --}}
 @php($chart = $this->forecastChart)
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="current-h">
     <div class="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">

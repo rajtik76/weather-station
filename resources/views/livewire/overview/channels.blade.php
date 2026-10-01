@@ -1,6 +1,4 @@
-{{-- One card per channel the last day holds; noise and light only for a
-     station that sends them. The light's sparkline is logarithmic: on a
-     linear one every night is the floor. --}}
+{{-- The light sparkline is logarithmic: on a linear one every night is the floor. --}}
 @php($channels = array_filter([
     ['key' => 't', 'ch' => 'CH1', 'colour' => 'ch1', 'label' => 'Temperature', 'unit' => '°C', 'dec' => 1, 'note' => 'SHT4x, in the shield.'.($this->dewPoint === null ? '' : ' Dew point '.\App\ValueObject\Figure::format($this->dewPoint, 1).' °C.')],
     ['key' => 'h', 'ch' => 'CH2', 'colour' => 'ch2', 'label' => 'Humidity', 'unit' => '%', 'dec' => 1, 'note' => 'SHT4x, relative humidity.'],

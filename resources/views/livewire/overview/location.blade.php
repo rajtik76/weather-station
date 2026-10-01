@@ -1,5 +1,4 @@
-{{-- Where the station is, blurred into a circle: the page is public, so no
-     marker and no exact spot (station-map.js). --}}
+{{-- Public page: a blurred circle, no marker, no exact spot. --}}
 @php($location = $this->approximateLocation)
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="where-h">
     <div class="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-1">

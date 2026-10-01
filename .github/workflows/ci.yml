@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    # The firmware builds in firmware.yml.
     paths-ignore: ["firmware/**"]
   pull_request:
     paths-ignore: ["firmware/**"]
@@ -17,7 +16,7 @@ jobs:
     name: Lint, analyse, test
     runs-on: ubuntu-latest
 
-    # The dashboard's SQL is PostgreSQL only (generate_series, jsonb), so no SQLite.
+    # Dashboard SQL is PostgreSQL only (generate_series, jsonb).
     services:
       pgsql:
         image: postgres:18-alpine
@@ -57,7 +56,7 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Build assets
-        # The dashboard test renders the page, which needs the Vite manifest.
+        # The dashboard test needs the Vite manifest.
         run: |
           npm ci
           npm run build
@@ -70,7 +69,6 @@ jobs:
       - name: Pint
         run: vendor/bin/pint --test
 
-      # What composer review runs locally, split so a failure names itself.
       - name: Rector
         run: vendor/bin/rector process --dry-run --no-progress-bar
 
@@ -80,7 +78,6 @@ jobs:
       - name: Pest
         run: php artisan test --parallel
 
-  # The forecast service is Python, so it gets its own job and needs no PHP or Node.
   forecast:
     name: Forecast tests
     runs-on: ubuntu-latest
@@ -92,12 +89,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Python comes from forecast/.python-version. The lockfile is what the image installs.
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: forecast/uv.lock
 
       - name: Pytest
-        # uv run syncs the environment first. dev is not a default group, so the image never gets pytest.
+        # dev is not a default group: the image never gets pytest.
         run: uv run --frozen --group dev pytest -q

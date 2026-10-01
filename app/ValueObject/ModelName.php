@@ -8,9 +8,7 @@ namespace App\ValueObject;
 final readonly class ModelName
 {
     /**
-     * The service stamps a model with the ISO moment it was trained; anything
-     * else prints as it came. Checked by shape first: strtotime() reads even
-     * "v3.4.0" as a time.
+     * Checked by shape first: strtotime() reads even "v3.4.0" as a time.
      */
     public static function of(string $model): string
     {

@@ -32,11 +32,7 @@ function pageReading(Sensor $sensor, int $timestamp, int $temperature): void
     ]);
 }
 
-/**
- * A forecast at 08:00 UTC scored one and two hours on: 12 °C then, 13 °C and
- * 15 °C after, so one hour ahead misses by 0,2 against the guess's 1,0 (+80 %)
- * and two hours ahead by 2,0 against 3,0 (+33 %).
- */
+/** A forecast at 08:00 UTC scored 1 and 2 h on: misses 0,2 vs the guess's 1,0 (+80 %), then 2,0 vs 3,0 (+33 %). */
 function scoredStation(): Sensor
 {
     $sensor = Sensor::factory()->create();
@@ -98,7 +94,6 @@ it('charts the verdict\'s horizon in detail, the longest scored until it has com
     $page->set('horizon', 1)->assertSet('horizon', 1)->assertSee('1 h ahead');
     expect($page->get('score')['hours'])->toBe(1);
 
-    // One that has not come true falls back again.
     $page->set('horizon', 5)->assertSet('horizon', 2);
 });
 
@@ -134,7 +129,6 @@ it('lists every change of model and correction, newest first, a switch back incl
         ]);
     }
 
-    // Another station's model is not this one's history.
     Forecast::factory()->create(['model' => 'elsewhere']);
 
     $this->get(route('forecast'))

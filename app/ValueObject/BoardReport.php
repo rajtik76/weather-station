@@ -7,10 +7,7 @@ namespace App\ValueObject;
 use App\Models\StationReport;
 
 /**
- * A `station` object as the board sent it, in the words the page prints,
- * dated by arrival: the report describes the board at the moment it
- * uploaded. Nothing is derived on the server; if a figure looks wrong, the
- * firmware sent it wrong. SSID and IP stay off: the page is public.
+ * A `station` object as the board sent it, in the words the page prints. SSID and IP stay off: the page is public.
  *
  * @phpstan-type Report array{firmware: string, board: string|null, resetReason: string, uptime: string, network: string, rssi: int, switches: int, heapFree: int, heapMin: int, buffered: int, uploadFailures: int, clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null, at: string, ago: string}
  */
@@ -35,7 +32,7 @@ final readonly class BoardReport
 
         return [
             'firmware' => (string) $data['firmware'],
-            // Null before firmware 2.3, which is when the board began reporting it.
+            // Null before firmware 2.3.
             'board' => isset($data['board']) ? (string) $data['board'] : null,
             'resetReason' => (string) $data['reset_reason'],
             'uptime' => $this->duration((int) $data['uptime']),
@@ -52,8 +49,7 @@ final readonly class BoardReport
     }
 
     /**
-     * Nulls until the board has re-synced once since boot: the boot sync steps
-     * from 1970 and says nothing about the crystal.
+     * Nulls until the first re-sync since boot: the boot sync steps from 1970.
      *
      * @return array{clockDrift: string|null, clockDriftWorst: string|null, clockSynced: string|null}
      */
@@ -74,13 +70,11 @@ final readonly class BoardReport
         ];
     }
 
-    /** "+812 ms", "−1 204 ms", "0 ms". */
     private function signedMilliseconds(int $milliseconds): string
     {
         return Figure::signed($milliseconds, 0, plusOnZero: false).' ms';
     }
 
-    /** "3 d 4 h", "4 h 12 min", "12 min 5 s". */
     private function duration(int $seconds): string
     {
         $days = intdiv($seconds, 86_400);

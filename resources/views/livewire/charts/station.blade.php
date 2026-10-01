@@ -1,5 +1,4 @@
-{{-- The newest windows as they were stored, and the board's own report as the
-     firmware sent it. Never the SSID or the IP: the page is public. --}}
+{{-- Never the SSID or the IP: the page is public. --}}
 @php($report = $this->stationReport)
 @if ($this->recentTransmissions !== [] || $report !== null)
     <section id="station" class="page-wrap mt-20 grid gap-6 sm:mt-24 lg:grid-cols-[minmax(0,1fr)_380px]" aria-labelledby="station-h">

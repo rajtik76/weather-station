@@ -10,7 +10,6 @@
             <span class="hidden font-mono text-[13px] text-ink-3 sm:inline">Plzeň</span>
         </a>
         <div class="flex items-center gap-5 sm:order-last">
-            {{-- Only with a second sensor; the select is bound to the slug, which StationPage keeps real. --}}
             @if ($this->hasSensorChoice)
                 <label class="flex items-center gap-2 font-mono text-[13px] text-ink-3">
                     <span class="hidden sm:inline">Sensor</span>

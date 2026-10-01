@@ -7,15 +7,9 @@ namespace App\ValueObject;
 use App\Queries\ForecastAccuracy;
 
 /**
- * The forecast page's verdict by horizon: one row per hour ahead, the skill
- * and the share in range as shown, the range width beside the base model's.
- * The widths compare on the hours that have a base, as ForecastAccuracy pairs
- * them, so the gap is the correction's and not a different mix of days.
+ * The forecast page's verdict by horizon: skill, share in range and range width beside the base model's. Widths compare on hours that have a base, so the gap is the correction's.
  *
- * The bars are percentages of their track: the skill from zero up, a loss
- * drawing none, and the share in range as it is, so the 80 % target tick sits
- * at 80 % of the same track. Beside them, the reference station's skill on
- * the same horizon when it has one (ReferenceSkill::byHorizon()).
+ * Bars are percentages of their track: skill from zero up (a loss draws none), share in range as is, so the 80 % target tick sits at 80 %.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  *

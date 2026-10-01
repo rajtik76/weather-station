@@ -30,7 +30,7 @@ class ForecastFactory extends Factory
             'model' => '2026-09-24T08:40:43.136429+00:00',
             'corrected' => true,
             'correction' => 2,
-            // The range widens with the horizon, as the service's does.
+            // Range widens with the horizon.
             'data' => array_map(fn (int $hours): array => [
                 'hours' => $hours,
                 'temperature' => ['low' => $temperature - $hours * 0.5, 'mid' => $temperature, 'high' => $temperature + $hours * 0.5],

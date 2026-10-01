@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * Magnus formula with the Sonntag 1990 constants; good to a few hundredths
- * of a degree between -45 and 60 °C, well inside the sensor's own error.
+ * Magnus formula, Sonntag 1990 constants; good to a few hundredths of a degree between -45 and 60 °C.
  */
 final readonly class DewPoint
 {
@@ -19,9 +18,7 @@ final readonly class DewPoint
     private function __construct(public float $celsius) {}
 
     /**
-     * Null at 0 %: log(0) is -inf, and 0 % is what a BME280 reports when its
-     * humidity path has failed. A gap says that; a point at -70 °C would
-     * flatten the whole chart.
+     * Null at 0 %: log(0) is -inf, and a failed humidity path reads 0 %. A gap beats a point at -70 °C.
      */
     public static function of(MeasurementData $data): ?self
     {

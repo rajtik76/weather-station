@@ -28,13 +28,7 @@ class ForecastWeather
 {
     use Dispatchable;
 
-    /**
-     * A station clock running a little ahead still gets its newest reading
-     * forecast from. A row stamped further ahead is a clock fault - local
-     * time sent as UTC, a jump - and sent, it would be the reading every run
-     * forecasts from, under an issued_at that has not come yet, until real
-     * time caught up with it.
-     */
+    /** Tolerated clock lead; a row stamped further ahead is a clock fault and would pin every forecast to a future issued_at. */
     private const int AHEAD_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
     public function __construct(public Sensor $sensor) {}
@@ -75,11 +69,8 @@ class ForecastWeather
     }
 
     /**
-     * Local midnight of history_since, from which on the station correction
-     * learns: readings from before a change at the station would teach it the
-     * wrong thing. Only the correction - the base models still get the whole
-     * history, as they need 48 hours of it behind every forecast. A date that
-     * does not parse is reported and left out, so the forecasts go on.
+     * @param  list<Horizon>  $horizons
+     * @return list<Horizon>
      */
     private function correctionSince(): ?int
     {
@@ -91,7 +82,7 @@ class ForecastWeather
 
         $midnight = DateTimeImmutable::createFromFormat('!Y-m-d', $since, new DateTimeZone(LocalTime::TIMEZONE));
 
-        // createFromFormat() rolls 2026-17-09 over into 2027; only a date that reads back the same is one.
+        // createFromFormat() rolls 2026-17-09 over into 2027; require a round trip.
         if ($midnight === false || $midnight->format('Y-m-d') !== $since) {
             report(new InvalidArgumentException("FORECAST_HISTORY_SINCE is not a Y-m-d date: {$since}"));
 

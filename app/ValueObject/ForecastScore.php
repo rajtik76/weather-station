@@ -8,12 +8,7 @@ use App\Models\Forecast;
 use App\Queries\ForecastAccuracy;
 
 /**
- * One horizon's score from the forecasts ForecastAccuracy paired with what
- * came: over the whole span, by the local day the forecasts were made and by
- * the local hour they were for, as shown and before the station correction,
- * and the rain chance against what the microphone heard. Pure arithmetic on
- * the pairs; ForecastAccuracy reads the database and does the pairing. The
- * shapes and what each figure means are documented there.
+ * One horizon's score from the forecasts ForecastAccuracy paired with what came. Pure arithmetic on the pairs; shapes are documented in ForecastAccuracy.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  * @phpstan-import-type Scored from ForecastAccuracy
@@ -58,10 +53,7 @@ final readonly class ForecastScore
     }
 
     /**
-     * Every local day from the first forecast scored to the last one issued,
-     * a day with none scored included, so a gap in the service shows as a
-     * gap in the line and a model that took over today is marked before its
-     * first forecast comes true.
+     * Includes days with none scored, so a service gap shows as a gap and a model that took over today is marked.
      *
      * @param  non-empty-list<Scored>  $scored  oldest first
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver
@@ -145,10 +137,7 @@ final readonly class ForecastScore
     }
 
     /**
-     * The forecast as shown and before the correction, on the same hours:
-     * once any hour has a base, the shown one is scored only on the hours
-     * that have one too, so the gap between them is the correction's and not
-     * a different mix of days. Without any, the shown forecast on them all.
+     * Shown and base on the same hours, so the gap is the correction's and not a different mix of days.
      *
      * @param  non-empty-list<Scored>  $scored
      * @return array{corrected: Figures, base: ?Figures}
@@ -165,8 +154,7 @@ final readonly class ForecastScore
     }
 
     /**
-     * The forecast as shown (`corrected`) or before the correction (`base`),
-     * over the hours that have it; null when none has.
+     * Over the hours that have it; null when none does.
      *
      * @param  list<Scored>  $scored
      * @param  'corrected'|'base'  $which

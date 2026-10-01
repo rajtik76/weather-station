@@ -27,7 +27,7 @@ class StoreMeasurementRequest extends FormRequest
             'sensor_name' => ['required', 'string', 'min:3', 'max:50'],
             'protocol_version' => ['required', Rule::enum(ProtocolVersion::class)],
             'measurements' => ['required', 'array', 'min:1', 'max:500'],
-            // Bounded by the unsignedInteger column: a 422, not a database error.
+            // Fits the unsignedInteger column: 422 instead of a database error.
             'measurements.*.timestamp' => ['required', 'integer', 'date_format:U', 'min:1', 'max:4294967295'],
             ...$this->protocolSpecificRules(),
             ...$this->stationRules(),
@@ -35,8 +35,7 @@ class StoreMeasurementRequest extends FormRequest
     }
 
     /**
-     * Only the fields the rules name: `validated()` returns the object as
-     * sent, extra keys included, because the object itself is under a rule.
+     * Only the fields the rules name; `validated()` keeps extra keys inside the object.
      *
      * @return array<string, mixed>|null
      */
@@ -57,9 +56,8 @@ class StoreMeasurementRequest extends FormRequest
     }
 
     /**
-     * Optional as a whole, complete once present. Fields a later firmware
-     * added are the exception, so a station in the field keeps uploading
-     * through a server upgrade.
+     * Optional as a whole, complete once present; fields added by later
+     * firmware stay optional so deployed stations keep uploading.
      *
      * @return array<string, array<int, string>>
      */
@@ -68,13 +66,12 @@ class StoreMeasurementRequest extends FormRequest
         return [
             'station' => ['sometimes', 'array'],
             'station.firmware' => ['required_with:station', 'string', 'max:32'],
-            // Optional (added in firmware 2.3): the IDE's board selection.
+            // Optional (firmware 2.3).
             'station.board' => ['sometimes', 'string', 'max:40'],
             'station.reset_reason' => ['required_with:station', 'string', 'max:40'],
             'station.uptime' => ['required_with:station', 'integer', 'min:0'],
             'station.heap_free' => ['required_with:station', 'integer', 'min:0'],
             'station.heap_min' => ['required_with:station', 'integer', 'min:0'],
-            // Nullable: the firmware sends what it has.
             'station.ssid' => ['present_with:station', 'nullable', 'string', 'max:32'],
             'station.ip' => ['present_with:station', 'nullable', 'string', 'max:15'],
             'station.rssi' => ['required_with:station', 'integer', 'min:-120', 'max:0'],
@@ -82,7 +79,7 @@ class StoreMeasurementRequest extends FormRequest
             'station.wifi_switches' => ['required_with:station', 'integer', 'min:0'],
             'station.buffered' => ['required_with:station', 'integer', 'min:0'],
             'station.upload_failures' => ['required_with:station', 'integer', 'min:0'],
-            // Optional as a set (added in firmware 2.2), all four or none.
+            // Optional as a set (firmware 2.2), all four or none.
             'station.clock_step_ms' => ['required_with:station.clock_step_over_s,station.clock_step_max_ms,station.clock_synced_at', 'integer'],
             'station.clock_step_over_s' => ['required_with:station.clock_step_ms,station.clock_step_max_ms,station.clock_synced_at', 'integer', 'min:0'],
             'station.clock_step_max_ms' => ['required_with:station.clock_step_ms,station.clock_step_over_s,station.clock_synced_at', 'integer'],
@@ -97,7 +94,7 @@ class StoreMeasurementRequest extends FormRequest
     {
         $version = $this->enum('protocol_version', ProtocolVersion::class);
 
-        // Unknown version: let the protocol_version rule report it.
+        // Unknown version: the protocol_version rule reports it.
         if ($version === null) {
             return [];
         }

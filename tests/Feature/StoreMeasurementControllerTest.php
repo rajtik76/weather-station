@@ -211,8 +211,6 @@ it('registers a sensor on its first upload and reuses it afterwards', function (
 });
 
 /**
- * The `station` object a V2 firmware sends beside its measurements.
- *
  * @return array<string, int|string>
  */
 function stationReport(): array

@@ -1,4 +1,4 @@
-# The image builds the Laravel app only; forecast/ has its own image.
+# forecast/ has its own image.
 firmware/
 /forecast/
 
@@ -8,13 +8,11 @@ firmware/
 /public/build/
 /public/hot
 
-# Credentials come in through the environment, never the image.
 .env
 auth.json
 
-# Local runtime state; a local build would bake dev caches into the image,
-# including a package manifest listing require-dev providers. The
-# directories themselves stay: artisan needs them to boot.
+# Dev caches (incl. a manifest of require-dev providers) must not enter the image; keep the
+# directories, artisan needs them to boot.
 /bootstrap/cache/*.php
 /storage/logs/*.log
 /storage/framework/cache/data/**
@@ -22,14 +20,12 @@ auth.json
 /storage/framework/views/*.php
 /storage/debugbar/*.json
 
-# Tooling and editor state.
 /.git/
 /.github/
 /.idea/
 /.vscode/
 .DS_Store
 
-# Not used at runtime.
 /docs/
 /tests/
 /phpunit.xml

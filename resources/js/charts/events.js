@@ -4,24 +4,21 @@ import { state } from "./state";
 import { ICON_HALF, basePalette } from "./theme";
 import { readingsHtml } from "./tooltip";
 
-/** Fallback event colour; a mid-grey that works on both grounds. */
 const EVENT_COLOUR = "#a1a1aa";
 
-/** The lane above the temperature strip's grid the event icons sit in. */
 export const EVENT_LANE = 26;
 
 /** Lucide's info, pinned to its 24x24 grid like RAIN_ICON. */
 const EVENT_ICON = "M0 0M24 24M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20M12 16v-4M12 8h.01";
 
-/** Narrow enough for a 320 px phone once the tooltip's padding and the page's gutters are in. */
+/** Fits a 320 px phone once tooltip padding and page gutters are in. */
 const EVENT_TITLE_WIDTH = 240;
 
-/** Only a strip flagged `events` (the temperature one) carries the event icons; every strip draws the lines. */
+/** Only the strip flagged `events` (temperature) carries the icons; every strip draws the lines. */
 export function marksEvents(strip) {
     return strip.events === true && eventsInWindow().length > 0;
 }
 
-/** The strip's row at an event, or null when the event sits in a hole or off the rows. */
 function stripRowAt(strip, time) {
     const list = strip.rows();
     const row = nearestRow(list, time, strip.time);
@@ -32,10 +29,9 @@ function stripRowAt(strip, time) {
         : null;
 }
 
-/** Tracks the event line under the pointer into `state.hovered`, which the shared tooltip reads. */
+/** Feeds `state.hovered` to the shared tooltip. */
 export function trackEventHover(chart) {
-    // mousemove, not mouseover: zrender fires mouseover after the axis
-    // pointer's global handler, so the first tooltip would miss the title.
+    // mousemove, not mouseover: zrender fires mouseover after the axis pointer, so the first tooltip would miss the title.
     chart.on("mousemove", (params) => {
         if (params.componentType === "markLine") {
             state.hovered = {
@@ -53,13 +49,12 @@ export function trackEventHover(chart) {
     });
 }
 
-/** Over readings: the strip's tooltip with the title above. Over a hole: the event alone, with its date. */
 export function eventTooltipHtml(strip, event) {
     const colours = basePalette();
     const row = stripRowAt(strip, event.time);
     const readings = row ? readingsHtml(strip, row) : "";
 
-    // A title is up to 255 characters, and ECharts keeps a tooltip on one line: it wraps here.
+    // A title is up to 255 characters and ECharts keeps a tooltip on one line, so it wraps here.
     const title =
         `<div style="font-weight:600;font-size:14px;color:${colours.text};` +
         `max-width:${EVENT_TITLE_WIDTH}px;white-space:normal;overflow-wrap:anywhere">` +
@@ -77,15 +72,10 @@ export function eventTooltipHtml(strip, event) {
     return title + `<div style="margin-top:2px">${formatStamp(event.time)}</div>`;
 }
 
-/**
- * The events every strip gets from the frame, so no strip draws its own: the
- * lines on each, unlabelled - written-out titles ran into each other side by
- * side - and the icons on the temperature strip. The title is in the shared
- * tooltip (eventTooltipHtml).
- */
+/** Added by the frame to every strip; no strip draws its own. Lines are unlabelled (titles ran into each other), the title is in the tooltip. */
 export function eventLayer(strip, colours) {
     return [
-        // No data of its own: it only carries the lines, and would stretch or crosshair nothing.
+        // No data of its own: it only carries the lines.
         {
             type: "line",
             data: [],
@@ -112,12 +102,7 @@ function eventsInWindow() {
         : state.events.filter((event) => event[EVENT.time] >= first && event[EVENT.time] <= last);
 }
 
-/**
- * An icon over each event line in the lane above the grid, the title in its
- * tooltip. Outside the grid the axis tooltip does not fire, so the icons carry
- * an item tooltip of their own - the same frame and the same content a hovered
- * line gets.
- */
+/** Outside the grid the axis tooltip does not fire, so the icons carry an item tooltip of their own. */
 function eventIconSeries(strip, colours) {
     const icons = eventsInWindow().map((event) => ({
         value: [event[EVENT.time]],
@@ -161,7 +146,7 @@ function eventIconSeries(strip, colours) {
                     height: 2 * ICON_HALF,
                 },
                 style: {
-                    // Filled with the ground, so the whole disc takes the pointer.
+                    // Filled, so the whole disc takes the pointer.
                     fill: colours.surface,
                     stroke: icons[params.dataIndex].colour,
                     lineWidth: 1.6,
@@ -174,7 +159,7 @@ function eventIconSeries(strip, colours) {
     };
 }
 
-/** The column takes any string and the value lands in a canvas style and in markup; only a real colour gets through. */
+/** The column takes any string and the value lands in markup: only a real colour gets through. */
 function eventColour(value) {
     return typeof value === "string" && CSS.supports("color", value) ? value : EVENT_COLOUR;
 }
@@ -186,7 +171,7 @@ export function eventLines() {
         return {
             name: event[EVENT.title],
             xAxis: event[EVENT.time],
-            // Explicit pattern: "dashed" scales with the width and at 2 px the gaps outgrew the dashes.
+            // Explicit pattern: "dashed" scales with the width.
             lineStyle: { color: colour, type: [4, 3], width: 2, opacity: 0.9 },
             label: { color: colour },
         };

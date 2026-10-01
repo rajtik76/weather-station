@@ -24,17 +24,14 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
-# Arduino firmware secrets - real WiFi and API credentials
 firmware/**/secrets.h
 firmware/secrets.h
 
-# Playwright MCP scratch output
 /.playwright-mcp
 /.vite-hooks/_
 
 *.swp
 *.swo
 
-# Python venv for schemdraw (circuit schematics in docs/)
 /.venv
 __pycache__/

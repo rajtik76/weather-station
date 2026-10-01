@@ -14,11 +14,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
- * One station. `name` is what the firmware sends; the first upload under a
- * new name creates the row. `slug` is derived once, on creation, so a
- * `?sensor=` link keeps working. One row is no station of ours: the ČHMÚ
- * reference (config forecast.reference), forecast every night as a yardstick
- * and kept out of the picker by stations().
+ * One station, created by the first upload under a new `name`. `slug` is set
+ * once so `?sensor=` links keep working. The ČHMÚ reference row
+ * (forecast.reference) is no station: stations() keeps it out of the picker.
  *
  * @property int $id
  * @property string $name
@@ -38,20 +36,20 @@ class Sensor extends Model
         });
     }
 
-    /** The reference station's row, created on first use by the job that fills it. */
+    /** The reference row, created on first use. */
     public static function reference(): self
     {
         return self::query()->firstOrCreate(['name' => (string) config('forecast.reference.name')]);
     }
 
-    /** The reference station's row, or null before the job has run once. */
+    /** The reference row, or null before the job has run. */
     public static function findReference(): ?self
     {
         return self::query()->where('name', (string) config('forecast.reference.name'))->first();
     }
 
     /**
-     * The stations whose own uploads the pages show: every sensor but the reference.
+     * Every sensor but the reference.
      *
      * @param  Builder<self>  $query
      */
@@ -61,7 +59,7 @@ class Sensor extends Model
         $query->where('name', '!=', (string) config('forecast.reference.name'));
     }
 
-    /** Two names can slug alike, and a name of symbols only slugs to ''. */
+    /** Names can slug alike; a symbols-only name slugs to ''. */
     public static function uniqueSlug(string $name): string
     {
         $base = Str::slug($name) ?: 'sensor';

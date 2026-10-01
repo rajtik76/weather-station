@@ -8,15 +8,13 @@ use App\Models\StationEvent;
 use App\ValueObject\LocalTime;
 
 /**
- * One sensor's events as the charts mark them: `[wall-clock ms, title,
- * colour]`, all of them - there are a handful, and a mark outside the axis
- * is not drawn. Colour null means the chart picks.
+ * One sensor's events as `[wall-clock ms, title, colour]`; colour null lets the chart pick.
  *
  * @phpstan-type Mark array{0: int, 1: string, 2: ?string}
  */
 final readonly class StationEventMarks
 {
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**

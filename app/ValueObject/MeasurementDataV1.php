@@ -7,9 +7,7 @@ namespace App\ValueObject;
 use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
-/**
- * Protocol V1: one reading per entry, its own extreme on every channel.
- */
+/** Protocol V1: one reading per entry, its own extreme on every channel. */
 final readonly class MeasurementDataV1 implements MeasurementData
 {
     public ProtocolVersion $protocolVersion;

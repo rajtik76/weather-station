@@ -1,11 +1,9 @@
 import { formatStamp } from "./format";
 import { basePalette } from "./theme";
 
-/** Frosted like the tiles the charts sit on; ECharts takes the rest as inline CSS. */
 export const TOOLTIP_GLASS =
     "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);";
 
-/** The slot's stamp over the strip's own lines; nothing when the strip has nothing to say for it. */
 export function readingsHtml(strip, row) {
     const lines = strip.lines(row, strip);
 
@@ -22,7 +20,6 @@ export function readingsHtml(strip, row) {
     );
 }
 
-/** `colour` puts a dot before the label, `detail` a smaller line under the value. */
 function tooltipLine({ label, value, colour = "", strong = false, detail = "" }, colours) {
     const dot = colour
         ? `<span style="display:inline-block;width:8px;height:8px;border-radius:9999px;` +

@@ -10,7 +10,7 @@
                 {{ $this->window['from'] }} → {{ $this->window['to'] }}
                 <span class="ml-3 text-ink-3">{{ \App\ValueObject\Figure::format($this->recordCount, 0) }} {{ $this->recordCount === 1 ? 'record' : 'records' }}</span>
             </p>
-            {{-- Always rendered, only disabled, so the first zoom does not shift the row mid-click. --}}
+            {{-- Always rendered, only disabled: the first zoom must not shift the row mid-click. --}}
             <button
                 type="button"
                 wire:click="resetZoom"

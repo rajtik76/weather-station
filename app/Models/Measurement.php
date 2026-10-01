@@ -43,7 +43,7 @@ class Measurement extends Model
                     throw new UnexpectedValueException('Malformed measurement data.');
                 }
 
-                // The version lives in its own column, never inside the blob.
+                // The version is in its own column, not the blob.
                 return ProtocolVersion::from((int) $attributes['protocol_version'])->hydrate($decoded);
             },
         )->shouldCache();

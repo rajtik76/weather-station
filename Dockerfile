@@ -16,12 +16,11 @@ RUN composer install \
 COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
-# Frontend assets.
 FROM node:24-alpine AS assets
 
 WORKDIR /app
 
-# The prepare script runs "vp config", which reads vite.config.js and shells out to git.
+# The prepare script ("vp config") needs vite.config.js and git.
 RUN apk add --no-cache git
 
 COPY package.json package-lock.json vite.config.js .node-version ./
@@ -32,7 +31,6 @@ COPY --from=vendor /app/vendor ./vendor
 COPY . .
 RUN npm run build
 
-# Runtime: no composer, npm or compilers.
 FROM php:8.4-fpm-alpine AS run
 
 RUN apk add --no-cache nginx supervisor libpq \
@@ -52,8 +50,7 @@ COPY . .
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
 
-# www-data writes logs, caches and sessions. Bootstrap caches are dropped
-# so the entrypoint rebuilds them for this environment.
+# Drop bootstrap caches; the entrypoint rebuilds them for this environment.
 RUN rm -f bootstrap/cache/*.php \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache

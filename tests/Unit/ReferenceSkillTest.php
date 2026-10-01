@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\ValueObject\ReferenceSkill;
 
 /**
- * A score of the given horizon, its shown skill and the days as `[date, skill]`.
- *
  * @param  list<array{0: string, 1: ?float}>  $days
  * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
  */

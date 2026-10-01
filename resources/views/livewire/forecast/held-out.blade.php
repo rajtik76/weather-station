@@ -1,5 +1,4 @@
-{{-- The model's own exam, fixed at training: forecast/README.md (Results)
-     and forecast/CHANGELOG.md (Correction 2). Update them together. --}}
+{{-- Update together with forecast/README.md (Results) and forecast/CHANGELOG.md (Correction 2). --}}
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="held-h">
     <div class="mb-6 max-w-[70ch]">
         <h2 id="held-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Held-out results</h2>

@@ -11,17 +11,6 @@ use Tests\TestCase;
 
 use function Pest\Laravel\withHeader;
 
-/*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind different classes or traits.
-|
-*/
-
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature')
@@ -29,39 +18,9 @@ pest()->extend(TestCase::class)
         withHeader('Authorization', 'Bearer '.config('sensor.api_token'));
     });
 
-/*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
-
 expect()->extend('toBeOne', fn () => $this->toBe(1));
 
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
-
-/*
- * Reading the chart payloads out of a rendered page, and building the
- * windows the chart tests feed it.
- */
-
-/**
- * The window's payload only; the raw HTML also carries the navigator's,
- * which spans the whole record.
- */
+/** The window's payload only; the navigator's spans the whole record. */
 function chartRows(string $html): string
 {
     preg_match('/data-chart-rows="([^"]*)"/', $html, $matches);
@@ -70,8 +29,6 @@ function chartRows(string $html): string
 }
 
 /**
- * The window's payload decoded, one row per bucket - holes included.
- *
  * @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
  */
 function bucketRows(string $html): array
@@ -80,8 +37,6 @@ function bucketRows(string $html): array
 }
 
 /**
- * The window's light payload, only the buckets that hold light, keyed by their epoch.
- *
  * @return array<int, list<int|float|null>>
  */
 function lightBuckets(string $html): array
@@ -113,8 +68,6 @@ function litWindow(int $illuminance, int $min, int $max): MeasurementDataV4
 }
 
 /**
- * The window's noise payload, only the buckets that hold noise, keyed by their epoch.
- *
  * @return array<int, list<int|float|null>>
  */
 function noiseBuckets(string $html): array
@@ -132,9 +85,6 @@ function noiseBuckets(string $html): array
     return $filled;
 }
 
-/**
- * A V3 window with noise, every band at the same level.
- */
 function noisyWindow(int $laeq, int $la10, int $la90, int $lamax, int $band, int $seconds = 600): MeasurementDataV3
 {
     return new MeasurementDataV3(
@@ -148,8 +98,7 @@ function noisyWindow(int $laeq, int $la10, int $la90, int $lamax, int $band, int
 }
 
 /**
- * A spectrum RainDetector hears as rain, in hundredths of dB: loud at 8 kHz,
- * with the shield ringing at 1 kHz above both its neighbours.
+ * Rain to RainDetector: loud at 8 kHz, shield ringing at 1 kHz; hundredths of dB.
  *
  * @return list<int>
  */
@@ -159,8 +108,6 @@ function rainyBands(): array
 }
 
 /**
- * Only the buckets a reading landed in, keyed by their epoch.
- *
  * @return array<int, array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float, 5: int, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?float}>
  */
 function filledBuckets(string $html): array
@@ -177,8 +124,6 @@ function filledBuckets(string $html): array
 }
 
 /**
- * The navigator's own payload, which always spans the whole record.
- *
  * @return list<array{0: int, 1: float, 2: float, 3: float, 4: ?float, 5: int}>
  */
 function navigatorRows(string $html): array
@@ -189,8 +134,6 @@ function navigatorRows(string $html): array
 }
 
 /**
- * The events the charts are told to mark.
- *
  * @return list<array{0: int, 1: string, 2: ?string}>
  */
 function chartEvents(string $html): array
@@ -201,8 +144,6 @@ function chartEvents(string $html): array
 }
 
 /**
- * One horizon as the forecast service stores it.
- *
  * @return array<string, mixed>
  */
 function forecastHorizon(int $hours, float $temperature, float $humidity, float $rain): array
@@ -216,10 +157,7 @@ function forecastHorizon(int $hours, float $temperature, float $humidity, float 
     ];
 }
 
-/**
- * A V3 window whose spectrum carries the given 8 kHz level and 1 kHz ring
- * over its neighbours, in dB.
- */
+/** A V3 window with the given 8 kHz level and 1 kHz ring over its neighbours, in dB. */
 function spectrumWindow(float $high, float $ring, float $neighbours = 40.0): MeasurementDataV3
 {
     $bands = array_fill(0, 26, 3000);

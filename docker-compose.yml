@@ -1,4 +1,4 @@
-# Local PostgreSQL, same image as production. The app itself runs under Herd.
+# Local PostgreSQL, same image as production.
 services:
     pgsql:
         image: postgres:18-alpine
@@ -11,7 +11,7 @@ services:
         volumes:
             # PostgreSQL 18 keeps the cluster under /var/lib/postgresql/<major>.
             - pgsql:/var/lib/postgresql
-            # Runs once on an empty volume: creates the test database.
+            # Runs once on an empty volume.
             - ./docker/pgsql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
         healthcheck:
             test:

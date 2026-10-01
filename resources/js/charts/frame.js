@@ -4,7 +4,7 @@ import { state } from "./state";
 import { CHART_FONT, basePalette } from "./theme";
 import { TOOLTIP_GLASS, readingsHtml } from "./tooltip";
 
-/** Tick labels per unit. ECharts' default prints a bare day number; all numeric to stay language-neutral. */
+/** All numeric to stay language-neutral; ECharts' default prints a bare day number. */
 export const TIME_LABELS = {
     year: "{yyyy}",
     month: "{M}/{yyyy}",
@@ -16,32 +16,24 @@ export const TIME_LABELS = {
     none: "{d}. {M}. {yyyy}",
 };
 
-/**
- * Shared by every canvas so the stacked time axes line up pixel for pixel; the right margin is a second value axis's width.
- * A phone gets the narrow pair: the labels are a few digits wide and 128 px of a 360 px strip is a third of it.
- */
+/** Shared by every canvas so the stacked time axes line up pixel for pixel; the right margin is a second value axis's width. */
 const GRID_SIDES = { left: 64, right: 64 };
 const NARROW_GRID_SIDES = { left: 36, right: 30 };
 
-/** Tailwind's `sm` breakpoint; below it the strips use NARROW_GRID_SIDES. */
+/** Tailwind's `sm` breakpoint. */
 export const narrowScreen = window.matchMedia("(max-width: 639px)");
 
 export function gridSides() {
     return narrowScreen.matches ? NARROW_GRID_SIDES : GRID_SIDES;
 }
 
-/**
- * The one tooltip every strip shows. Axis trigger with the pointer on x: the
- * crosshair rides the time axis, and on the waterfall ECharts would pick the
- * band axis, a category axis, instead.
- */
+/** Axis pointer pinned to x: on the waterfall ECharts would pick the category band axis. */
 export function tooltipFor(strip, colours) {
     return {
         trigger: "axis",
         axisPointer: { axis: "x" },
         appendToBody: true,
-        // A strip spans the screen, so inside the chart is inside the screen. Unconfined,
-        // the flip to the pointer's left pushed a tooltip off a phone's edge.
+        // Unconfined, the flip to the pointer's left pushed a tooltip off a phone's edge.
         confine: true,
         backgroundColor: colours.surface,
         borderColor: colours.border,
@@ -65,11 +57,7 @@ function tooltipHtml(strip, time) {
     return row ? readingsHtml(strip, row) : "";
 }
 
-/**
- * The frame every strip is drawn in: same grid sides, time axis, tooltip and
- * pointer, so the stacked canvases line up and behave alike. The strip's own
- * `grid` and `xAxis` keys refine the shared ones.
- */
+/** The strip's own `grid` and `xAxis` keys refine the shared ones. */
 export function chartOption(strip) {
     const colours = basePalette();
     const own = strip.option(strip, colours);
@@ -89,7 +77,6 @@ export function chartOption(strip) {
     };
 }
 
-/** The shared sides under the strip's own grid, and the icon lane on top when the strip carries it. */
 export function frameGrid(strip, own = {}) {
     const top = own.top ?? 12;
 

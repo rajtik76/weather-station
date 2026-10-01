@@ -8,35 +8,9 @@ import { CHART_FONT, basePalette, token } from "./charts/theme";
 
 echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
-/**
- * The forecast page's accuracy charts for the chosen horizon, told apart by
- * `data-accuracy-chart`. Not strips: no time axis, no zoom, no crosshair.
- *
- * `days`: the skill by the local day the forecasts were made - how much
- * smaller their miss was than the naive guess's, around a zero line where a
- * forecast is no better than the guess. Two lines: the forecast as shown, in
- * the temperature's amber, and the base model before the station correction,
- * dashed grey, so the gap between them is what the correction has learnt.
- * A day a new model or a new version of the correction took over gets a
- * dashed upright, labelled with which. A day with nothing
- * scored is a gap. The axis stops at -100 %: a calm day with a guess that
- * barely missed can score -1000 % and would flatten every other day; the
- * tooltip still prints the real figure.
- *
- * `hours`: how far the shown forecast was off by the local hour it was for:
- * the mean reading minus the forecast's middle, around a zero line - above it
- * the station read warmer than forecast, which is where a sun on the shield
- * shows. The points stay neutral: their height is the error, and a grade
- * colour would describe another measure.
- */
+/** Forecast page accuracy charts (`data-accuracy-chart`: days, hours, widths). Not strips: no time axis, zoom or crosshair. */
 
-/**
- * A day row is `[date, forecast hours scored, skill in %, mean miss and mean
- * naive miss in °C, percent in range, mean range width in °C, the base
- * model's skill, mean miss, percent in range and range width, the model that
- * took over or null, the correction version that took over or null]`, nulls
- * but the date and the changes for a day with none.
- */
+/** Day row; skill in %, misses and widths in °C. Nulls but the date and the changes for a day with nothing scored. */
 const DAY = {
     date: 0,
     count: 1,
@@ -53,33 +27,26 @@ const DAY = {
     correctionTo: 12,
 };
 
-/** Where the skill axis stops below zero. */
+// A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
 const SKILL_FLOOR = -100;
 
-/**
- * An hour row is `[percent, forecast hours scored, mean and largest distance
- * from the forecast's middle in °C, mean reading minus the middle in °C]`,
- * nulls for an hour with none.
- */
+/** Hour row; errors and bias in °C (bias: mean reading minus the forecast's middle). Nulls for an hour with none. */
 const HOUR = { percent: 0, count: 1, error: 2, worst: 3, bias: 4 };
 
 const celsius = { format: (value) => formatNumber(value, 1) };
 
-/** Axis ticks: whole degrees print bare, a half as the tooltip prints it. */
 const tick = new Intl.NumberFormat("cs-CZ", {
     maximumFractionDigits: 1,
     signDisplay: "exceptZero",
 });
 
-/** A width is never signed. */
 const width = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 });
 
 const charts = new Map();
 
-/** What each chart was last painted from; a poll that changes nothing repaints nothing. */
+/** Last painted payload per chart; an unchanged poll repaints nothing. */
 const painted = new Map();
 
-/** The shown forecast in the temperature's CH1, the base in the axis labels' grey. */
 function palette() {
     return { ...basePalette(), temperature: token("--ch1"), reference: token("--ink-2") };
 }
@@ -88,7 +55,6 @@ const pad = (hour) => String(hour).padStart(2, "0");
 
 const forecastHours = (count) => (count === 1 ? "1 forecast hour" : `${count} forecast hours`);
 
-/** "27 % better", "12 % worse", "as good": against the naive guess. */
 function versus(skill) {
     if (skill === null) {
         return "no guess to beat";
@@ -99,7 +65,7 @@ function versus(skill) {
         : `${Math.abs(skill)} % ${skill > 0 ? "better" : "worse"}`;
 }
 
-/** Short lines, one fact each: ECharts keeps a tooltip on one line per `<br>`, and a phone is 320 px wide. */
+/** Short lines, one fact each: a phone is 320 px wide. */
 function dayTooltipHtml(row, reference = null) {
     const tookOver =
         (row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`) +
@@ -164,16 +130,10 @@ function hourTooltipHtml(hour, row) {
     );
 }
 
-/** Room kept between the tooltip and the pointer, and between the tooltip and the screen's edge. */
 const TOOLTIP_GAP = 12;
 const SCREEN_EDGE = 8;
 
-/**
- * Above the pointer, where a finger does not cover it, on whichever side has
- * room, and never past the screen. The table scrolls sideways, so the chart
- * can be wider than the screen: ECharts' own flip and `confine` both measure
- * the chart and left the tooltip half off a phone.
- */
+/** Above the pointer, never past the screen: the chart can be wider than the screen, so ECharts' flip and `confine` left the tooltip half off a phone. */
 function besidePointer(canvas) {
     return ([x, y], params, dom, rect, { contentSize: [width, height] }) => {
         const box = canvas.getBoundingClientRect();
@@ -189,10 +149,7 @@ function besidePointer(canvas) {
     };
 }
 
-/**
- * Whole degrees either side of zero, at least one, so warmer and colder read
- * alike. With nothing to plot ECharts hands over infinities; one it is.
- */
+/** Whole degrees either side of zero, at least one; ECharts hands over infinities when there is nothing to plot. */
 function extent({ min, max }) {
     const furthest = Math.max(Math.abs(min), Math.abs(max));
 
@@ -207,32 +164,26 @@ function signedPercent(value) {
     return `${tick.format(value)} %`;
 }
 
-/**
- * Whole tens, zero always in view: a skill that never went below it still
- * shows how far above it stayed. Never under SKILL_FLOOR.
- */
+/** Whole tens, zero always in view, never under SKILL_FLOOR. */
 const tensBelow = ({ min }) =>
     Number.isFinite(min) ? Math.max(SKILL_FLOOR, Math.min(0, Math.floor(min / 10) * 10)) : 0;
 
 const tensAbove = ({ max }) => (Number.isFinite(max) ? Math.max(10, Math.ceil(max / 10) * 10) : 10);
 
-/** Axis ticks under a full date: the year once is enough. */
 const dayTick = (date) => date.replace(/\d{4}$/, "");
 
 function tooltip(colours, canvas, formatter) {
     return {
         trigger: "axis",
-        // The table scrolls sideways, and its overflow would clip a tooltip kept inside.
+        // The table's overflow would clip a tooltip kept inside.
         appendTo: "body",
         position: besidePointer(canvas),
         axisPointer: { type: "line", lineStyle: { color: colours.axis } },
         backgroundColor: colours.surface,
         borderColor: colours.border,
-        // Frosted like the tiles the charts sit on.
         extraCssText:
             "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);",
         textStyle: { color: colours.text, fontFamily: CHART_FONT, fontSize: 11 },
-        // Both series share the day: one tooltip for the row, whichever line the pointer is on.
         formatter: ([point]) => formatter(point.dataIndex),
     };
 }
@@ -241,17 +192,13 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
-/**
- * `reference` is the same model's skill on the ČHMÚ reference station, one
- * per day of `rows` (null where it has none), drawn as a dotted third line.
- */
+/** `reference`: the same model's skill on the ČHMÚ station, one per day (null where none). */
 function daysOption(rows, canvas, reference = []) {
     const colours = palette();
     const referenceOn = (index) => reference[index] ?? null;
 
     return {
         animation: false,
-        // Room on top for the retrain labels.
         grid: { left: 44, right: 8, top: 20, bottom: 22 },
         xAxis: {
             type: "category",
@@ -321,7 +268,6 @@ function daysOption(rows, canvas, reference = []) {
     };
 }
 
-/** A dashed upright, labelled, on each day a new model or correction took over; `extra` lines go first. */
 function changeMarks(rows, colours, extra = []) {
     return {
         silent: true,
@@ -345,7 +291,6 @@ function changeMarks(rows, colours, extra = []) {
     };
 }
 
-/** "retrained", "correction 2", or both when they came the same day; empty for a day of neither. */
 function changeLabel(row) {
     return [
         row[DAY.tookOver] === null ? null : "retrained",
@@ -365,7 +310,7 @@ function hoursOption(rows, canvas) {
             type: "category",
             data: rows.map((row, hour) => pad(hour)),
             boundaryGap: false,
-            // At the bottom, not on zero: the zero line is the series' own markLine.
+            // Bottom, not on zero: the zero line is the series' markLine.
             axisLine: { onZero: false, lineStyle: { color: colours.axis } },
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
             axisLabel: {
@@ -409,11 +354,6 @@ function hoursOption(rows, canvas) {
     };
 }
 
-/**
- * The 10-90 % range's width by day, shown and base: the correction widens or
- * narrows it until it holds eight readings in ten. From zero, so a width
- * reads as a width.
- */
 function widthsOption(rows, canvas) {
     const colours = palette();
 
@@ -484,7 +424,6 @@ function dispose(key) {
 }
 
 function mount(force = false) {
-    // The forecast block comes and goes with the record; a chart whose canvas left the page goes too.
     charts.forEach((chart, key) => {
         if (!document.body.contains(chart.getDom())) {
             dispose(key);
@@ -525,11 +464,7 @@ function mount(force = false) {
     });
 }
 
-/**
- * After every morph of the page: a poll or a horizon switch may rewrite a
- * chart's rows, or a poll bring the whole forecast block back. A hook, not a MutationObserver on the
- * body - that one would fire on every tooltip ECharts redraws.
- */
+/** Runs after every morph. A hook, not a MutationObserver on the body: that would fire on every tooltip redraw. */
 function watchMorphs() {
     const hook = () => window.Livewire.hook("morphed", () => mount());
 

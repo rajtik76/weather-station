@@ -1,5 +1,3 @@
-{{-- A real sequence, so the steps are numbered; on a wide screen one wire
-     runs through them with the electron travelling along it. --}}
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="pipeline-h">
     <h2 id="pipeline-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">How it works</h2>
     <div class="flow-h mt-8 hidden lg:block" aria-hidden="true"><span class="wire-electron"></span></div>

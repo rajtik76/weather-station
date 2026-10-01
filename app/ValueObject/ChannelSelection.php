@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * Which lines the shared weather strip draws. Read against the defaults, so a
- * key missing or added client-side changes nothing, and the last line on
- * stays on. The dew point is derived and starts off.
+ * Which lines the weather strip draws. Read against the defaults, so stray client keys change nothing and the last line on stays on.
  */
 final readonly class ChannelSelection
 {

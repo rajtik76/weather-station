@@ -12,11 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Versions the firmware is built and flashed with; bump together with a local check.
+  # Bump together with a local check.
   ARDUINO_CLI_VERSION: "1.5.1"
   ESP32_CORE_VERSION: "3.3.12"
   ESP32_INDEX_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
-  # The sketch does not fit the default 1.2 MB app slot, and OTA needs two slots.
+  # Default 1.2 MB app slot is too small; OTA needs two slots.
   FQBN: esp32:esp32:esp32:PartitionScheme=min_spiffs
 
 jobs:
@@ -31,7 +31,6 @@ jobs:
         with:
           version: ${{ env.ARDUINO_CLI_VERSION }}
 
-      # The toolchains are hundreds of MB. esp-dsp (dsps_fft2r.h) ships inside the core.
       - name: Cache ESP32 core
         uses: actions/cache@v6
         with:
@@ -50,7 +49,7 @@ jobs:
             "ArduinoJson@7.4.3"
 
       - name: Compile weather_station
-        # secrets.h is gitignored; the example's placeholders are enough to build.
+        # secrets.h is gitignored; the placeholders build.
         run: |
           cp firmware/weather_station/secrets.example.h firmware/weather_station/secrets.h
           arduino-cli compile --fqbn "$FQBN" firmware/weather_station

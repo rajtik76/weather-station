@@ -45,7 +45,7 @@ it('plots only the readings inside the window', function (): void {
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subHour()->getTimestamp()]);
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subDays(10)->getTimestamp()]);
 
-    // CET in March: payload stamps carry the +1 h already.
+    // CET in March: payload stamps carry the +1 h.
     $recent = '1773576000000';
     $older = '1772715600000';
 
@@ -66,7 +66,6 @@ it('widens the buckets with the window', function (): void {
 
     $sensor = Sensor::factory()->create();
 
-    // Two readings twenty minutes apart, inside one half hour.
     Measurement::factory()->for($sensor)->create([
         'timestamp' => now()->subMinutes(20)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 2000, humidity: 5000, pressure: 97389),
@@ -83,7 +82,6 @@ it('widens the buckets with the window', function (): void {
         ->and(array_key_first($week))->toBe(now()->subMinutes(30)->getTimestamp())
         ->and(array_values($week)[0][1])->toEqual(21);
 
-    // An hour is ten-minute buckets: each reading is a point again.
     $hour = filledBuckets(Livewire::test(Charts::class)
         ->call('zoomTo', now()->subHour()->getTimestamp(), now()->getTimestamp())
         ->html());
@@ -96,7 +94,6 @@ it('picks the bucket width from the span on screen', function (int $days, int $b
 
     $sensor = Sensor::factory()->create();
 
-    // One hour of uploads, 11:00 to 11:50, warming a degree per slot.
     foreach (range(0, 5) as $slot) {
         Measurement::factory()->for($sensor)->create([
             'timestamp' => now()->subHour()->getTimestamp() + $slot * 600,
@@ -115,9 +112,7 @@ it('picks the bucket width from the span on screen', function (int $days, int $b
         ->and(array_column($rows, 5))->each->toBeIn(range($rows[0][5], now()->getTimestamp(), $bucketSeconds))
         ->and(array_keys($filled))->toBe(array_map(fn (int $epoch): int => now()->getTimestamp() + $epoch, $epochs));
 })->with([
-    // 11:00 and 11:30 on a week, every half hour.
     '7 days' => [7, 1800, [-3600, -1800]],
-    // A fortnight is drawn as a month: whole hours.
     '14 days' => [14, 3600, [-3600]],
     '1 month' => [30, 3600, [-3600]],
 ]);
@@ -127,7 +122,6 @@ it('draws no wider than a month', function (int $days): void {
 
     Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 
-    // Clipped from the front to the month ending where the reader pointed.
     $component = Livewire::test(Charts::class)
         ->call('zoomTo', now()->subDays($days)->getTimestamp(), now()->getTimestamp())
         ->assertSet('to', now()->getTimestamp())
@@ -167,7 +161,7 @@ it('narrows the window to a dragged selection', function (): void {
 
     expect(chartRows($component->html()))->toContain($recent)->toContain($older);
 
-    // Real epochs come back, not the shifted stamps.
+    // Real epochs, not the shifted stamps.
     $component->call('zoomTo', now()->subHours(2)->getTimestamp(), now()->getTimestamp());
 
     expect(chartRows($component->html()))->toContain($recent)->not->toContain($older);
@@ -180,7 +174,6 @@ it('narrows the window to a dragged selection', function (): void {
 it('orders and widens a backwards or tiny selection', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Reversed and too narrow.
     Livewire::test(Charts::class)
         ->call('zoomTo', now()->getTimestamp(), now()->subMinutes(5)->getTimestamp())
         ->assertSet('to', now()->getTimestamp())
@@ -196,7 +189,6 @@ it('normalises a window set without zoomTo', function (): void {
         ->assertSet('from', null)
         ->assertSet('to', null);
 
-    // Wider than a month is clipped from the front.
     Livewire::test(Charts::class)
         ->call('zoomTo', now()->subDay()->getTimestamp(), now()->getTimestamp())
         ->set('from', 0)

@@ -7,9 +7,7 @@ namespace App\ValueObject;
 use App\Models\Forecast;
 
 /**
- * A stored forecast as the pages list it: temperature and rain only. The
- * service forecasts humidity and pressure too, and they stay in the stored
- * row, but nobody reads them ahead.
+ * A stored forecast as the pages list it: temperature and rain only.
  *
  * @phpstan-type Hour array{hours: int, at: int, clock: string, t: float, tLow: float, tHigh: float, rain: int}
  *
@@ -36,7 +34,7 @@ final readonly class ForecastHours
 
         return [
             'hours' => $horizon['hours'],
-            // The epoch the hour is for: the forecast may start a window or two before the newest reading.
+            // The epoch the hour is for; the forecast may start before the newest reading.
             'at' => $at,
             'clock' => LocalTime::of($at)->clock(),
             't' => round($temperature['mid'], 1),

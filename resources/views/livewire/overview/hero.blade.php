@@ -1,5 +1,3 @@
-{{-- CH1 on the instrument screen: the last day's temperature on a 10 x 8
-     graticule, the trigger point at the newest sample, the measure panel beside it. --}}
 @php($temperature = $this->metrics['t'] ?? null)
 <section class="page-wrap pt-10 sm:pt-14" aria-labelledby="now-h">
     <div class="mb-5 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">

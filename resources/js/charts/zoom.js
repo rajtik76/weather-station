@@ -34,8 +34,7 @@ export function bindZoom(chart, element, component) {
         band.hidden = false;
     };
 
-    // A finger drags the same selection: the strip's touch-action leaves the browser
-    // only vertical scroll and pinch, and either one cancels the pointer mid-drag.
+    // Touch drags too: the strip's touch-action leaves the browser only vertical scroll and pinch, which cancel the pointer.
     element.addEventListener("pointerdown", (event) => {
         if (event.button !== 0 || !event.isPrimary) {
             return;
@@ -86,13 +85,7 @@ export function bindZoom(chart, element, component) {
     element.addEventListener("dblclick", () => component.call("resetZoom"));
 }
 
-/**
- * One crosshair over every strip, matched by time. echarts.connect matches
- * by series and data index instead, which misses whenever two strips draw
- * different series. The pointer's own strip shows its crosshair natively;
- * the others follow here, and only while the pointer is inside the grid,
- * as the native one does.
- */
+/** Crosshair matched by time: echarts.connect matches by series and data index, which misses when strips draw different series. */
 export function syncCursor(chart) {
     const zr = chart.getZr();
     // A collapsed strip has no box to point into.

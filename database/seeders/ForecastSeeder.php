@@ -13,18 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Date;
 
 /**
- * A forecast from each sensor's newest reading, so the dashboard's forecast
- * block shows after a seed without the forecast service running, and one on
- * every hour of the two weeks before, for the accuracy panel to score.
- * Synthetic, but shaped like the service's answer: yesterday's curve moved
- * to today's level, a range that widens with the horizon, rain that sets in
- * close to saturation.
- *
- * The base model follows yesterday's curve loosely on a wide range; the
- * forecast shown follows it closer and narrower the longer the record it
- * learnt from, so the accuracy panel has a correction to show improving.
- * The last five days come from a model retrained just before they began,
- * the last two from the second version of the correction's logic.
+ * Synthetic forecasts shaped like the service's answer, without the service running.
  *
  * @phpstan-import-type Horizon from Forecast
  */
@@ -35,22 +24,18 @@ class ForecastSeeder extends Seeder
     /** trained_at of the model bundle the older rows pretend to come from. */
     private const string PREVIOUS_MODEL = '2026-09-10T07:12:05.402113+00:00';
 
-    /** How far back the hourly forecasts go. */
     private const int HISTORY_HOURS = 14 * 24;
 
-    /** How far back the current model took over. */
     private const int RETRAINED_HOURS_AGO = 5 * 24;
 
-    /** How far back the second version of the correction took over. */
     private const int CORRECTION_CHANGED_HOURS_AGO = 2 * 24;
 
-    /** How long the correction takes to learn all it will from the record. */
     private const int LEARNING_HOURS = 10 * 24;
 
     public function run(): void
     {
         foreach (Sensor::query()->get() as $sensor) {
-            // Yesterday's curve reaches six hours past this time yesterday.
+            // Yesterday's curve must reach six hours past this time yesterday.
             $readings = $sensor->measurements()
                 ->where('timestamp', '>=', now()->subHours(self::HISTORY_HOURS + 31)->getTimestamp())
                 ->orderBy('timestamp')
@@ -113,14 +98,13 @@ class ForecastSeeder extends Seeder
         $shape = fn (string $channel, float $follows): float => $yesterday === null || $yesterdayLater === null
             ? 0.0
             : $follows * ($yesterdayLater->{$channel} - $yesterday->{$channel}) / 100;
-        // The base model follows yesterday loosely; the correction pulls it closer as it learns.
+        // The correction pulls the loose base closer as it learns.
         $follows = 0.4 + 0.4 * $learnt;
 
         $temperature = $now->temperature / 100 + $shape('temperature', $follows);
         $humidity = max(0.0, min(100.0, $now->humidity / 100 + $shape('humidity', $follows)));
         $baseTemperature = $now->temperature / 100 + $shape('temperature', 0.4);
         $baseHumidity = max(0.0, min(100.0, $now->humidity / 100 + $shape('humidity', 0.4)));
-        // Half the last three hours' trend, carried on.
         $trend = $threeHoursAgo === null ? 0.0 : ($now->pressure - $threeHoursAgo->pressure) / 100 / 3;
         $pressure = $now->pressure / 100 + 0.5 * $trend * $hours;
         $baseSpread = 0.6 + 0.5 * $hours;

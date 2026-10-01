@@ -12,11 +12,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * One sensor's measurements grouped into fixed slots of the epoch. PostgreSQL
- * only: `generate_series` lays out every slot and a left join puts the
- * aggregates onto it, so a missed slot is a row of nulls. Buckets divide the
- * epoch, not the local day, so DST never moves them. Every query is scoped to
- * the sensor; unscoped, another station would average into this one's line.
+ * One sensor's measurements in fixed epoch slots (PostgreSQL only); a missed slot is a row of nulls.
+ * Buckets divide the epoch, not the local day, so DST never moves them. Every
+ * query is scoped to the sensor, or another station averages into this line.
  *
  * @phpstan-type Bucket object{bucket: int, t_avg: ?string, h_avg: ?string, p_avg: ?string, t_min: ?string, t_max: ?string, h_min: ?string, h_max: ?string, p_min: ?string, p_max: ?string}
  * @phpstan-type NoiseBucket object{bucket: int, laeq: ?string, la10: ?string, la90: ?string, lamax: ?string, bands: ?string}
@@ -24,16 +22,15 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class MeasurementBuckets
 {
-    /** How long a window's microphone listened; the weight of its noise levels. */
+    /** Seconds a window's microphone listened; weights its noise levels. */
     private const string NOISE_SECONDS = "(data->'noise'->>'seconds')::float8";
 
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**
-     * The blob is read by protocol key, not through ProtocolVersion::hydrate(),
-     * so a protocol that renames a field has to change this query too. The
-     * extremes fall back to the value where an entry has none (V1).
+     * Reads protocol keys directly, not via ProtocolVersion::hydrate(): a renamed field must change
+     * this too. Extremes fall back to the value where an entry has none (V1).
      *
      * @return Collection<int, Bucket>
      */
@@ -58,17 +55,10 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Same slots as readings(). Levels are in hundredths of a dB, so a
-     * level's power is 10^(v / 1000) and back is 1000 log10. They average
-     * as energy, weighted by the seconds each window heard: 50 and 60 dB
-     * are 57.4 together, not 55, and the half minute after a boot does not
-     * count as a whole window. LA10 and LA90 do not combine across windows,
-     * so a bucket wider than one window carries their time-weighted mean in
-     * dB - exact at ten minutes, an approximation above it.
-     *
-     * The bands come out of the jsonb array one row per entry and band
-     * (`WITH ORDINALITY` keeps their order), are averaged per bucket and
-     * band, and go back into one array per bucket in band order.
+     * Levels are hundredths of a dB: power is 10^(v / 1000). They average as energy, weighted by
+     * seconds heard (50 and 60 dB make 57.4, not 55). LA10 and LA90 cannot combine across windows,
+     * so wider buckets carry their time-weighted mean in dB, exact only at ten minutes.
+     * Bands are averaged per bucket and band, `WITH ORDINALITY` keeping their order.
      *
      * @return Collection<int, NoiseBucket>
      */
@@ -103,9 +93,7 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Protocol 4's illuminance on the same slots as readings(), in
-     * hundredths of a lux: the mean of the window means and the extremes of
-     * the extremes, like the weather channels. Only rows that carry it.
+     * Illuminance in hundredths of a lux: mean of window means, extremes of extremes.
      *
      * @return Collection<int, LightBucket>
      */
@@ -127,10 +115,8 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Every noise window's own spectrum with the bucket it falls in, not
-     * averaged: rain is heard per window, and a shower averaged with the dry
-     * windows around it would vanish on a wide bucket. Same bounds as noise().
-     * Bands in hundredths of a dB, as the jsonb array holds them.
+     * Each noise window's own spectrum, not averaged: a shower would vanish into dry
+     * windows on a wide bucket. Bands in hundredths of a dB.
      *
      * @return Collection<int, object{bucket: int, bands: string}>
      */
@@ -153,9 +139,8 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * First reading of every bucket. Grouping, not `timestamp % bucket <
-     * STEP`: the station's stamps sit minutes off the slot and drift, so a
-     * phase test would miss rows.
+     * First reading of every bucket. Grouping, not `timestamp % bucket < STEP`:
+     * stamps sit minutes off the slot and drift, so a phase test misses rows.
      *
      * @param  Builder<Measurement>  $query
      * @return Builder<Measurement>
@@ -171,7 +156,7 @@ final readonly class MeasurementBuckets
         });
     }
 
-    /** Every slot of the window, holes included, to left-join aggregates onto. */
+    /** Every slot of the window, holes included. */
     private function slots(ChartWindow $window): QueryBuilder
     {
         $step = $window->range()->bucketSeconds();
@@ -187,9 +172,7 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * The sensor's rows over whole edge buckets - so an edge bucket's
-     * aggregate does not depend on where the window opened - grouped by
-     * bucket.
+     * Rows over whole edge buckets, so an edge aggregate does not depend on where the window opened.
      *
      * @param  literal-string  $source
      */
@@ -212,8 +195,7 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Energy mean of a level in hundredths of a dB, weighted by the seconds
-     * each window heard.
+     * Seconds-weighted energy mean; levels in hundredths of a dB.
      *
      * @param  literal-string  $level
      * @return literal-string
@@ -224,7 +206,7 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Time-weighted mean of a level in dB, for the percentiles.
+     * Time-weighted mean in dB, for the percentiles.
      *
      * @param  literal-string  $level
      * @return literal-string

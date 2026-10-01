@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * An entry in the units the dashboard prints: °C and % from the protocol's
- * hundredths, pressure reduced to sea level at the station's height. The
- * stored reading stays as sent, so a corrected height never means rewriting
- * stored rows.
+ * An entry in dashboard units: °C and %, pressure reduced to sea level at the station's height. The stored reading stays as sent.
  *
  * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
  */
@@ -43,10 +40,7 @@ final readonly class Readout
     }
 
     /**
-     * Another pressure reduced with this entry's temperature, for an extreme:
-     * the sample that read it kept no temperature of its own. Two decimals:
-     * whole pascals, the sensor's resolution. Tenths drew the pressure line
-     * as a staircase.
+     * Reduced with this entry's temperature, for an extreme (the sample kept none). Two decimals: tenths drew a staircase.
      */
     public function seaLevel(int $pascals): float
     {
@@ -59,13 +53,13 @@ final readonly class Readout
         return SeaLevelPressure::reduce($reading, StationSite::ALTITUDE_METRES)->hectopascals(2);
     }
 
-    /** Null where there is none (see DewPoint::of); the chart draws a gap. */
+    /** Null where there is none (see DewPoint::of). */
     public function dewPoint(): ?float
     {
         return DewPoint::of($this->data)?->celsius(2);
     }
 
-    /** LAeq in dB, tenths like the noise strips. Null for an entry the microphone did not hear. */
+    /** LAeq in dB, tenths. Null without microphone data. */
     public function noise(): ?float
     {
         if (! $this->data instanceof CarriesNoise || ! $this->data->noise instanceof NoiseWindow) {
@@ -75,7 +69,7 @@ final readonly class Readout
         return round($this->data->noise->laeq / 100, 1);
     }
 
-    /** Lux behind the shield, from hundredths. Null for an entry without light. */
+    /** Lux behind the shield, from hundredths. Null without light. */
     public function light(): ?float
     {
         return $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminance) : null;
@@ -87,7 +81,7 @@ final readonly class Readout
     }
 
     /**
-     * Every channel with its extremes, keyed as the day readouts read them.
+     * Every channel with its extremes.
      *
      * @return DayRow
      */

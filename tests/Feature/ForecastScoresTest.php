@@ -13,9 +13,6 @@ use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
 /**
- * One stored horizon: the temperature band, and the base model's band as
- * `[low, mid, high]` when the service sent one.
- *
  * @param  array{0: float, 1: float, 2: float}|null  $base
  * @return array<string, mixed>
  */
@@ -73,7 +70,7 @@ it('shows the scores without a current forecast to sit beside', function (): voi
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     scoresReading($sensor, $issued, 1200);
     scoresReading($sensor, $issued + 3600, 1300);
-    // Scored, but an hour older than the newest reading: the current forecast is gone.
+    // An hour older than the newest reading: the forecast is gone.
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoresHorizon(1, 12.0, 12.8, 13.5)]]);
 
     $this->get(route('forecast'))
@@ -107,7 +104,6 @@ it('offers only the horizons that have come true, the longest first shown', func
 
     $page = Livewire::test(ForecastPage::class)->assertSet('horizon', 2);
 
-    // Three hours ahead has not come true: no button for it.
     expect($page->html())
         ->toMatch('/wire:click="\$set\(\'horizon\', 1\)"\s+aria-pressed="false"/')
         ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/')
@@ -130,7 +126,6 @@ it('moves the choice onto a horizon still scored when the scores change under it
 
     $page = Livewire::test(ForecastPage::class)->set('horizon', 2)->assertSet('horizon', 2);
 
-    // The two-hour forecast is gone, and a newer forecast brings a fresh score.
     $both->update(['data' => [scoresHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7800]);
 
@@ -154,7 +149,6 @@ it('says which side of the rain score it has no case for', function (array $rain
 })->with([
     // It rained within every hour scored: there is no dry case to average.
     'no dry spell' => [[2], 'no dry spell', 'rained'],
-    // The microphone listened through and heard nothing.
     'no rain heard' => [[], 'no rain heard', 'dry'],
 ]);
 
@@ -182,7 +176,7 @@ it('says when the forecast is not yet fitted to the station', function (): void 
 });
 
 it('dates the forecast by when it arrived, not by the window it starts from', function (): void {
-    // The upload at 08:10:20 UTC carries the window 08:00-08:10; the forecast is made from it at once.
+    // The 08:10:20 upload carries window 08:00-08:10.
     $this->travelTo(Date::parse('2026-09-24 08:10:21', 'UTC'));
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subSeconds(34)->getTimestamp()]);

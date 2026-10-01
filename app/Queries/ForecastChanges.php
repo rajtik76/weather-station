@@ -9,19 +9,15 @@ use App\ValueObject\ModelName;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The forecast's own history for one sensor: every forecast where the model
- * or the station correction's version differs from the forecast before it,
- * newest first. A switch back after a rollback is a change too, so these are
- * transitions in order, not first uses. Read off the stored forecasts, so the
- * list is what actually ran here, not what was deployed. A forecast stored
- * before correction versions were kept (null) neither starts nor ends one.
- * PostgreSQL's window functions, like the rest of app/Queries.
+ * Forecasts whose model or correction version differs from the previous one,
+ * newest first; a switch back after a rollback counts. A null correction
+ * (stored before versions were kept) neither starts nor ends a change.
  *
  * @phpstan-type Change array{at: int, date: string, model: ?string, correction: ?int}
  */
 final readonly class ForecastChanges
 {
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**
@@ -48,7 +44,7 @@ final readonly class ForecastChanges
     }
 
     /**
-     * The forecasts whose $column differs from the one before, the first included.
+     * The first forecast plus every one whose $column differs from the one before.
      *
      * @param  'model'|'correction'  $column
      * @return list<object{issued_at: int|string, value: int|string}>

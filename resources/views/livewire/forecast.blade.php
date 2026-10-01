@@ -1,5 +1,4 @@
-{{-- No wire:poll here: the scores move once per upload, and only the
-     overview refreshes itself. --}}
+{{-- No wire:poll: the scores move once per upload. --}}
 <div class="instrument min-h-screen">
     @include('livewire.overview.header', ['page' => 'forecast'])
 

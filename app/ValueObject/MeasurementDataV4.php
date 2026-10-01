@@ -8,8 +8,7 @@ use App\Enums\ProtocolVersion;
 use UnexpectedValueException;
 
 /**
- * Protocol V4: a V3 window plus optional illuminance from the VEML7700,
- * present only when it gave a reading in that ten minutes.
+ * Protocol V4: a V3 window plus optional VEML7700 illuminance.
  */
 final readonly class MeasurementDataV4 implements CarriesLight, CarriesNoise
 {
@@ -67,9 +66,7 @@ final readonly class MeasurementDataV4 implements CarriesLight, CarriesNoise
     }
 
     /**
-     * The V3 rules plus the light, optional as a set and complete once any
-     * of it is present, with the same rule on the extremes as the other
-     * channels. 15 000 000 is 150 klx, above the sensor's top range.
+     * The V3 rules plus the light, optional as a set, complete once any is present. 15 000 000 is 150 klx, above the sensor's top range.
      */
     public static function validationRules(): array
     {

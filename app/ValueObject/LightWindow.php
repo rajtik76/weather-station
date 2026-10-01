@@ -7,10 +7,7 @@ namespace App\ValueObject;
 use UnexpectedValueException;
 
 /**
- * Protocol V4's optional illuminance: mean and extremes over the window in
- * hundredths of a lux. The VEML7700 sits behind the radiation shield's
- * louvers, so this is the light that reaches it there, not open-sky
- * illuminance. Flat keys in the blob, all three or none.
+ * Protocol V4's optional illuminance: mean and extremes in hundredths of a lux, flat keys, all three or none. Measured behind the radiation shield, not open sky.
  */
 final readonly class LightWindow
 {
@@ -23,7 +20,7 @@ final readonly class LightWindow
     ) {}
 
     /**
-     * Null when the entry carries none of the three keys.
+     * Null when none of the three keys is present.
      *
      * @param  array<string, mixed>  $data
      */

@@ -1,5 +1,4 @@
-{{-- No wire:poll here: the reader holds a window they chose, and only the
-     overview refreshes itself. --}}
+{{-- No wire:poll: the reader holds a window they chose. --}}
 <div class="instrument min-h-screen">
     @include('livewire.overview.header', ['page' => 'charts'])
 

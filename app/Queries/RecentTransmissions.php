@@ -9,16 +9,13 @@ use App\ValueObject\LocalTime;
 use App\ValueObject\Readout;
 
 /**
- * One sensor's newest stored windows as they arrived, across the whole table,
- * not the chart window. Dated by `created_at`: the reading's own stamp is in
- * the JSON beside it, and a buffered batch arrives long after it was measured.
- * The packet is whatever keys its protocol version carries.
+ * One sensor's newest windows as they arrived, dated by `created_at` since a buffered batch lands late.
  *
  * @phpstan-type Transmission array{timestamp: int, packet: array<string, int|array<string, int|list<int>>>, at: string, ago: string, t: float, h: float, p: float}
  */
 final readonly class RecentTransmissions
 {
-    /** With no sensor the id is null and nothing matches. */
+    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     /**

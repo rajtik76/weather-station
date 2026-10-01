@@ -1,6 +1,4 @@
-{{-- One horizon in detail, the verdict's own to begin with. The charts are
-     ECharts (forecast-accuracy.js), which watches data-accuracy-rows; Livewire
-     never touches the canvases. --}}
+{{-- ECharts watches data-accuracy-rows (forecast-accuracy.js); Livewire never touches the canvases. --}}
 @php($score = $this->score)
 @if ($score !== null)
     @php($rain = $score['rain'])
