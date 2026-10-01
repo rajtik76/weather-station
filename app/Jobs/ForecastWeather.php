@@ -6,14 +6,19 @@ namespace App\Jobs;
 
 use App\Models\Forecast;
 use App\Models\Sensor;
+use App\Queries\CachedStationCorrection;
 use App\Queries\ForecastService;
 use App\Queries\OpenMeteoForecast;
 use App\Queries\ServiceReadings;
-use App\Queries\StationCorrection;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\LocalTime;
+use Closure;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use InvalidArgumentException;
 
 /**
  * Once an hour, asks the forecast service (forecast/serve.py) for the next six hours with the station correction and stores the answer with the NWP temperature beside it.
@@ -40,9 +45,19 @@ class ForecastWeather
         }
 
         $service = ForecastService::fromConfig();
+        $since = $this->correctionSince();
 
         try {
-            $forecast = $this->issue($service, $readings, new StationCorrection($this->sensor->id, $service));
+            $forecast = $this->issue(
+                $service,
+                $readings,
+                new CachedStationCorrection($this->sensor->id, $since),
+                fn (): array => $service->correction(array_filter([
+                    'longitude' => config('forecast.longitude'),
+                    'readings' => new ServiceReadings($this->sensor->id)->recent((int) config('forecast.history_days') * 86400),
+                    'since' => $since,
+                ], fn (mixed $value): bool => $value !== null)),
+            );
         } catch (ConnectionException|RequestException $exception) {
             // The next upload in the hour retries; the upload must not fail.
             report($exception);
@@ -73,25 +88,28 @@ class ForecastWeather
      * A correction fitted for another model or correction version is refitted once.
      *
      * @param  list<array{timestamp: int, temperature: float, humidity: float, pressure: float}>  $readings
+     * @param  Closure(): Fitted  $fit
      * @return Issued
      *
      * @throws ConnectionException
      * @throws RequestException
      */
-    private function issue(ForecastService $service, array $readings, StationCorrection $correction): array
+    private function issue(ForecastService $service, array $readings, CachedStationCorrection $correction, Closure $fit): array
     {
         try {
-            return $this->forecast($service, $readings, $correction->current());
+            return $this->forecast($service, $readings, $correction->current($fit));
         } catch (RequestException $exception) {
             if (! $exception->response->conflict()) {
                 throw $exception;
             }
 
-            return $this->forecast($service, $readings, $correction->refit());
+            return $this->forecast($service, $readings, $correction->refit($fit));
         }
     }
 
     /**
+     * Without targets (short history) no correction is sent: PHP would encode the empty object as a list.
+     *
      * @param  list<array{timestamp: int, temperature: float, humidity: float, pressure: float}>  $readings
      * @param  Fitted  $correction
      * @return Issued
@@ -101,7 +119,7 @@ class ForecastWeather
         return $service->forecast([
             'longitude' => config('forecast.longitude'),
             'readings' => $readings,
-            'correction' => $correction,
+            ...($correction['targets'] === [] ? [] : ['correction' => $correction]),
         ]);
     }
 
@@ -132,5 +150,26 @@ class ForecastWeather
                 : $horizon,
             $horizons,
         );
+    }
+
+    /** Local midnight of history_since; an unparsable date is reported and ignored. */
+    private function correctionSince(): ?int
+    {
+        $since = config('forecast.history_since');
+
+        if (! is_string($since) || $since === '') {
+            return null;
+        }
+
+        $midnight = DateTimeImmutable::createFromFormat('!Y-m-d', $since, new DateTimeZone(LocalTime::TIMEZONE));
+
+        // createFromFormat() rolls 2026-17-09 over into 2027; require a round trip.
+        if ($midnight === false || $midnight->format('Y-m-d') !== $since) {
+            report(new InvalidArgumentException("FORECAST_HISTORY_SINCE is not a Y-m-d date: {$since}"));
+
+            return null;
+        }
+
+        return $midnight->getTimestamp();
     }
 }

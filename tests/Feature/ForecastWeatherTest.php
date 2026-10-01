@@ -208,6 +208,40 @@ it('fits the correction once a day', function (): void {
         ->and(Forecast::query()->count())->toBe(3);
 });
 
+it('forecasts without a correction while the history is too short to fit one', function (): void {
+    freezeTime();
+    $sensor = Sensor::factory()->create();
+    $recent = now()->subMinutes(10)->getTimestamp();
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response([...fittedCorrection(), 'targets' => (object) []]),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/forecast' && ! isset($request['correction']));
+    expect(Forecast::query()->count())->toBe(1);
+});
+
+it('refits the correction at once when FORECAST_HISTORY_SINCE changes', function (): void {
+    $sensor = Sensor::factory()->create();
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => fn (Request $request) => Http::response(serviceForecast(intdiv(now()->getTimestamp(), 600) * 600)),
+    ]);
+
+    foreach (['2026-10-01 10:05:00' => '2026-09-17', '2026-10-01 11:05:00' => '2026-09-30'] as $at => $since) {
+        $this->travelTo(Date::parse($at, 'UTC'));
+        config()->set('forecast.history_since', $since);
+        forecastReading($sensor, now()->getTimestamp(), 1181, 8327, 97655);
+        dispatch_sync(new ForecastWeather($sensor));
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/correction'
+        && $request['since'] === Date::parse('2026-09-29 22:00:00', 'UTC')->getTimestamp());
+});
+
 it('refits a correction the service calls stale and forecasts with the new one', function (): void {
     freezeTime();
     $sensor = Sensor::factory()->create();
