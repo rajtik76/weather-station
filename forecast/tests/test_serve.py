@@ -311,6 +311,37 @@ def test_base_agrees_with_the_base_the_forecast_endpoint_returns(service: dict) 
     ] == base["forecasts"][0]["horizons"]
 
 
+def test_full_base_answers_in_the_shape_the_forecast_endpoint_does_without_its_correction(service: dict) -> None:
+    payload = readings(96)
+    last = payload[-1]["timestamp"] - 37
+
+    forecast = make_forecast({"longitude": LONGITUDE, "readings": payload})
+    full = make_base({"longitude": LONGITUDE, "since": last, "readings": payload, "full": True})
+
+    assert [forecast_at["issued_at"] for forecast_at in full["forecasts"]] == [last]
+    assert full["forecasts"][0]["horizons"] == [
+        {
+            "hours": h["hours"],
+            # The model alone: the base for what the correction touches, the rest as shown.
+            "temperature": h["base"]["temperature"],
+            "humidity": h["base"]["humidity"],
+            "pressure": h["pressure"],
+            "rain_probability": h["rain_probability"],
+        }
+        for h in forecast["horizons"]
+    ]
+
+
+def test_full_base_caps_the_first_hour_of_rain_as_shown(service: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    for n, chance in ((1, 0.94), (2, 0.01)):
+        monkeypatch.setitem(service["models"], f"rain_{n}h", Constant(chance))
+    payload = readings(24)
+
+    full = make_base({"longitude": LONGITUDE, "since": payload[-1]["timestamp"] - 37, "readings": payload, "full": True})
+
+    assert full["forecasts"][0]["horizons"][0]["rain_probability"] == 0.01
+
+
 def test_base_with_a_since_after_the_record_has_nothing_to_give(service: dict) -> None:
     answer = make_base({"longitude": LONGITUDE, "since": 2_000_000_000, "readings": readings(24)})
 
@@ -324,6 +355,7 @@ def test_base_with_a_since_after_the_record_has_nothing_to_give(service: dict) -
         ({"longitude": LONGITUDE, "since": None, "readings": readings(2)}, "since must be an integer"),
         ({"since": 1790000000, "readings": readings(2)}, "longitude is required"),
         ({"longitude": LONGITUDE, "since": 1790000000}, "readings must be a non-empty list"),
+        ({"longitude": LONGITUDE, "since": 1790000000, "readings": readings(2), "full": "yes"}, "full must be true or false"),
     ],
 )
 def test_base_rejects_what_it_cannot_answer(service: dict, payload: dict, message: str) -> None:

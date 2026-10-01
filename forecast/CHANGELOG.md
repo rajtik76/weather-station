@@ -54,3 +54,8 @@ Data ČHMÚ 10-minute, 2018-2024, 32 stations below 700 m · Server v3.4.0
   came; the longer horizons said 1-10 %. Rain is not corrected, so the
   correction version stays 2. Each horizon's `base` keeps the classifier's
   own `rain_probability`, so a capped run can be found in the database.
+- Server v4.1.0: `POST /base` takes `"full": true` and answers each horizon
+  as `POST /forecast` would without the correction - all three bands and the
+  rain chance as shown. The app forecasts the ČHMÚ station Plzeň-Mikulka
+  with it every night as a reference; the model and the correction are
+  unchanged.

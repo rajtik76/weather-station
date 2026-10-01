@@ -42,6 +42,12 @@ POST /base
     in base for forecasts stored before it was kept. The base models look
     48 hours back, so the readings should start that much before since.
 
+    "full": true answers each horizon in the shape POST /forecast does,
+    without base: temperature, humidity and pressure bands and the rain
+    chance as shown (the first hour capped). For a reference station whose
+    forecasts are stored and scored like the balcony's, where no station
+    correction applies.
+
 GET /health -> {"status": "ok", "model": "<trained_at>", "correction": 2}
 """
 
@@ -149,15 +155,23 @@ def readings_frame(readings: object) -> pd.DataFrame:
     return to_grid(frame.sort_index())
 
 
-def make_forecast(payload: dict) -> dict:
+def station_history(payload: dict) -> tuple[float, pd.DataFrame]:
+    """The longitude and the readings on the grid, as both endpoints take them.
+    A station with no rain source loses the column, so the rain inputs are NaN
+    rather than a gauge that read zero."""
     longitude = number(payload.get("longitude"))
     if math.isnan(longitude):
         raise InvalidRequest("longitude is required")
     current = readings_frame(payload.get("readings"))
-    if current[["T", "H", "P"]].iloc[-1].isna().any():
-        raise InvalidRequest("the latest reading needs temperature, humidity and pressure")
     if current["SRA10M"].isna().all():
         current = current.drop(columns="SRA10M")
+    return longitude, current
+
+
+def make_forecast(payload: dict) -> dict:
+    longitude, current = station_history(payload)
+    if current[["T", "H", "P"]].iloc[-1].isna().any():
+        raise InvalidRequest("the latest reading needs temperature, humidity and pressure")
 
     since = timestamp(payload.get("since"), "since", required=False)
 
@@ -176,27 +190,18 @@ def make_forecast(payload: dict) -> dict:
         "corrected": len(corrections) == len(horizons) * len(CORRECTED_VARIABLES),
         "correction": CORRECTION_VERSION,
         "horizons": [
-            {
-                "hours": n,
-                "temperature": band(latest, "T", n),
-                "humidity": band(latest, "H", n),
-                "pressure": band(latest, "P", n),
-                "rain_probability": round(float(latest[f"rain_{n}h"]), 3),
-                "base": base_bands(forecast.iloc[-1], n),
-            }
+            {"hours": n, **shown_bands(latest, n), "base": base_bands(forecast.iloc[-1], n)}
             for n in horizons
         ],
     }
 
 
 def make_base(payload: dict) -> dict:
-    longitude = number(payload.get("longitude"))
-    if math.isnan(longitude):
-        raise InvalidRequest("longitude is required")
+    longitude, current = station_history(payload)
     since = timestamp(payload.get("since"), "since", required=True)
-    current = readings_frame(payload.get("readings"))
-    if current["SRA10M"].isna().all():
-        current = current.drop(columns="SRA10M")
+    full = payload.get("full", False)
+    if not isinstance(full, bool):
+        raise InvalidRequest("full must be true or false")
 
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
@@ -208,7 +213,7 @@ def make_base(payload: dict) -> dict:
         "forecasts": [
             {
                 "issued_at": int(time.timestamp()),
-                "horizons": [{"hours": n, **base_bands(row, n)} for n in bundle["horizons"]],
+                "horizons": [{"hours": n, **(shown_bands(row, n) if full else base_bands(row, n))} for n in bundle["horizons"]],
             }
             for time, row in forecast[issued].iterrows()
         ],
@@ -217,6 +222,15 @@ def make_base(payload: dict) -> dict:
 
 def band(row: pd.Series, variable: str, n: int) -> dict:
     return {name: round(float(row[f"{variable}_{n}h_{name}"]), 2) for name in QUANTILES}
+
+
+def shown_bands(row: pd.Series, n: int) -> dict:
+    """Every variable's band and the rain chance as POST /forecast shows it: from
+    the corrected row there, from the model's own with /base's full."""
+    return {
+        **{NAMES[variable]: band(row, variable, n) for variable in FIELDS.values()},
+        "rain_probability": round(float(row[f"rain_{n}h"]), 3),
+    }
 
 
 def base_bands(row: pd.Series, n: int) -> dict:

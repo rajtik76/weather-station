@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import brier_score_loss, roc_auc_score
 
-from features import HORIZONS, build_features, build_targets, to_grid
+from features import HORIZONS, STEPS_PER_HOUR, build_features, build_targets, to_grid
 from fetch_chmi import GOOD_QUALITY
 from correction import apply, fit
 from forecast import QUANTILES, VARIABLES, predict
@@ -110,7 +110,7 @@ def evaluate_correction(bundle: dict, balcony: pd.DataFrame, features: pd.DataFr
     report = []
     for n in bundle["horizons"]:
         for variable in VARIABLES:
-            truth = balcony[variable].shift(-n * 6)
+            truth = balcony[variable].shift(-n * STEPS_PER_HOUR)
             rows = ~before & truth.notna() & forecast[f"{variable}_{n}h_mid"].notna()
             row = {"target": f"{variable}_{n}h", "n": rows.sum()}
             for label, frame in (("base", forecast), ("fixed", corrected)):

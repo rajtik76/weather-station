@@ -18,7 +18,7 @@ professional ("20000" series) stations, 2018 to 2025, the 32 of them below
 700 m - about 1.7 million hourly examples. The ČHMÚ stations measure what the
 balcony does (temperature, humidity, station pressure) plus precipitation,
 which is only ever a training label. The data are CC BY 4.0, source ČHMÚ;
-the dashboard credits them under the forecast.
+the site credits them in its footer and on the forecast page.
 
 **Inputs** (`features.py`, shared by training and the service, so the two can
 never compute them differently): the current temperature and humidity and
@@ -58,13 +58,13 @@ and the afternoon.
 Nothing is stored - the correction is refitted each time and sharpens as the
 record grows. It applies to temperature and humidity; correcting pressure
 scored worse. The service answers with the forecast before the correction
-too (`base`), so the dashboard can score what the correction adds.
+too (`base`), so the site can score what the correction adds.
 
 **The service** (`serve.py`) is stateless and has no database. Laravel sends
 it the station's last 60 days after every upload (`App\Jobs\ForecastWeather`),
 with `since` from `FORECAST_HISTORY_SINCE` when that is set (the shield went
 up on 16 September 2026, so production learns from the 17th on), and stores
-the answer in `forecasts`; the dashboard shows the newest one
+the answer in `forecasts`; the site shows the newest one
 while it starts from the current record. Temperature and rain are on the
 page; humidity and pressure are kept in the row. Under it, the last 30 days
 of forecasts are scored as shown and before the correction, on the same
@@ -196,7 +196,10 @@ before the service returned `base`:
 The base models look 48 hours back and nothing else, so an answer is exactly
 what the service gave at the time, as long as the readings start that far
 before `since`. The correction learns from the whole history and is not
-recomputed. `php artisan forecast:backfill-base` in the app asks a week at a
+recomputed. With `"full": true` each horizon comes in the shape `POST
+/forecast` gives it, without `base`: all three bands and the rain chance as
+shown, from the model alone. The app forecasts its ČHMÚ reference station
+that way (`php artisan forecast:reference`). `php artisan forecast:backfill-base` in the app asks a week at a
 time, with three days of readings before it, and fills in only the forecasts
 the model now running made.
 
