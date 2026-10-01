@@ -11,8 +11,9 @@
     @php($curve = $this->forecastCurve)
     @if ($curve !== null)
         {{-- Now, then each hour's median over its range. One column per point, as in the list below;
-             both sit right of the same gutter, which holds the y-axis labels. --}}
-        <div class="relative mt-4 ml-10 h-28 sm:h-36" data-forecast-curve aria-hidden="true">
+             both sit right of the same gutter, which holds the y-axis labels. Beside the reading on a
+             wide screen the column is as tall as the reading's, and the curve takes what is left. --}}
+        <div class="relative mt-4 ml-10 h-28 sm:h-36 lg:h-auto lg:min-h-36 lg:flex-1" data-forecast-curve aria-hidden="true">
             @foreach ($curve['ticks'] as $tick)
                 <span
                     class="absolute right-full mr-2 -translate-y-1/2 font-mono text-[11px] whitespace-nowrap text-white/75 tabular-nums"
