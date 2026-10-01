@@ -1,11 +1,6 @@
-# The ingest API and what happens to a batch
+# Ingest API
 
-What the server accepts from a station, what it refuses, what it answers,
-and what becomes of the rows afterwards. The contract is enforced in
-`App\Http\Requests\StoreMeasurementRequest` and stored by
-`App\Http\Controllers\StoreMeasurementController`; the firmware's side of
-the payload, with the reasoning behind it, is in the
-[firmware README](../firmware/README.md#protocol).
+Validated by `App\Http\Requests\StoreMeasurementRequest`, stored by `App\Http\Controllers\StoreMeasurementController`. Firmware side: [firmware README](../firmware/README.md#protocol).
 
 ## Endpoint
 
@@ -15,10 +10,9 @@ Authorization: Bearer <SENSOR_API_TOKEN>
 Content-Type: application/json
 ```
 
-One token for every station, compared in constant time against
-`SENSOR_API_TOKEN`. An empty token on the server denies everyone rather than
-letting everyone in. 10 requests per minute per IP; the station reports every
-ten minutes, so the limit only ever bites a retry loop gone wrong.
+- One token for all stations, compared in constant time against `SENSOR_API_TOKEN`
+- Empty token on the server denies everyone
+- 10 requests per minute per IP
 
 ## Request
 
@@ -63,17 +57,15 @@ ten minutes, so the limit only ever bites a retry loop gone wrong.
 }
 ```
 
-| Field              | Rule                                                            |
-| ------------------ | --------------------------------------------------------------- |
-| `sensor_name`      | string, 3 to 50 characters. Registers the station on first use. |
-| `protocol_version` | `1` to `4`. Decides which fields each measurement must carry.   |
-| `measurements`     | 1 to 500 entries.                                               |
+| Field              | Rule                                                           |
+| ------------------ | -------------------------------------------------------------- |
+| `sensor_name`      | string, 3 to 50 characters; registers the station on first use |
+| `protocol_version` | `1` to `4`; decides which fields each measurement carries      |
+| `measurements`     | 1 to 500 entries                                               |
 
-Every measurement carries a `timestamp`: UTC Unix seconds, 1 to 4294967295.
-The remaining fields depend on the version. All values are integers, in
-hundredths of °C and %, and in Pa.
+`timestamp`: UTC Unix seconds, 1 to 4294967295. All values are integers: hundredths of °C and %, Pa.
 
-| Field                                | V1  | V2  | Range           |
+| Field                                | V1  | V2+ | Range           |
 | ------------------------------------ | --- | --- | --------------- |
 | `temperature`                        | yes | yes | -4000 .. 8500   |
 | `humidity`                           | yes | yes | 0 .. 10000      |
@@ -83,38 +75,26 @@ hundredths of °C and %, and in Pa.
 | `pressure_min`, `pressure_max`       |     | yes | as above        |
 | `samples`                            |     | yes | 1 .. 65535      |
 
-**V1** was one reading every ten minutes. **V2** is a ten-minute window of
-half-minute readings: the bare field is the mean over the window, `_min` and
-`_max` its extremes, `samples` how many readings went in. A `_min` above the
-mean or a `_max` below it fails validation. The mean keeps the V1 key on
-purpose - the dashboard averages both versions with one SQL expression, and
-a V1 row stands in as its own minimum and maximum. **V3** is a V2 window
-with an optional `noise` object added to each measurement. **V4** is a V3
-window with optional illuminance.
+- **V1** - one reading per entry; stands in as its own minimum and maximum
+- **V2** - ten-minute window of half-minute readings: bare field is the mean, `_min` / `_max` the extremes, `samples` the count; `_min` above the mean or `_max` below it fails validation
+- **V3** - V2 plus optional `noise` object per measurement
+- **V4** - V3 plus optional illuminance
 
-### Illuminance
+### Illuminance (V4)
 
-V4 only, from the VEML7700 on the shield hub. Present only when the sensor
-gave at least one reading in the window; once present, all three fields
-are required. Integers in hundredths of a lux, 0 .. 15000000, and the same
-rule on the extremes as the other channels.
-
-The sensor sits inside the radiation shield, so this is the light that gets
-through the louvers, a fraction of the open sky's and with the morning sun
-straight through the east side. Its shape - dawn, dusk, clouds - is the
-signal; the absolute lux do not compare with another station. The dashboard
-draws it on a log axis and says so beside the strip.
+- VEML7700 on the shield hub; present only when the window had at least one reading, then all three fields are required
+- Integers in hundredths of a lux, 0 .. 15000000; same min/mean/max rule as other channels
+- Measured inside the radiation shield: shape is the signal, absolute lux are not comparable with another station
+- Drawn on a log axis
 
 | Field                                | Meaning                          |
 | ------------------------------------ | -------------------------------- |
 | `illuminance`                        | mean over the window             |
 | `illuminance_min`, `illuminance_max` | lowest and highest reading in it |
 
-### The `noise` object
+### `noise` object (V3+)
 
-Present only when the microphone produced data for that ten-minute window;
-a V3 measurement without it is still valid. Optional as a whole, once
-present every field below is required.
+Optional as a whole; once present every field is required.
 
 ```json
 "noise": {
@@ -136,16 +116,11 @@ present every field below is required.
 | `la90`    | integer, hundredths of dB(A), level exceeded 90 % of the seconds | 0 .. 15000, `la90 <= la10`  |
 | `bands`   | 26 integers, hundredths of dB, unweighted (Z)                    | each 0 .. 15000             |
 
-`bands` is the third-octave spectrum, in order, for the nominal centre
-frequencies 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000 Hz.
+`bands` is the third-octave spectrum at 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000 Hz.
 
-### The `station` object
+### `station` object
 
-The board's account of itself at the time of the upload. Optional as a
-whole; once present, every field below is required, so a firmware that
-reports is held to the shape the dashboard reads. Keys the rules do not name
-are dropped before storing.
+Optional as a whole; once present every field is required. Keys not in the rules are dropped before storing.
 
 | Field                                                                             | Type                    |
 | --------------------------------------------------------------------------------- | ----------------------- |
@@ -157,20 +132,14 @@ are dropped before storing.
 | `rssi`                                                                            | integer, -120 .. 0      |
 | `wifi_network`                                                                    | `0` primary, `1` backup |
 
-Two exceptions, so an older build keeps uploading through a server
-upgrade. The clock drift set - `clock_step_ms`, `clock_step_over_s`,
-`clock_step_max_ms`, `clock_synced_at` - was added in firmware 2.2 and may
-be left out as a whole, but all four or none; a half-reported set is
-refused rather than shown. `board`, the IDE's board selection
-(`ARDUINO_BOARD`: `ESP32C3_DEV`, `DFROBOT_FIREBEETLE_2_ESP32C6`,
-`ESP32_DEV`), was added in firmware 2.3 and may be left out.
+Exceptions, so older builds keep uploading:
+
+- `clock_step_ms`, `clock_step_over_s`, `clock_step_max_ms`, `clock_synced_at` (firmware 2.2+): all four or none; a partial set is refused
+- `board` (`ARDUINO_BOARD`: `ESP32C3_DEV`, `DFROBOT_FIREBEETLE_2_ESP32C6`, `ESP32_DEV`, firmware 2.3+) may be left out
 
 ### Firmware and server versions
 
-The firmware is tagged `fw/v<version>` on the commit it was built from and
-its history is [`firmware/CHANGELOG.md`](../firmware/CHANGELOG.md); the app
-is tagged `v<version>`. What each side introduced, and the first release of
-the other side that understands it:
+Firmware is tagged `fw/v<version>` ([`firmware/CHANGELOG.md`](../firmware/CHANGELOG.md)), the app `v<version>`.
 
 | Payload                                           | Firmware from | Server from |
 | ------------------------------------------------- | ------------- | ----------- |
@@ -182,89 +151,46 @@ the other side that understands it:
 | `protocol_version` 3, `noise` per window          | 3.0.0         | v3.0.1      |
 | `protocol_version` 4, illuminance per window      | 4.0.0         | v4.0.0      |
 
-A server older than the row refuses a V2, V3 or V4 batch (unknown
-`protocol_version`) and ignores a `station` object or `noise` object it does
-not know; it refuses nothing else from a newer firmware, because every
-later field is optional. A firmware
-older than the row simply does not send the field, and the dashboard leaves
-the row out. The board itself never appears in the payload before 2.3;
-for those rows the changelog is the only record of the hardware.
+- A server older than the row refuses a V2, V3 or V4 batch (unknown `protocol_version`) and ignores an unknown `station` or `noise` object; every later field is optional
+- A firmware older than the row does not send the field; the dashboard leaves the row out
+- `board` is absent from the payload before 2.3; the changelog is the only record of the hardware
 
 ## Response
 
-| Status | When                                                                             |
-| ------ | -------------------------------------------------------------------------------- |
-| `201`  | Stored. Body `{"stored": n}`, the number of rows written or replaced.            |
-| `401`  | Missing or wrong bearer token. Body `{"message": "Unauthenticated."}`.           |
-| `422`  | Validation failed. Laravel's usual `{"message": ..., "errors": {field: [...]}}`. |
-| `429`  | More than 10 requests in a minute.                                               |
+| Status | When                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| `201`  | Stored. Body `{"stored": n}`, rows written or replaced.                    |
+| `401`  | Missing or wrong bearer token. Body `{"message": "Unauthenticated."}`.     |
+| `422`  | Validation failed. Laravel's `{"message": ..., "errors": {field: [...]}}`. |
+| `429`  | More than 10 requests in a minute.                                         |
 
-Validation is all or nothing: one invalid entry rejects the whole batch and
-nothing from it is stored. After a batch is stored the server requests
-`SENSOR_HEARTBEAT_URL`, if set, once the response has gone out; a slow or
-failing monitor never delays or fails the upload. The same goes for the
-forecast: with `FORECAST_URL` set, the station's last 60 days go to the
-forecast service after the response, and a failure is logged and forgotten -
-the next upload asks again ten minutes later.
+- Validation is all or nothing: one invalid entry rejects the batch, nothing is stored
+- After storing, once the response has gone out: `SENSOR_HEARTBEAT_URL` is requested if set
+- Same for `FORECAST_URL`: the station's last 60 days go to the forecast service; a failure is logged and ignored
 
 ## Storage
 
-Four tables: `sensors` for the stations, `measurements` for the readings,
-`station_reports` for the board's state, `forecasts` for what the forecast
-service answered.
+| Table             | Holds                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `sensors`         | stations; created by the first upload under a new `sensor_name`, description added by hand |
+| `measurements`    | one row per window per station                                                             |
+| `station_reports` | one `jsonb` row per batch, tied to the sensor; newest shown under the payload tail         |
+| `forecasts`       | one row per forecast service run                                                           |
 
-A sensor is created by the first upload under a new `sensor_name`; a
-description can be added by hand afterwards and is what the dashboard shows
-beside the name.
-
-A measurement row is one window of one station: `sensor_id`, `timestamp`,
-`protocol_version` and a `jsonb` blob with the fields its version defines,
-the integers as the firmware sent them and nothing else. `(sensor_id,
-timestamp)` is unique and the endpoint upserts on it, so a resent batch
-overwrites rather than duplicates - and a station may resend a window under
-a newer firmware, the upsert takes the new blob and the new version number.
-Conversion to °C, % and hPa happens on the way out, and so does the
-sea-level reduction of pressure (one height for the site,
-`StationSite::ALTITUDE_METRES`), so a corrected height never means rewriting
-the record.
-
-`protocol_version` is a column of its own and never lives inside the blob.
-`App\Enums\ProtocolVersion` maps a version to the value object in
-`App\ValueObject\` that validates and decodes it. A new firmware format is a
-new case and a new class; rows written by older firmware stay readable and
-keep their version.
-
-A station report is one `jsonb` row per batch, tied to the sensor. The
-dashboard shows the newest under the payload tail - the board's own account
-of how it was doing, readable after it has stopped answering.
-
-A forecast row is one run of the service: `sensor_id`, `issued_at` (the
-ten-minute window of the reading it starts from, unique per sensor, so a
-repeated run replaces rather than duplicates), `model` (the `trained_at` of
-the model, traceable in [`forecast/CHANGELOG.md`](../forecast/CHANGELOG.md)), whether
-the station correction was applied, and the six horizons as a `jsonb` list
-in °C, % and hPa. The contract of the service is in
-[`forecast/README.md`](../forecast/README.md#the-services-contract).
+- `measurements`: `sensor_id`, `timestamp`, `protocol_version`, `jsonb` blob with the version's fields as the firmware sent them
+- `(sensor_id, timestamp)` is unique; the endpoint upserts (new blob and version replace the old), so a resent batch never duplicates
+- Conversion to °C, % and hPa and the sea-level pressure reduction (`StationSite::ALTITUDE_METRES`) happen on read
+- `protocol_version` is its own column; `App\Enums\ProtocolVersion` maps a version to its value object in `App\ValueObject\`; a new format is a new case and class
+- `forecasts`: `sensor_id`, `issued_at` (ten-minute window of the starting reading, unique per sensor), `model` (the model's `trained_at`, see [`forecast/CHANGELOG.md`](../forecast/CHANGELOG.md)), whether the station correction applied, six horizons as `jsonb` in °C, % and hPa; service contract in [`forecast/README.md`](../forecast/README.md#the-services-contract)
 
 ## Aggregation
 
-The dashboard does not read rows; it asks PostgreSQL for buckets. The bucket
-width follows the span on screen - ten minutes up to a day, half an hour up
-to a week, an hour up to a month - and one `generate_series` query per render
-folds the rows into those buckets with the mean of the means and the extreme
-of the extremes. The band behind each line on the chart is the spread between
-those extremes. That is why the test suite and local development run on
-PostgreSQL rather than SQLite: the SQL has no portable form.
+- The dashboard queries PostgreSQL for buckets: ten minutes up to a day, half an hour up to a week, an hour up to a month
+- One `generate_series` query per render; mean of the means, extreme of the extremes (the band behind each line)
+- Tests and local development need PostgreSQL; the SQL has no portable form
 
 ## Retention
 
-Nothing is pruned or rolled up. The half-minute readings never leave the
-board; what arrives is one row per ten-minute window, 144 a day per station,
-about 53 000 a year - a few megabytes of PostgreSQL. The full resolution is
-kept for good.
-
-Rollups can come later, once the record is long enough that a month-wide
-query gets slow; nothing in the schema stands in the way. `station_reports`
-grows at the same rate, one row per batch, and is the first candidate for
-pruning if the volume ever matters - a report from last year says nothing a
-newer one does not.
+- Nothing is pruned or rolled up
+- One row per ten-minute window: 144 a day per station, about 53 000 a year
+- `station_reports` grows at the same rate and is the first candidate for pruning

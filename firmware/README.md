@@ -1,14 +1,12 @@
 # Firmware
 
-ESP32 firmware for the weather station. Reads temperature and humidity from
-an SHT4x, pressure from a BMP280 and illuminance from a VEML7700 every
-thirty seconds, listens to an
-INMP441 microphone all the time, folds both into ten-minute windows - mean,
-minimum and maximum per channel, and the noise levels and third-octave
-spectrum over the same ten minutes - and uploads each closed window to
-`POST /api/v1/measurement` over HTTPS. Anything that fails to upload stays
-buffered on the flash until the link is back, and the station can be looked
-at over the LAN without a cable.
+ESP32-WROOM-32, mains powered, never sleeps.
+
+- Every 30 s: temperature and humidity (SHT4x), pressure (BMP280), illuminance (VEML7700)
+- Continuously: INMP441 microphone
+- Ten-minute windows: mean, min, max per channel plus noise levels and third-octave spectrum
+- Each closed window is uploaded to `POST /api/v1/measurement` over HTTPS; failures stay buffered on flash
+- Station is inspectable over the LAN without a cable
 
 ```
 SHT4x    --I2C--+
@@ -20,22 +18,13 @@ INMP441  --I2S--+     core 0: noise   |    \
                          window buffer on the flash, 144 entries (a day)
 ```
 
-The board is mains powered and never sleeps. The earlier design - a battery
-board waking every ten minutes for one reading - is what protocol V1
-recorded; see the git history before this file for it.
-
 ## Hardware
 
-Wiring: the [station schematic](../docs/hardware/kicad/WeatherStation/WeatherStation_schematic.svg),
-the [base board schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg)
-and the [shield hub schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg),
-all from KiCad.
+Schematics (KiCad exports): [station](../docs/hardware/kicad/WeatherStation/WeatherStation_schematic.svg), [base board](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg), [shield hub](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg).
 
 ### Cable
 
-Four metres of FTP (four twisted pairs) run from the ESP32 board to the shield
-hub. On the ESP32 side each wire ends on a Dupont pin; on the hub it is
-soldered in column 5 of the perfboard.
+4 m FTP (four twisted pairs) from ESP32 board to shield hub. ESP32 side: Dupont pins. Hub side: soldered in column 5 of the perfboard.
 
 | Pair | Wire         | Signal | ESP32 side         | Hub side          |
 | ---- | ------------ | ------ | ------------------ | ----------------- |
@@ -48,21 +37,18 @@ soldered in column 5 of the perfboard.
 | 4    | white-brown  | SCK    | GPIO26 via R3 47 Ω | mic SCK           |
 | 4    | brown        | WS     | GPIO25 via R4 47 Ω | mic WS            |
 
-Both grounds go to GND at both ends. With one of them open the SHT4x on
-the old hub dropped about one reading in seven while the WiFi was on. Each
-I2C line shares its pair with a supply or ground, and the I2S clocks keep to
-their own pair, so SCK never runs next to SDA or SCL. Over four metres they
-still couple into the I2C lines, which is why the clocks stop for every
-sensor read (see _Noise_). The foil is cut back at both ends; the drain
-lands on the base board's cable header and is grounded there only.
+- Both grounds connect at both ends (with one open, the SHT4x on the old hub dropped about one reading in seven while WiFi was on)
+- I2C lines share a pair with a supply or ground; I2S clocks have their own pair, so SCK never runs next to SDA or SCL
+- Clocks still couple into I2C over 4 m, hence they stop for every sensor read (see _Noise_)
+- Foil cut back at both ends; drain grounded only on the base board's cable header
+- I2C pins come from the board variant via `SDA` / `SCL` (GPIO21 / GPIO22 on the DevKit); I2S pins in `noise.h`
+- INMP441 `L/R` strapped to GND (left slot)
+- I2C bus at 20 kHz (`I2C_CLOCK_HZ`)
+- Serial: CP2102 bridge, port `/dev/cu.usbserial-*`; plugging it in resets the board
 
-The shield hub is also a KiCad project in
-[`docs/hardware/kicad/ShieldHub`](../docs/hardware/kicad/ShieldHub): a
-[wired schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg),
-the perfboard as a board, and a
-[3D preview](../docs/hardware/kicad/ShieldHub/ShieldHub_3D_preview.png).
-Every KiCad file there comes from a script, so change the script and
-regenerate; edits made in KiCad are lost on the next run.
+### Shield hub
+
+[`docs/hardware/kicad/ShieldHub`](../docs/hardware/kicad/ShieldHub): [schematic](../docs/hardware/kicad/ShieldHub/ShieldHub_schematic.svg), perfboard as a board, [3D preview](../docs/hardware/kicad/ShieldHub/ShieldHub_3D_preview.png). Every KiCad file is generated; edit the script, not KiCad (edits are lost on the next run).
 
 ```
 cd docs/hardware/kicad/ShieldHub
@@ -72,21 +58,16 @@ python generate_models.py            # STEP models, needs CadQuery
 python generate_assembly.py          # perforated 3D assembly, needs CadQuery
 ```
 
-On the board, B.Cu tracks are tinned wire on the solder side and F.Cu
-tracks are insulated wires on the component side. A wire end sits in a free
-hole (a via in KiCad) and is soldered from below to the run next to it, so
-nothing is soldered on the component side. Check a change with KiCad's DRC
-and schematic parity.
+- B.Cu tracks: tinned wire on the solder side; F.Cu tracks: insulated wires on the component side
+- A wire end sits in a free hole (a via in KiCad) and is soldered from below to the run next to it; nothing is soldered on the component side
+- Check changes with KiCad DRC and schematic parity
 
-The ESP32 side is the base board in
-[`docs/hardware/kicad/BaseBoard`](../docs/hardware/kicad/BaseBoard): a
-60 x 80 mm perfboard with the DevKit and the BMP280 in female headers, the
-[wired schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg),
-the board, a [3D preview](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_preview.png)
-and the [solder side](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_solder_side.png).
-`layout.py` holds the parts and runs for both generators and refuses a short
-or a split net; a run is 0 Ω links on the component side and solder bridges
-between neighbouring pads below.
+### Base board
+
+[`docs/hardware/kicad/BaseBoard`](../docs/hardware/kicad/BaseBoard): 60 x 80 mm perfboard, DevKit and BMP280 in female headers. [Schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg), [3D preview](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_preview.png), [solder side](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_solder_side.png).
+
+- `layout.py` holds parts and runs for both generators; refuses a short or a split net
+- A run is a 0 Ω link on the component side plus solder bridges between neighbouring pads below
 
 ```
 cd docs/hardware/kicad/BaseBoard
@@ -95,46 +76,26 @@ python3 generate_schematic.py        # schematic and symbols, plain Python
 /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/bin/python3 generate_board.py
 ```
 
-The sketch takes the I2C pins from the board variant through the `SDA` /
-`SCL` symbols (GPIO21 / GPIO22 on the DevKit); the I2S pins are in `noise.h`.
-The INMP441's `L/R` is strapped to GND, so it talks in the left slot. The bus
-runs at 20 kHz (`I2C_CLOCK_HZ`) for the margin on four metres of cable.
-
-### Serial
-
-The DevKit routes `Serial` through a CP2102 USB-UART bridge, so the port is
-`/dev/cu.usbserial-*`. Plugging it in resets the board.
-
 ## Build
 
-Arduino IDE, board _ESP32 Dev Module_ from ESP32 core 3.x. Needs
-`Adafruit BMP280 Library`, `Adafruit SHT4x Library` and `ArduinoJson` v7;
-the FFT is esp-dsp, which the core already carries. Set _Partition Scheme_
-to _Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_: OTA needs two app
-slots, and the image is ~1.2 MB. The 128 kB of filesystem hold the 13 kB
-window buffer and two 32 kB logs. The rest stays at the defaults.
-
-Changing the partition scheme wipes the filesystem, so a backlog buffered
-on the flash does not survive the switch. It is a one-time cost.
+- Arduino IDE, board _ESP32 Dev Module_, ESP32 core 3.x
+- Libraries: `Adafruit BMP280 Library`, `Adafruit SHT4x Library`, `ArduinoJson` v7; FFT is esp-dsp (in the core)
+- _Partition Scheme_: _Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)_ - OTA needs two app slots, image ~1.2 MB; the 128 kB filesystem holds the 13 kB window buffer and two 32 kB logs
+- Changing the partition scheme wipes the filesystem (buffered backlog is lost once)
+- Everything else at defaults
 
 ```
 cp secrets.example.h secrets.h
 ```
 
-Fill in the device name, WiFi, the token and an OTA password, then set
-`API_URL` in `weather_station.ino`. `BEARER_TOKEN` has to match
-`SENSOR_API_TOKEN` in the server's `.env`. `secrets.h` is gitignored.
+- Fill in device name, WiFi, token, OTA password; set `API_URL` in `weather_station.ino`
+- `BEARER_TOKEN` must match `SENSOR_API_TOKEN` in the server's `.env`; `secrets.h` is gitignored
 
-Two networks can be given. The station lives on the primary and moves to
-the backup when the primary will not associate for a minute, or when
-three uploads in a row fail while it is associated - a link that is up
-with nothing behind it looks the same as no link from the server's side,
-and a second provider is what a backup is for. Once on the backup it tries
-the primary again every hour, with an empty buffer, so the try costs no
-data. Leave `BACKUP_WIFI_SSID` empty to run on one network.
+Two WiFi networks:
 
-To build from the terminal, `arduino-cli` (Homebrew, or the one bundled
-with the IDE) shares the IDE's cores and libraries:
+- Station lives on the primary; moves to the backup after 1 min without association or 3 consecutive failed uploads while associated
+- On the backup it retries the primary every hour with an empty buffer
+- Empty `BACKUP_WIFI_SSID` = single network
 
 ```
 arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs weather_station
@@ -142,77 +103,47 @@ arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs weather_
 
 ### Versions
 
-`FIRMWARE_VERSION` in `weather_station.ino` is bumped with every build that
-goes on a board - a fix is a patch, a feature a minor, a new board or
-protocol a major - and the commit it was built from is tagged
-`fw/v<version>`, apart from the app's own `v<version>` tags. The board
-reports the number with every upload, so the dashboard and the
-`station_reports` table say what is running; the tag says what that is.
-[`CHANGELOG.md`](CHANGELOG.md) keeps the history with the board, protocol
-and the server release each build needs; which server release understands
-which field is in [`docs/api.md`](../docs/api.md#firmware-and-server-versions).
+- `FIRMWARE_VERSION` in `weather_station.ino` is bumped with every build that goes on a board: fix = patch, feature = minor, new board or protocol = major
+- The commit is tagged `fw/v<version>` (the app uses `v<version>`)
+- The board reports the version in every upload (`station_reports`)
+- History in [`CHANGELOG.md`](CHANGELOG.md); field-to-server-release map in [`docs/api.md`](../docs/api.md#firmware-and-server-versions)
 
 ## Updating over the air
 
-Once a build with OTA runs on the board, the next one goes over the LAN:
-the board listens on port 3232, announces itself over mDNS, and the IDE
-lists `weather-station` with its address under _Port_ next to the serial
-ones. From the terminal:
+- Port 3232, announced over mDNS; the IDE lists `weather-station` under _Port_
+- Password `OTA_PASSWORD`; empty = OTA off
 
 ```
 arduino-cli upload --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --port weather-station.local weather_station
 ```
 
-The IP does instead of the name when mDNS is slow to answer. The image
-lands in the other app slot and the board restarts from it; the window
-being filled is closed into the buffer first, so the update costs no
-readings, and the noise task is paused so the transfer has the CPU. The
-noise of the slot the update lands in is lost - that window goes out
-without it. The board asks for `OTA_PASSWORD` - an open OTA port would take
-any image from anyone on the network - and with the password left empty
-OTA is off altogether.
-
-There is no rollback. A build that boot-loops, as v2.1.0 did, stays in
-the slot the bootloader picks, and only the cable gets it out. Compile
-before uploading, and keep the cable for that one case.
+- The IP works when mDNS is slow
+- Image lands in the other app slot and the board restarts from it
+- The window being filled is closed into the buffer first; the noise task is paused, so the window in which the update lands loses its noise
+- No rollback: a boot-looping build (v2.1.0 did) stays in the slot the bootloader picks, only the cable recovers it; compile before uploading
 
 ## Looking at the station
 
-Plugging in the serial cable resets the board, which is the one thing a
-look should not do. So the station serves itself over plain HTTP on the
-LAN, as `http://weather-station.local/` through mDNS on whichever network
-it is on, or by the IP the router hands it.
+Plain HTTP on the LAN, no authentication, read-only: `http://weather-station.local/` (mDNS) or the IP.
 
 | Path         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
 | `/`          | What the station is doing, as text                                |
-| `/status`    | The same as JSON                                                  |
+| `/status`    | The same as JSON, plus last POST's code and time                  |
 | `/log`       | The last 8 kB of log from RAM, readings included                  |
 | `/log/flash` | The log on the flash: everything but readings, survives a restart |
 
-`/status` and the `station` object in every upload carry the same things:
-firmware version and board (`ARDUINO_BOARD`, the IDE's board selection, so
-the record shows which hardware sent what after a swap), why the board
-last booted, uptime, free heap and the
-lowest it has been, SSID, IP and RSSI, which network the station is on and
-how many times it switched, how many windows wait in the buffer, how many
-uploads failed in a row, and the clock's drift - `clock_step_ms`, the
-correction the last SNTP re-sync made (positive when the board's clock ran
-slow), `clock_step_over_s`, how long that drift accumulated, the largest
-correction since boot as `clock_step_max_ms`, and `clock_synced_at`, the
-epoch of the last sync. The drift fields are zero until the first re-sync
-after boot: the first answer steps the clock from 1970 on a cold boot, or
-from a clock nobody knows the age of after a software restart, and neither
-says anything about the crystal. `/status` adds the last POST's code and time.
+`/status` and the `station` object in every upload carry:
 
-There is no authentication. It only reads, and it is only on the LAN.
+- Firmware version, board (`ARDUINO_BOARD`), last boot reason, uptime, free heap and its minimum
+- SSID, IP, RSSI, which network, number of switches
+- Windows in the buffer, uploads failed in a row
+- Clock drift: `clock_step_ms` (last SNTP correction, positive when the clock ran slow), `clock_step_over_s` (how long the drift accumulated), `clock_step_max_ms` (largest since boot), `clock_synced_at` (epoch of last sync)
+- Drift fields are zero until the first re-sync after boot (the first answer steps the clock from 1970 or from a clock of unknown age)
 
 ## Protocol
 
-Version 4. Fixed point integers throughout, converted when the reading is
-taken. One entry per ten-minute window: the V2 fields, `illuminance` with
-its extremes when the VEML7700 gave anything for that window, and a `noise`
-object when the microphone did.
+Version 4. Fixed-point integers, converted at reading time. One entry per ten-minute window: V2 fields, `illuminance` with extremes when the VEML7700 gave data, `noise` object when the microphone did. Units and ranges: [`docs/api.md`](../docs/api.md).
 
 ```json
 {
@@ -247,180 +178,72 @@ object when the microphone did.
 }
 ```
 
-Units, ranges and what the server answers are in
-[`docs/api.md`](../docs/api.md).
+- A `station` object (see above) goes beside `measurements`; stored apart from readings, optional
+- Bare field = mean over the window, rounded to nearest; `_min` / `_max` = lowest / highest reading; the server refuses min above mean or max below it
+- Window = epoch slot: `timestamp / 600` names it. The stamp is the last reading's.
+- Pressure is station pressure (not reduced); the server reduces it to sea level for display (`App\ValueObject\SeaLevelPressure`, height `StationSite::ALTITUDE_METRES`)
 
-Beside `measurements` goes a `station` object with the state of the board
-at the time of the upload - see _Looking at the station_ for the fields.
-The server stores it apart from the readings, and it is optional: a batch
-without it is still a valid batch.
+## Behaviour
 
-The bare field is the mean over the window, rounded to nearest; `_min` and
-`_max` are the lowest and highest reading in it. The server refuses a
-minimum above its mean or a maximum below it. The mean keeps the V1 field
-name on purpose - the dashboard averages both versions with one SQL
-expression, and a V1 row stands in as its own minimum and maximum.
+### Clock
 
-A window is an epoch slot: `timestamp / 600` names it, so the station's
-windows line up with the dashboard's ten-minute buckets whatever time the
-board booted. The stamp is the last reading's, which keeps the "last
-measurement" readout honest and lands the entry in its own bucket.
+- Nothing is read until NTP has answered once; the clock counts through a lost link
+- SNTP re-syncs hourly while online, also after a software restart (the clock lives in the RTC)
+- The sketch replaces `sntp_sync_time()` to read the clock before stepping it; the difference is the reported drift
+- The replacement runs on its own task and only notes numbers; the loop writes the log line
 
-Pressure is station pressure - what the sensor reads where it hangs, not
-reduced. The server reduces it to sea level for display
-(`App\ValueObject\SeaLevelPressure`, height in `Dashboard::ALTITUDE_METRES`),
-so the record keeps the measurement and a corrected height does not mean
-rewriting it.
+### Buffer and upload
 
-## Notes
+- Closed windows wait in a buffer, oldest first, 144 deep; in RAM, mirrored to a flash file after every change; any restart loses only the window being filled
+- Batches of 16 straight after a window closes; stops at the first failure, retries a minute later
+- A batch leaves the buffer only after a 2xx; the server upserts on `(sensor, timestamp)`, so a resend is harmless
+- Readings outside the protocol ranges are dropped before they reach the window (one bad value would get the whole batch rejected)
 
-Nothing is read until NTP has answered once: a reading without a stamp
-cannot be filed into a window. After that the clock keeps counting through a
-lost link, and SNTP corrects it every hour while the link is up. SNTP is
-started whenever the station is online, not only while the clock is unset:
-the clock lives in the RTC and comes through a software restart - the
-watchdog's, an OTA update's - already set, and a start gated on it would
-never happen on such a boot. The sync is
-waited on through SNTP's own update function, `sntp_sync_time()`, which the
-sketch replaces - not by watching the clock look plausible, which on a
-re-sync it already does. The replacement reads the clock before stepping
-it, and the difference is the drift the crystal accumulated since the
-previous sync; it goes out with the station report and shows on the
-dashboard. Like the WiFi event handler it runs on a task of its own and
-only notes the numbers - the loop writes the log line.
+### Stall guards
 
-Closed windows wait in a buffer, oldest first, a day of them. The buffer is
-in RAM and mirrored to a file on the flash after every change, written
-whole into a scratch file that replaces the old one, so a restart of any
-kind - a power cut, the watchdog, a cable plugged in - loses only the window
-being filled at that moment. The upload goes out in batches of sixteen
-straight after a window closes, and stops at the first failure; a failure
-is retried a minute later rather than with the next window. A batch is
-dropped from the buffer only after a 2xx, and the server upserts on
-`(sensor, timestamp)`, so a batch whose answer got lost is harmless to send
-twice.
+- Task watchdog restarts the board when the loop has not run for 2 min
+- Loop restarts the board after an hour with a backlog and no successful upload, checked between windows
+- Next boot logs the reset reason; the flash log rotates at 32 kB, two files deep
 
-Two things guard against a stall. The task watchdog restarts the board
-when the loop has not run for two minutes - stuck in I2C or TLS - and the
-loop itself restarts the board when an hour passes with a backlog and no
-upload that worked, checked between windows so nothing half measured is
-lost. Both are cheap with the buffer on the flash, and the next boot logs
-the reset reason, so the flash log says afterwards what the station was
-doing when it stopped. The log itself rotates at 32 kB, two files deep.
+### Sensors
 
-Readings outside the protocol ranges are dropped before they reach the
-window. The API validates each entry and rejects the whole batch on one bad
-value, and one wild reading would otherwise carry a window's extreme out of
-range and wedge every window queued behind it.
+- A reading needs both SHT4x and BMP280; if either fails the reading is dropped
+- SHT4x: high precision, heater off; `sht4xBegin()` spends the first read (it failed more often than not)
+- BMP280: forced mode, oversampling, IIR filter off
+- VEML7700: optional; a failed or saturated read drops only the light; a window without light goes out without `illuminance`
+- VEML7700 is driven through its registers (`veml7700.cpp`); five ranges from gain 2 at 100 ms (0.034 lx per count) to gain 1/8 at 25 ms (141 klx); one step per read towards the light, neighbours differ by at most 4x; no non-linearity correction
+- Lux are the shield's (behind the louvers), not comparable with a station in the open
+- Microphone SCK and WS stop for every sensor read (`noiseHush()`); running, they made the VEML7700 miss about every other transfer; clocks also use the weakest GPIO driver
 
-A reading needs both sensors: the SHT4x for temperature and humidity, the
-BMP280 for pressure. If either fails the reading is dropped and the window
-takes the next one. The SHT4x measures at high precision without its heater;
-the first read after `begin()` failed more often than not on the bench, so
-`sht4xBegin()` spends it. The BMP280 runs in forced mode with oversampling
-and the IIR filter off: the window mean does that job, over readings half a
-minute apart rather than milliseconds.
+### TLS and WiFi
 
-The VEML7700 sits inside the radiation shield, behind its louvers: it
-reads a fraction of the open sky's light, and the morning sun straight
-through the east side. The lux are the shield's, not comparable with a
-station in the open.
-
-The VEML7700 is optional. A failed or saturated read drops the light from
-that reading and nothing else, and a window without any goes out without
-`illuminance`. It is driven through its registers (`veml7700.cpp`) and
-integrates on its own, so a read is one short transfer of the last result.
-Five ranges from gain 2 at 100 ms (0.034 lx per count) to gain 1/8 at
-25 ms (141 klx) cover dusk to full sun; each read steps one range towards
-the light, and neighbours differ by at most 4x, so the range does not flap.
-No non-linearity correction is applied: Vishay's polynomial runs away at
-the top of the range and there is nothing on the balcony to check it
-against.
-
-The microphone's SCK and WS stop for every sensor read (`noiseHush()`).
-Running, they couple into SDA and SCL over the 4 m cable: the VEML7700
-missed about every other transfer, and none with them stopped. The SHT4x
-never noticed. The clocks also run on the weakest GPIO driver for slower
-edges.
-
-`ca_certs.h` pins ISRG Root X1 and ISRG Root YR. Let's Encrypt renews the leaf
-every few months, so pinning it would break uploads on every renewal. Two roots
-because the chain is served cross-signed today and Root YR is what survives the
-cross-sign being dropped. mbedTLS validates the certificate against the system
-clock, which is set before anything is read.
-
-WiFi stays associated. The core reconnects by itself after a drop; the loop
-nudges it every thirty seconds if that gets nowhere, hands the other network
-a turn after a minute of that, and lists what the radio can hear when the
-first association after boot fails - around -70 dBm is comfortable, -80
-marginal, past -85 a TLS upload will not survive.
+- `ca_certs.h` pins ISRG Root X1 and ISRG Root YR (not the leaf; Root YR survives the cross-sign being dropped); validated against the system clock
+- WiFi stays associated; the loop nudges every 30 s, hands the other network a turn after a minute, and lists what the radio hears when the first association fails
+- RSSI: about -70 dBm comfortable, -80 marginal, past -85 a TLS upload will not survive
 
 ## Noise
 
-`noise.cpp` runs as a task of its own pinned to core 0, below the WiFi
-driver and lwIP, so the radio always wins; core 1 keeps the loop - sensors,
-the HTTP server, the TLS upload, OTA - which would otherwise take the CPU
-from the FFT for seconds at a time. The task sleeps in the I2S read and
-wakes for a few milliseconds per frame.
+`noise.cpp`: task pinned to core 0 (below WiFi and lwIP); core 1 runs the loop.
 
-- I2S at 16 kHz, 32-bit slots, left channel. The INMP441 sends a signed
-  24-bit sample left-aligned in the slot: it is read into `int32_t` and
-  shifted `>> 8` arithmetically, then scaled to full scale 1 as `float`.
-  Everything after that is single precision, on the FPU.
-- 2048-point FFT (esp-dsp) over Hann windows that overlap by half: a frame
-  every 64 ms, 7.8 Hz bins. 4096 points left the TLS upload 2 kB of heap.
-- The power in each bin is corrected for the INMP441's own high-pass - the
-  biquad equalizer from esp32-i2s-slm, evaluated per bin once at boot, +10 dB
-  at 25 Hz, +1.6 dB at 100 Hz, flat from 500 Hz - and summed into 26
-  base-10 third-octave bands (25 Hz to 8 kHz, unweighted) and into one
-  A-weighted total (IEC 61672 per bin). Bins below 20 Hz are the mic's DC
-  offset and are left out.
-- Calibration: dB SPL = dBFS + 120 from the datasheet (-26 dBFS at 94 dB
-  SPL), plus `MIC_OFFSET_DB` = -15, matched against a phone SLM next to the
-  module.
-- The A-weighted power of the frames in each wall-clock second makes that
-  second's LAeq,1s. Over a window slot, `laeq` is the energy mean of all
-  frames, `lamax` the loudest second, `la10` and `la90` the levels 10 % and
-  90 % of the seconds exceed, `seconds` how many went in; the bands are
-  energy means like `laeq`.
+- I2S 16 kHz, 32-bit slots, left channel; 24-bit sample read as `int32_t`, shifted `>> 8`, scaled to full scale 1 as `float`
+- 2048-point FFT (esp-dsp), Hann windows overlapping by half: a frame every 64 ms, 7.8 Hz bins (4096 points left the TLS upload 2 kB of heap)
+- Bin power corrected for the INMP441 high-pass (+10 dB at 25 Hz, +1.6 dB at 100 Hz, flat from 500 Hz); bins below 20 Hz left out
+- 26 base-10 third-octave bands (25 Hz to 8 kHz, unweighted) and one A-weighted total (IEC 61672)
+- Calibration: dB SPL = dBFS + 120 (-26 dBFS at 94 dB SPL) plus `MIC_OFFSET_DB` = -15 (phone SLM)
+- Per window: `laeq` energy mean of all frames, `lamax` loudest second (LAeq,1s), `la10` / `la90` levels exceeded 10 % / 90 % of the seconds, `seconds` count; bands are energy means
+- Slots follow the wall clock; nothing counted before the clock is set or for 3 s after the mic starts
+- A frame with no signal (SD stuck) counts as silent and is left out: a dead mic sends windows without `noise`
+- Every sensor read parks the task and disables I2S (costs about 0.5 s of noise per reading)
+- The ~40 kB of buffers go back to the heap before every upload and are reallocated after (held, mbedTLS could not allocate); the window misses those seconds, so `seconds` often reads a little under 600
+- A resume with no memory is retried every minute from the loop (`NOISE_RETRY_MS`)
+- A mic that does not start at boot gives its buffers back; the station runs without noise until the next restart
 
-The task follows the wall clock, so its slots are the readings' slots; it
-closes one on its first frame past the boundary and the loop picks it up
-when it closes the window. Nothing is counted before the clock is set, nor
-for three seconds after the mic starts. A frame with no signal at all - SD
-stuck low or high - is counted as silent and left out, so a dead
-microphone sends windows without `noise` rather than windows of silence;
-the window's log line says which.
+Limits:
 
-Every sensor read stops the clocks too: the task parks, the I2S channel is
-disabled, and after the read two hops refill the history and four more
-wait out the microphone's 2^18-cycle start. The buffers stay; freeing them
-twice a minute would only fragment the heap. It costs about half a second
-of noise per reading.
-
-The task's ~40 kB of buffers are what TLS needs. Before every upload the
-task finishes its frame and parks, the buffers go back to the heap, and
-after the upload they are allocated again - with them held, mbedTLS could
-not allocate and the upload failed or hung until the watchdog. The window
-being filled misses those seconds, which is why `seconds` often reads a
-little under 600. A resume that finds no memory leaves the task parked and
-is retried every minute from the loop (`NOISE_RETRY_MS`), not only at the
-next upload. A microphone that does not start at boot - no memory, no I2S,
-no task - gives its buffers back at once, and the station runs without
-noise until the next restart.
-
-Nyquist is 8 kHz, so the 8 kHz band (7.1 - 8.9 kHz) sees only its lower
-half and reads low; the 25 - 40 Hz bands get one bin each.
-
-The server hears rain in these bands (`App\ValueObject\RainDetector`): drops
-off the roof ring the shield's plastic at 1 kHz and fill the top band. Those
-thresholds are this mounting's. A move of the microphone or the shield
-means checking them against a few rains again.
+- Nyquist is 8 kHz: the 8 kHz band (7.1 - 8.9 kHz) sees only its lower half and reads low; the 25 - 40 Hz bands get one bin each
+- Rain is detected from these bands by `App\ValueObject\RainDetector` (roof drops ring the shield's plastic at 1 kHz and fill the top band); thresholds belong to this mounting, recheck against a few rains after moving the mic or shield
 
 ## Sketches
 
-`weather_station` is the station. `sensors_check` is diagnostics for the
-whole set: I2C scan, then one line every two seconds with the BMP280, the
-SHT4x, the VEML7700 and the INMP441's level, the clocks stopped around the
-I2C reads as in the station, retrying a sensor that is missing so a fixed
-joint shows up without a reset.
+- `weather_station` - the station
+- `sensors_check` - diagnostics: I2C scan, then a line every 2 s with BMP280, SHT4x, VEML7700 and INMP441 level; clocks stopped around I2C reads as in the station; retries a missing sensor
