@@ -10,6 +10,17 @@
 <div {{ $attributes->class('flex flex-1 flex-col rounded-[10px] border border-line bg-screen') }}>
     <div class="relative min-h-[270px] flex-1 sm:min-h-[300px]" role="img" aria-label="Temperature over the last six hours and the forecast for the next six, with its range.">
         <div class="plot" style="top: 30px; right: 28px; bottom: 40px; left: 64px">
+            <svg class="layer graticule" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @foreach ($chart->hours as $hour)
+                    <line x1="{{ $hour['x'] }}" y1="0" x2="{{ $hour['x'] }}" y2="100" style="stroke: var(--grid)" />
+                @endforeach
+                @foreach ($chart->ticks as $tick)
+                    <line x1="0" y1="{{ $tick['y'] }}" x2="100" y2="{{ $tick['y'] }}" style="stroke: var(--grid)" />
+                @endforeach
+                <line x1="0" y1="0" x2="0" y2="100" style="stroke: var(--grid-2)" />
+                <line x1="0" y1="100" x2="100" y2="100" style="stroke: var(--grid-2)" />
+                <line x1="{{ $chart->now()['x'] }}" y1="0" x2="{{ $chart->now()['x'] }}" y2="100" style="stroke: var(--grid-2)" />
+            </svg>
             <svg class="layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <path d="{{ $chart->band() }}" style="fill: color-mix(in srgb, var(--ch1) 18%, transparent); stroke: none" />
                 <path d="{{ $chart->medianLine() }}" style="fill: none; stroke: var(--ch1); stroke-width: 2px; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round" />

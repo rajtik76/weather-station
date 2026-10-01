@@ -25,6 +25,7 @@ it('shows the forecast issued from the newest reading', function (): void {
     $this->get(route('overview'))
         ->assertOk()
         ->assertSee('Next six hours')
+        ->assertSee('class="layer graticule"', false)
         // 08:00 UTC is 10:00 in Prague in September.
         ->assertSeeInOrder(['11:00', '13,8', '12,4-15,6', '2 %', 'rain'])
         ->assertSeeInOrder(['12:00', '14,2', '12,8-15,9', '50 %', 'rain'])
