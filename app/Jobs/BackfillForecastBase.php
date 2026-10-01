@@ -6,10 +6,10 @@ namespace App\Jobs;
 
 use App\Models\Forecast;
 use App\Models\Sensor;
+use App\Queries\ForecastService;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Fills in `base` - the forecast before the station correction - on the
@@ -24,9 +24,6 @@ use Illuminate\Support\Facades\Http;
  * asked for: another model's base is gone with it, and asking again on
  * every run would fill nothing. A forecast is filled only when the answer
  * has every horizon it stores. Answers how many forecasts it filled in.
- *
- * @phpstan-import-type Horizon from Forecast
- * @phpstan-import-type Band from Forecast
  */
 class BackfillForecastBase
 {
@@ -40,8 +37,8 @@ class BackfillForecastBase
 
     public function handle(): int
     {
-        /** @var array{model: string} $health */
-        $health = Http::timeout(10)->get($this->url('health'))->throw()->json();
+        $service = ForecastService::fromConfig();
+        $health = $service->health();
 
         $missing = Forecast::query()
             ->where('sensor_id', $this->sensor->id)
@@ -57,34 +54,30 @@ class BackfillForecastBase
 
         foreach ($missing as $forecast) {
             if ($span !== [] && $forecast->issued_at - $span[0]->issued_at >= self::SPAN_SECONDS) {
-                $filled += $this->fill($span);
+                $filled += $this->fill($service, $span);
                 $span = [];
             }
 
             $span[] = $forecast;
         }
 
-        return $span === [] ? $filled : $filled + $this->fill($span);
+        return $span === [] ? $filled : $filled + $this->fill($service, $span);
     }
 
     /**
      * @param  non-empty-list<Forecast>  $span  oldest first
      */
-    private function fill(array $span): int
+    private function fill(ForecastService $service, array $span): int
     {
         $since = $span[0]->issued_at;
         $readings = new ServiceReadings($this->sensor->id)
             ->between($since - self::LOOKBACK_SECONDS, $span[array_key_last($span)]->issued_at + ChartWindow::STEP_SECONDS - 1);
 
-        /** @var array{model: string, forecasts: list<array{issued_at: int, horizons: list<array{hours: int, temperature: Band, humidity: Band, rain_probability?: float}>}>} $answer */
-        $answer = Http::timeout(120)
-            ->post($this->url('base'), [
-                'longitude' => config('forecast.longitude'),
-                'since' => $since,
-                'readings' => $readings,
-            ])
-            ->throw()
-            ->json();
+        $answer = $service->base([
+            'longitude' => config('forecast.longitude'),
+            'since' => $since,
+            'readings' => $readings,
+        ]);
 
         $bases = array_column($answer['forecasts'], 'horizons', 'issued_at');
         $filled = 0;
@@ -111,10 +104,5 @@ class BackfillForecastBase
         }
 
         return $filled;
-    }
-
-    private function url(string $path): string
-    {
-        return rtrim((string) config('forecast.url'), '/').'/'.$path;
     }
 }

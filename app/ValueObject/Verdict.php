@@ -19,7 +19,7 @@ use App\Queries\ForecastAccuracy;
 final readonly class Verdict
 {
     /** The horizon the page's question asks about; the verdict falls back to the longest scored until it has come true. */
-    private const int HOURS = 6;
+    public const int HOURS = 6;
 
     /** A day of forecasts, one per ten minutes: fewer and the verdict says it is too early. */
     private const int MIN_FORECASTS = 144;

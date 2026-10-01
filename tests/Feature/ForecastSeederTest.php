@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Livewire\Dashboard;
+use App\Livewire\Forecast as ForecastPage;
+use App\Livewire\Overview;
 use App\Models\Forecast;
 use Database\Seeders\ForecastSeeder;
 use Database\Seeders\MeasurementSeeder;
@@ -11,12 +12,12 @@ use Livewire\Livewire;
 
 use function Pest\Laravel\seed;
 
-it('seeds a forecast every seeded station shows on the dashboard', function (string $sensor): void {
+it('seeds a forecast every seeded station shows on the overview', function (string $sensor): void {
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
     Livewire::withQueryParams(['sensor' => $sensor])
-        ->test(Dashboard::class)
-        ->assertSee('Next six hours');
+        ->test(Overview::class)
+        ->assertSee('8 in 10');
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
@@ -49,5 +50,5 @@ it('seeds six hours in the shape the forecast service answers with', function ()
 it('seeds forecasts old enough for the accuracy panel to score', function (): void {
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
-    Livewire::test(Dashboard::class)->assertSee('How the forecast scores');
+    Livewire::test(ForecastPage::class)->assertSee('Verdict by horizon')->assertDontSee('No forecast has come true yet');
 });

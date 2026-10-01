@@ -1,0 +1,108 @@
+{{-- The navigator and every strip on one screen, one frame and one crosshair
+     (station-charts.js). Pressure has its own strip: a 40 hPa spread is a flat
+     line beside the others. The dew point is derived, so it starts off. --}}
+@php($hasNoise = $this->noise !== [])
+@php($weatherChannels = [
+    ['key' => 't', 'ch' => 'CH1', 'colour' => '--ch1', 'label' => 'Temperature, °C'],
+    ['key' => 'h', 'ch' => 'CH2', 'colour' => '--ch2', 'label' => 'Humidity, %'],
+    ['key' => 'd', 'ch' => 'REF', 'colour' => '--ref', 'label' => 'Dew point, °C'],
+])
+
+{{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
+<div
+    data-chart-rows="{{ json_encode($this->readings) }}"
+    data-navigator-rows="{{ json_encode($this->overview) }}"
+    data-chart-events="{{ json_encode($this->stationEvents) }}"
+    data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
+    data-noise-rows="{{ json_encode($this->noise) }}"
+    data-noise-rain="{{ json_encode($this->rainSlots) }}"
+    data-light-rows="{{ json_encode($this->light) }}"
+    data-window-from="{{ $this->windowMs['from'] }}"
+    data-window-to="{{ $this->windowMs['to'] }}"
+    data-chart-component="{{ $this->getId() }}"
+    hidden
+></div>
+
+<section class="page-wrap mt-8" aria-label="Channels">
+    <div class="rounded-[10px] border border-line bg-screen px-3 pt-5 pb-4 sm:px-5">
+        {{-- Above the strips: below them a drag moved a chart that was off screen. --}}
+        <div class="border-b border-line pb-5">
+            <p class="label-mono m-0 mb-2">Whole record</p>
+            <div
+                wire:ignore
+                data-navigator
+                class="h-20 w-full"
+                role="img"
+                aria-label="The whole record, with the shown window marked. Drag its edges to move through time."
+            ></div>
+        </div>
+
+        @unless ($this->hasReadings)
+            <div class="py-12 text-center">
+                <p class="m-0 font-display text-[19px] font-semibold">Nothing in this range</p>
+                <p class="m-0 mx-auto mt-3 max-w-sm text-[15px] text-ink-2">
+                    No reading was recorded between {{ $this->window['from'] }} and
+                    {{ $this->window['to'] }}. Pick a wider range, or reset the zoom.
+                </p>
+            </div>
+        @endunless
+
+        <div class="mt-5 space-y-8">
+            <x-channel-strip key="th" label="Temperature and humidity" channel="CH1 · CH2" height="h-72 sm:h-80">
+                @foreach ($weatherChannels as $channel)
+                    {{-- The label is the switch; the last one on is disabled instead. --}}
+                    @php($shown = $this->channels[$channel['key']] ?? false)
+                    @php($last = $this->isLastChannel($channel['key']))
+                    <button
+                        type="button"
+                        wire:click="toggleChannel('{{ $channel['key'] }}')"
+                        aria-pressed="{{ $shown ? 'true' : 'false' }}"
+                        @disabled($last)
+                        @class([
+                            'flex items-center gap-2 rounded-md px-1.5 py-1',
+                            'text-ink-2' => $shown,
+                            'text-ink-3 line-through decoration-line-2' => ! $shown,
+                            'cursor-pointer hover:text-ink' => ! $last,
+                            'cursor-default' => $last,
+                        ])
+                    >
+                        <span class="swatch" style="background: var({{ $channel['colour'] }}); opacity: {{ $shown ? 1 : 0.35 }}" aria-hidden="true"></span>
+                        <span>{{ $channel['ch'] }}</span>
+                        <span>{{ $channel['label'] }}</span>
+                    </button>
+                @endforeach
+            </x-channel-strip>
+
+            <x-channel-strip key="p" label="Pressure, MSL" channel="CH3" height="h-48 sm:h-56">
+                <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>Pressure, MSL, hPa</span>
+            </x-channel-strip>
+
+            {{-- Protocol 3 only: a sensor that never sent noise has no strips; a window before it has them empty. --}}
+            @if ($hasNoise)
+                <x-channel-strip key="noise" label="Noise" channel="CH4" height="h-48 sm:h-56">
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch4" aria-hidden="true"></span>LAeq, dB(A)</span>
+                    <span class="flex items-center gap-2 text-ink-3"><span class="inline-block h-2.5 w-4 rounded-[2px] bg-ch4/20" aria-hidden="true"></span>LA90 to LA10</span>
+                    <span class="flex items-center gap-2 text-ink-3"><span class="swatch bg-ch4/60" aria-hidden="true"></span>LAmax</span>
+                </x-channel-strip>
+
+                <x-channel-strip key="spectrum" label="Noise spectrum" channel="FFT" height="h-72 sm:h-80">
+                    <span class="text-ink-2">Third-octave spectrum, 25 Hz to 8 kHz</span>
+                    {{-- The scale's ends are the window's own quietest and loudest band; station-charts.js fills them in. --}}
+                    <span class="flex items-center gap-2 text-ink-3">
+                        <span data-spectrum-low wire:ignore></span>
+                        <span data-spectrum-scale wire:ignore class="h-2 w-24 rounded-full" aria-hidden="true"></span>
+                        <span data-spectrum-high wire:ignore></span>
+                    </span>
+                </x-channel-strip>
+            @endif
+
+            {{-- Protocol 4 only, and only for a sensor that ever sent light. The VEML7700 sits behind
+                 the shield's louvers, so the lux are the shield's, not the open sky's: read the shape. --}}
+            @if ($this->light !== [])
+                <x-channel-strip key="light" label="Light" channel="AUX" height="h-48 sm:h-56">
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx, log scale</span>
+                </x-channel-strip>
+            @endif
+        </div>
+    </div>
+</section>

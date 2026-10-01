@@ -39,3 +39,13 @@ it('hears no rain without both signs', function (?float $high, ?float $ring): vo
     'just under the ring threshold' => [55.0, 1.9],
     'a band missing' => [55.0, null],
 ]);
+
+it('reads the bands as the protocol stores them, in hundredths of dB', function (): void {
+    $stored = array_fill(0, 26, 3000);
+    $stored[15] = 4000;
+    $stored[17] = 4000;
+    $stored[16] = 4300;
+
+    expect(RainDetector::hearsStored([...array_slice($stored, 0, 25), 5000]))->toBeTrue()
+        ->and(RainDetector::hearsStored([...array_slice($stored, 0, 25), 4400]))->toBeFalse();
+});

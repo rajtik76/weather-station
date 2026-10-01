@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../../vendor/livewire/flux/dist/flux.css";
+@import "./overview.css";
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -8,118 +9,15 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-    --font-sans:
-        "Manrope", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-        "Segoe UI Symbol", "Noto Color Emoji";
-    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-
-    /* The link indicator draws a breath rather than a blink: the station is
-       alive between uploads, not signalling one. */
-    --animate-breathe: breathe 2.6s ease-in-out infinite;
-
-    @keyframes breathe {
-        0%,
-        100% {
-            opacity: 1;
-            transform: scale(1);
-        }
-        50% {
-            opacity: 0.4;
-            transform: scale(0.7);
-        }
-    }
+    --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "Red Hat Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* The page sits under a sky tint that settles into the ground a screen down. */
-.sky-page {
-    background:
-        linear-gradient(180deg, #d6e6f6 0, #eef3f8 900px) no-repeat,
-        #eef3f8;
-}
-
-.dark .sky-page {
-    background:
-        linear-gradient(180deg, #0b1428 0, #0a0f1c 900px) no-repeat,
-        #0a0f1c;
-}
-
-/* The sky over the station: morning light, night in the dark theme. White text
-   reads on every stop of both. */
-.sky {
-    background: linear-gradient(165deg, #4d93dc 0%, #7fb6ea 48%, #f1c894 100%);
-}
-
-.dark .sky {
-    background: linear-gradient(165deg, #0c1b3d 0%, #1b2c5e 55%, #3b3668 100%);
-}
-
-/* In the components layer, so a utility on the element still wins. */
-@layer components {
-    .tile {
-        min-width: 0;
-        padding: 16px;
-        border: 1px solid --alpha(var(--color-white) / 95%);
-        border-radius: 18px;
-        background: --alpha(var(--color-white) / 74%);
-        box-shadow:
-            0 1px 2px rgb(30 60 100 / 0.06),
-            0 10px 30px -18px rgb(30 60 100 / 0.25);
-        backdrop-filter: blur(18px);
-
-        @media (width >= 40rem) {
-            padding: 18px 20px;
-            border-radius: 22px;
-        }
-    }
-
-    .dark .tile {
-        border-color: --alpha(var(--color-white) / 6%);
-        background: rgb(24 34 58 / 0.62);
-        box-shadow:
-            inset 0 1px 0 rgb(255 255 255 / 0.03),
-            0 16px 34px -22px rgb(0 0 0 / 0.8);
-    }
-
-    .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        min-height: 34px;
-        padding: 0 14px;
-        border: 1px solid --alpha(var(--color-white) / 95%);
-        border-radius: 9999px;
-        background: --alpha(var(--color-white) / 74%);
-        box-shadow: 0 1px 2px rgb(30 60 100 / 0.06);
-        backdrop-filter: blur(14px);
-        font-size: 13.5px;
-    }
-
-    .dark .pill {
-        border-color: --alpha(var(--color-white) / 6%);
-        background: rgb(24 34 58 / 0.62);
-    }
-
-    /* A channel's legend entry, and its switch where it has one. */
-    .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        padding: 5px 12px;
-        border-radius: 9999px;
-        font-size: 12.5px;
-        font-weight: 700;
-    }
-}
-
-/* Leaflet: strip the default chrome so the map reads as part of the instrument panel. */
+/* Leaflet: strip the default chrome so the map reads as part of the instrument. */
 .leaflet-container {
-    background: var(--color-slate-100);
+    background: var(--bg);
     font-family: var(--font-mono);
     cursor: default;
-}
-
-.dark .leaflet-container {
-    background: var(--color-slate-900);
 }
 
 /* OpenStreetMap ships one colourful style; calm it down and invert it for dark mode. */
@@ -132,18 +30,9 @@
 }
 
 .leaflet-control-attribution {
-    border-color: --alpha(var(--color-zinc-900) / 10%);
-    background: var(--color-white);
-    color: var(--color-zinc-600);
-}
-
-.dark .leaflet-control-attribution {
-    border-color: --alpha(var(--color-white) / 10%);
-    background: var(--color-zinc-900);
-    color: var(--color-zinc-400);
-}
-
-.leaflet-control-attribution {
+    border-color: var(--line);
+    background: var(--screen);
+    color: var(--ink-3);
     font-size: 10px;
     letter-spacing: 0.05em;
 }

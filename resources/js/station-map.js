@@ -1,17 +1,16 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { token } from "./charts/theme";
 
 const OSM_ATTRIBUTION =
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 const OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-const INK = {
-    light: "#18181b",
-    dark: "#e4e4e7",
-};
-
-const isDark = () => document.documentElement.classList.contains("dark");
+/** The page's ink, read at paint time so a theme switch repaints the circle. */
+function ink() {
+    return token("--ink") || "#18181b";
+}
 
 /**
  * Render the area the station reports from, as a circle and nothing else.
@@ -46,8 +45,6 @@ function createStationMap(el) {
         maxZoom: 19,
         attribution: OSM_ATTRIBUTION,
     }).addTo(map);
-
-    const ink = () => INK[isDark() ? "dark" : "light"];
 
     const area = L.circle([lat, lng], {
         radius,

@@ -11,7 +11,7 @@ use UnexpectedValueException;
  * Protocol V4: a V3 window plus optional illuminance from the VEML7700,
  * present only when it gave a reading in that ten minutes.
  */
-final readonly class MeasurementDataV4 implements CarriesNoise
+final readonly class MeasurementDataV4 implements CarriesLight, CarriesNoise
 {
     public ProtocolVersion $protocolVersion;
 

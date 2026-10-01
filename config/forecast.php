@@ -22,4 +22,16 @@ return [
 
     // The models use local solar time, so only the longitude matters.
     'longitude' => StationSite::LONGITUDE,
+
+    // A ČHMÚ station the same model forecasts every night from the day
+    // before, as a reference line beside the balcony's: same weather, a
+    // professional site, no station correction. Stored as a sensor of its own
+    // under this name and kept out of the sensor picker.
+    'reference' => [
+        'name' => 'Plzeň-Mikulka (ČHMÚ)',
+        'wsi' => '0-20000-0-11450',
+        'longitude' => 13.378889,
+        // One JSON file per station and UTC day, published shortly after midnight; about a month back.
+        'url' => 'https://opendata.chmi.cz/meteorology/climate/recent/data/10min',
+    ],
 ];

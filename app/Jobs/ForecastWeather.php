@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\Forecast;
 use App\Models\Sensor;
+use App\Queries\ForecastService;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
@@ -14,7 +15,6 @@ use DateTimeZone;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 
 /**
@@ -23,8 +23,6 @@ use InvalidArgumentException;
  * station correction included under each horizon's `base`. The service
  * keeps no state, so every run sends the whole window it learns the station
  * correction from.
- *
- * @phpstan-import-type Horizon from Forecast
  */
 class ForecastWeather
 {
@@ -53,22 +51,17 @@ class ForecastWeather
         }
 
         try {
-            $response = Http::timeout(30)
-                ->post(rtrim((string) config('forecast.url'), '/').'/forecast', array_filter([
-                    'longitude' => config('forecast.longitude'),
-                    'readings' => $readings,
-                    'since' => $this->correctionSince(),
-                ], fn (mixed $value): bool => $value !== null))
-                ->throw();
+            $forecast = ForecastService::fromConfig()->forecast(array_filter([
+                'longitude' => config('forecast.longitude'),
+                'readings' => $readings,
+                'since' => $this->correctionSince(),
+            ], fn (mixed $value): bool => $value !== null));
         } catch (ConnectionException|RequestException $exception) {
             // A missed forecast is replaced ten minutes later; the upload must not fail.
             report($exception);
 
             return;
         }
-
-        /** @var array{issued_at: int, model: string, corrected: bool, correction?: int, horizons: list<Horizon>} $forecast */
-        $forecast = $response->json();
 
         Forecast::query()->updateOrCreate(
             ['sensor_id' => $this->sensor->id, 'issued_at' => $forecast['issued_at']],

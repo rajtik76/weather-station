@@ -83,7 +83,7 @@ final readonly class Readout
 
     private function lightWindow(): ?LightWindow
     {
-        return $this->data instanceof MeasurementDataV4 ? $this->data->light : null;
+        return $this->data instanceof CarriesLight ? $this->data->light : null;
     }
 
     /**

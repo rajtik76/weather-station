@@ -29,6 +29,16 @@ final readonly class RainDetector
     private const float MIN_RING_DB = 2.0;
 
     /**
+     * The bands as the protocol stores them, in hundredths of dB.
+     *
+     * @param  list<int>  $bands
+     */
+    public static function hearsStored(array $bands): bool
+    {
+        return self::hears(array_map(fn (int $level): float => $level / 100, $bands));
+    }
+
+    /**
      * @param  list<float|int|null>  $bands  the 26 band levels in dB, 25 Hz to 8 kHz
      */
     public static function hears(array $bands): bool

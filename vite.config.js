@@ -18,11 +18,14 @@ export default defineConfig({
             input: ["resources/css/app.css", "resources/js/app.js"],
             refresh: true,
             fonts: [
-                bunny("Manrope", {
-                    weights: [400, 500, 600, 700, 800],
+                bunny("Red Hat Display", {
+                    weights: [500, 600, 700],
                 }),
-                bunny("IBM Plex Mono", {
+                bunny("Red Hat Text", {
                     weights: [400, 500, 600],
+                }),
+                bunny("Red Hat Mono", {
+                    weights: [400, 500],
                 }),
             ],
         }),

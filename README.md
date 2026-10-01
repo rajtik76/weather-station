@@ -11,7 +11,7 @@ answer is on the page. A small model trained on eight years of station records
 from the Czech Hydrometeorological Institute (ČHMÚ) forecasts temperature and
 the chance of rain one to six hours ahead from the station's own readings
 alone, and every forecast is scored against what the station then measured.
-The dashboard shows the last 30 days' verdict right under the current readings.
+The front page sets the last 30 days' verdict beside the next six hours.
 
 The station is how the question gets asked. An ESP32 reads temperature and
 humidity from an SHT4x outside, the light from a VEML7700 beside it and
@@ -26,7 +26,7 @@ VEML7700 --I2C--+
 BMP280   --I2C--+--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
 INMP441  --I2S--+                       |    |
                                         |  forecast service (Python)
-                                   Livewire dashboard
+                                   Livewire pages
 ```
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
@@ -48,7 +48,7 @@ therefore given for six hours ahead, with every shorter horizon beside it, in
 three numbers over the last 30 days:
 
 - **skill** - how much smaller the forecast's miss was than the naive
-  guess's. Below zero the forecast did worse, and the dashboard says so.
+  guess's. Below zero the forecast did worse, and the page says so.
 - **mean miss** in °C, beside the naive guess's.
 - **in range** - how often the reading landed inside the forecast range. The
   range is drawn to hold eight readings in ten, so 80 % is on target and less
@@ -56,8 +56,8 @@ three numbers over the last 30 days:
 
 Until a day of forecasts has come true, the verdict says it is too early.
 
-Folded under the forecast, the same scoring for any hour ahead. A chart shows
-the skill by day, once as shown and once for the base model, on the same
+The forecast page has the same scoring for every hour ahead and, for one at a
+time, a chart of the skill by day, once as shown and once for the base model, on the same
 hours: the gap between the two lines is what the correction has learnt from
 the station's own misses, and a day a newly trained model or a new version of
 the correction took over is marked. Below it how wide the range was, the
@@ -66,6 +66,14 @@ hour of the day the forecast was for of how much warmer or colder the station
 read than forecast - the morning sun on the shield reads warmer. How it
 works, how well it scores and what it cannot do is in
 [`forecast/README.md`](forecast/README.md).
+
+Beside the balcony's line runs a reference: every night the same model,
+without a station correction, forecasts the day before at the ČHMÚ station
+Plzeň-Mikulka, 3.5 km away, from the 10-minute record ČHMÚ publishes, and
+those forecasts are scored the same way. Both lines dropping means the
+weather was hard to forecast; only the balcony's dropping means it was the
+balcony. `php artisan forecast:reference` does it, scheduled at 01:00 UTC; the
+station is stored as a sensor of its own and kept out of the picker.
 
 ## Sensor accuracy
 
@@ -91,28 +99,27 @@ real, the numbers do not compare with a station in the open.
 
 A station is whatever uploads under a `sensor_name`. The first upload under a
 new name registers it in `sensors`; a description can be added by hand
-afterwards and is what the dashboard shows beside the name. More than one
-station can report to the same server, and the dashboard switches between
-them.
+afterwards. More than one station can report to the same server, and a
+picker in the header switches between them once there are two.
 
-The dashboard is one Livewire page. At the top the current readings of the
-chosen station, then the forecast's verdict and the forecast for the next six
-hours with its scoring folded under it (see [The forecast](#the-forecast)).
-Below them temperature and humidity (dew point on request)
-and sea-level pressure on a strip of its own, over the last week by default,
-with the min-max band behind each line and a strip of the whole record to
-drag any window up to a month through; the bucket width follows the span on
-screen. When the window holds noise, two more strips follow: the A-weighted
-level with its LA90 to LA10 band and the loudest second, and the third-octave
-spectrum as a waterfall, with a rain icon over the columns the microphone
-heard rain in. A station that sends light gets one more, the lux in the
-shield on a log scale; noise and light also join the current readings while
-the newest window has them. Events entered by hand into `station_events` are
-marked on the charts. Under the charts the three newest windows as they were
-stored, the station's own report of how it was doing, and the site's
-approximate location - one place, set in the component, so a second station
-is shown on the first one's map. The window and the station are in the URL,
-so a view can be linked to.
+The site is three Livewire pages on one base, `StationPage`. The overview (`/`)
+has the current readings of every channel with the last 24 hours under each,
+the next six hours with the verdict beside them, the board's own report of
+how it is doing and the site's approximate location; it is the only page that
+refreshes itself. The charts page (`/charts`) has temperature and humidity
+(dew point on request) and sea-level pressure on a strip of its own, over the
+last week by default, with the min-max band behind each line and a strip of
+the whole record above them to drag any window up to a month through; the
+bucket width follows the span on screen. When the window holds noise, two
+more strips follow: the A-weighted level with its LA90 to LA10 band and the
+loudest second, and the third-octave spectrum as a waterfall, with a rain
+icon over the columns the microphone heard rain in. A station that sends
+light gets one more, the lux in the shield on a log scale. Events entered by
+hand into `station_events` are marked on the charts. Under them the three
+newest windows as they were stored and the station's report in full. The
+forecast page (`/forecast`) is the model: how it works, the forecast now, the
+verdict by horizon and the scoring described above. The window and the
+station are in the URL, so a view can be linked to.
 
 Rain is heard, not measured. Drops from the roof ring the plastic radiation
 shield around 1 kHz while the top of the spectrum goes loud; tyres on a wet
@@ -123,20 +130,20 @@ and belong to this mounting; drizzle too fine to drip is not heard.
 
 ## Layout
 
-| Path                | Contents                                                                                                                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`         | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md); each build that went on a board, with its hardware and the server release it needs, in [`firmware/CHANGELOG.md`](firmware/CHANGELOG.md). |
-| `forecast/`         | The forecast: fetching the ČHMÚ records, training, scoring, and the service. Its own [`README`](forecast/README.md) and [`CHANGELOG`](forecast/CHANGELOG.md), one entry per model that went on the server.                                                          |
-| `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                                                                                                                                                             |
-| `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                                                                                                                                                                     |
-| `app/ValueObject/`  | Per-version decoding of a measurement payload, and what the dashboard computes from the readings: sea-level pressure, dew point, the rain the microphone heard.                                                                                                     |
-| `app/Models/`       | Sensors, measurements, station reports, forecasts and the hand-written events.                                                                                                                                                                                      |
-| `app/Jobs/`         | `ForecastWeather`, which asks the forecast service after an upload and stores the answer; `BackfillForecastBase`, behind `php artisan forecast:backfill-base`, which fills in the base model's forecast on forecasts stored before the service returned it.         |
-| `app/Livewire/`     | The dashboard component, with its view in `resources/views/livewire/`.                                                                                                                                                                                              |
-| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, its last day with light, and two weeks of forecasts for each, for a dashboard without a device on the desk.                                                          |
-| `public/images/`    | The [sky backgrounds](public/images/weather-backgrounds/README.md) behind the dashboard's reading now, generated for this page, with the prompts that made them.                                                                                                    |
-| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands; the KiCad projects of the station and the shield hub in `docs/hardware/kicad/`.                                                                                                        |
-| `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.                                                                                                                                               |
+| Path                | Contents                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`         | Arduino sketches. Wiring, protocol and the hardware notes worth keeping are in [`firmware/README.md`](firmware/README.md); each build that went on a board, with its hardware and the server release it needs, in [`firmware/CHANGELOG.md`](firmware/CHANGELOG.md).                                                                                                  |
+| `forecast/`         | The forecast: fetching the ČHMÚ records, training, scoring, and the service. Its own [`README`](forecast/README.md) and [`CHANGELOG`](forecast/CHANGELOG.md), one entry per model that went on the server.                                                                                                                                                           |
+| `app/Http/`         | The ingest endpoint, its form request, and the bearer token middleware.                                                                                                                                                                                                                                                                                              |
+| `app/Enums/`        | `ProtocolVersion`, which maps a payload version to its decoder, and the bucket widths per span.                                                                                                                                                                                                                                                                      |
+| `app/ValueObject/`  | Per-version decoding of a measurement payload, and what the pages compute from the readings: sea-level pressure, dew point, the rain the microphone heard, the forecast's scores, the page's number format.                                                                                                                                                          |
+| `app/Models/`       | Sensors, measurements, station reports, forecasts and the hand-written events.                                                                                                                                                                                                                                                                                       |
+| `app/Queries/`      | Everything the pages and jobs read: the chart buckets, the scoring, the newest forecast and report, the ČHMÚ day files, and the one client of the forecast service.                                                                                                                                                                                                  |
+| `app/Jobs/`         | `ForecastWeather`, which asks the forecast service after an upload and stores the answer; `BackfillForecastBase`, behind `php artisan forecast:backfill-base`, which fills in the base model's forecast on forecasts stored before the service returned it; `ForecastReferenceDay`, behind `php artisan forecast:reference`, which forecasts a day of Plzeň-Mikulka. |
+| `app/Livewire/`     | The three pages on `StationPage`, with their views and partials in `resources/views/livewire/`.                                                                                                                                                                                                                                                                      |
+| `database/seeders/` | A month of two stations' weather, the last three days of the first with noise and two showers, its last day with light, and two weeks of forecasts for each, for the pages without a device on the desk.                                                                                                                                                             |
+| `docs/`             | The [API contract](docs/api.md), and what happens to a batch after it lands; the KiCad projects of the station and the shield hub in `docs/hardware/kicad/`.                                                                                                                                                                                                         |
+| `docker/`           | nginx, PHP-FPM and supervisord config for the production image; the init script that creates the local test database.                                                                                                                                                                                                                                                |
 
 ## API
 
@@ -162,8 +169,8 @@ of the payload in the [firmware README](firmware/README.md#protocol).
 
 ## Running it
 
-Needs PHP 8.4, Node 24 and Docker. The dashboard uses the free Flux
-components only, so there is nothing to buy and no `auth.json` to fill in.
+Needs PHP 8.4, Node 24 and Docker. The pages use no paid Flux
+components, so there is nothing to buy and no `auth.json` to fill in.
 
 ```
 docker compose up -d   # PostgreSQL 18 on 5432, with a second database for the tests
@@ -186,7 +193,7 @@ forecasts are made. `FORECAST_HISTORY_SINCE`, a local date such as
 correction learns from - for when the station changed; the base models still
 get the last 60 days. A value that is not a date is reported and ignored.
 
-PostgreSQL everywhere, the same image as production: the dashboard averages
+PostgreSQL everywhere, the same image as production: the charts average
 its buckets in SQL that only PostgreSQL speaks, so there is no SQLite to fall
 back on. `MeasurementSeeder` writes a month of two stations at the reporting
 interval, which is the fastest way to get something on the chart without a
@@ -203,7 +210,7 @@ The forecast and its accuracy panel show without the service running.
 ## Deploying
 
 The `Dockerfile` builds one image: assets on Node, dependencies on Composer,
-then nginx and PHP-FPM under supervisord on port 8080. The entrypoint caches
+then nginx, PHP-FPM and Laravel's scheduler under supervisord on port 8080. The entrypoint caches
 config, routes and views at start, because the environment only exists at run
 time. It does not run migrations; do that as a step of your deploy.
 
@@ -212,4 +219,6 @@ The forecast service is a second image, built from `forecast/` with its own
 no public address; point `FORECAST_URL` at it on the internal network. See
 [`forecast/README.md`](forecast/README.md#deploying). Forecasts stored before
 the service returned the base model's forecast get it with
-`php artisan forecast:backfill-base`, once, after both are deployed.
+`php artisan forecast:backfill-base`, once, after both are deployed. The
+Plzeň-Mikulka reference fills its first month with
+`php artisan forecast:reference --days=30`, once; ČHMÚ keeps about a month.

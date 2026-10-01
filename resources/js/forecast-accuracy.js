@@ -2,11 +2,14 @@ import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { formatNumber } from "./charts/format";
+import { parsed, unwatchSize, watchSize, watchThemeChange } from "./charts/lifecycle";
+import { CHART_FONT, basePalette, token } from "./charts/theme";
 
 echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
 /**
- * The accuracy panel's two charts for the chosen horizon, told apart by
+ * The forecast page's accuracy charts for the chosen horizon, told apart by
  * `data-accuracy-chart`. Not strips: no time axis, no zoom, no crosshair.
  *
  * `days`: the skill by the local day the forecasts were made - how much
@@ -60,10 +63,7 @@ const SKILL_FLOOR = -100;
  */
 const HOUR = { percent: 0, count: 1, error: 2, worst: 3, bias: 4 };
 
-const celsius = new Intl.NumberFormat("cs-CZ", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-});
+const celsius = { format: (value) => formatNumber(value, 1) };
 
 /** Axis ticks: whole degrees print bare, a half as the tooltip prints it. */
 const tick = new Intl.NumberFormat("cs-CZ", {
@@ -71,44 +71,23 @@ const tick = new Intl.NumberFormat("cs-CZ", {
     signDisplay: "exceptZero",
 });
 
-const charts = new Map();
+/** A width is never signed. */
+const width = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 });
 
-const sizeObservers = new Map();
+const charts = new Map();
 
 /** What each chart was last painted from; a poll that changes nothing repaints nothing. */
 const painted = new Map();
 
-function isDark() {
-    return document.documentElement.classList.contains("dark");
-}
-
+/** The shown forecast in the temperature's CH1, the base in the axis labels' grey. */
 function palette() {
-    return isDark()
-        ? {
-              axis: "#475569",
-              label: "#94a3b8",
-              grid: "#ffffff12",
-              surface: "rgba(20, 30, 52, 0.82)",
-              border: "#ffffff14",
-              text: "#e2e8f0",
-              temperature: "#f59e0b",
-          }
-        : {
-              axis: "#cbd5e1",
-              label: "#94a3b8",
-              grid: "#0f1c2e0f",
-              surface: "rgba(255, 255, 255, 0.86)",
-              border: "#ffffff",
-              text: "#1e293b",
-              temperature: "#d97706",
-          };
+    return { ...basePalette(), temperature: token("--ch1"), reference: token("--ink-2") };
 }
 
 const pad = (hour) => String(hour).padStart(2, "0");
 
 const forecastHours = (count) => (count === 1 ? "1 forecast hour" : `${count} forecast hours`);
 
-/** Short lines, one fact each: ECharts keeps a tooltip on one line per `<br>`, and a phone is 320 px wide. */
 /** "27 % better", "12 % worse", "as good": against the naive guess. */
 function versus(skill) {
     if (skill === null) {
@@ -120,7 +99,8 @@ function versus(skill) {
         : `${Math.abs(skill)} % ${skill > 0 ? "better" : "worse"}`;
 }
 
-function dayTooltipHtml(row) {
+/** Short lines, one fact each: ECharts keeps a tooltip on one line per `<br>`, and a phone is 320 px wide. */
+function dayTooltipHtml(row, reference = null) {
     const tookOver =
         (row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`) +
         (row[DAY.correctionTo] === null ? "" : `<br>correction ${row[DAY.correctionTo]} took over`);
@@ -154,6 +134,10 @@ function dayTooltipHtml(row) {
         `${celsius.format(row[DAY.width])}${hasBase ? `, base ${celsius.format(row[DAY.baseWidth])}` : ""} °C wide`,
     );
     lines.push(forecastHours(row[DAY.count]));
+
+    if (reference !== null) {
+        lines.push(`Mikulka ${versus(reference)}`);
+    }
 
     return lines.join("<br>") + tookOver;
 }
@@ -247,7 +231,7 @@ function tooltip(colours, canvas, formatter) {
         // Frosted like the tiles the charts sit on.
         extraCssText:
             "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);",
-        textStyle: { color: colours.text, fontFamily: "IBM Plex Mono", fontSize: 11 },
+        textStyle: { color: colours.text, fontFamily: CHART_FONT, fontSize: 11 },
         // Both series share the day: one tooltip for the row, whichever line the pointer is on.
         formatter: ([point]) => formatter(point.dataIndex),
     };
@@ -257,8 +241,13 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
-function daysOption(rows, canvas) {
+/**
+ * `reference` is the same model's skill on the ČHMÚ reference station, one
+ * per day of `rows` (null where it has none), drawn as a dotted third line.
+ */
+function daysOption(rows, canvas, reference = []) {
     const colours = palette();
+    const referenceOn = (index) => reference[index] ?? null;
 
     return {
         animation: false,
@@ -272,7 +261,7 @@ function daysOption(rows, canvas) {
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
             axisLabel: {
                 color: colours.label,
-                fontFamily: "IBM Plex Mono",
+                fontFamily: CHART_FONT,
                 fontSize: 10,
                 hideOverlap: true,
                 formatter: dayTick,
@@ -285,14 +274,26 @@ function daysOption(rows, canvas) {
             splitNumber: 2,
             axisLabel: {
                 color: colours.label,
-                fontFamily: "IBM Plex Mono",
+                fontFamily: CHART_FONT,
                 fontSize: 10,
                 formatter: signedPercent,
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index])),
+        tooltip: tooltip(colours, canvas, (index) =>
+            dayTooltipHtml(rows[index], referenceOn(index)),
+        ),
         series: [
+            {
+                name: "reference",
+                type: "line",
+                connectNulls: false,
+                symbol: "diamond",
+                symbolSize: 6,
+                lineStyle: { color: colours.reference, width: 1.5, type: [1, 3], cap: "round" },
+                itemStyle: { color: colours.reference },
+                data: rows.map((row, index) => referenceOn(index)),
+            },
             {
                 name: "base",
                 type: "line",
@@ -311,28 +312,35 @@ function daysOption(rows, canvas) {
                 symbolSize: 8,
                 lineStyle: { color: colours.temperature, width: 2 },
                 itemStyle: { color: colours.temperature },
-                markLine: {
-                    silent: true,
-                    symbol: "none",
-                    label: {
-                        color: colours.label,
-                        fontFamily: "IBM Plex Mono",
-                        fontSize: 10,
-                        position: "end",
-                    },
-                    data: [
-                        { ...zeroLine(colours), label: { show: false } },
-                        ...rows
-                            .filter((row) => changeLabel(row) !== "")
-                            .map((row) => ({
-                                xAxis: row[DAY.date],
-                                label: { formatter: changeLabel(row) },
-                                lineStyle: { color: colours.label, type: "dashed", width: 1 },
-                            })),
-                    ],
-                },
+                markLine: changeMarks(rows, colours, [
+                    { ...zeroLine(colours), label: { show: false } },
+                ]),
                 data: rows.map((row) => row[DAY.skill]),
             },
+        ],
+    };
+}
+
+/** A dashed upright, labelled, on each day a new model or correction took over; `extra` lines go first. */
+function changeMarks(rows, colours, extra = []) {
+    return {
+        silent: true,
+        symbol: "none",
+        label: {
+            color: colours.label,
+            fontFamily: CHART_FONT,
+            fontSize: 10,
+            position: "end",
+        },
+        data: [
+            ...extra,
+            ...rows
+                .filter((row) => changeLabel(row) !== "")
+                .map((row) => ({
+                    xAxis: row[DAY.date],
+                    label: { formatter: changeLabel(row) },
+                    lineStyle: { color: colours.label, type: "dashed", width: 1 },
+                })),
         ],
     };
 }
@@ -362,7 +370,7 @@ function hoursOption(rows, canvas) {
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
             axisLabel: {
                 color: colours.label,
-                fontFamily: "IBM Plex Mono",
+                fontFamily: CHART_FONT,
                 fontSize: 10,
                 interval: 2,
             },
@@ -374,7 +382,7 @@ function hoursOption(rows, canvas) {
             splitNumber: 2,
             axisLabel: {
                 color: colours.label,
-                fontFamily: "IBM Plex Mono",
+                fontFamily: CHART_FONT,
                 fontSize: 10,
                 formatter: signedDegrees,
             },
@@ -401,20 +409,76 @@ function hoursOption(rows, canvas) {
     };
 }
 
-const OPTIONS = { days: daysOption, hours: hoursOption };
+/**
+ * The 10-90 % range's width by day, shown and base: the correction widens or
+ * narrows it until it holds eight readings in ten. From zero, so a width
+ * reads as a width.
+ */
+function widthsOption(rows, canvas) {
+    const colours = palette();
 
-/** The panel opens folded, so a chart starts at 0x0 and needs the observer to grow into its box. */
-function watchSize(key, chart, element) {
-    const observer = new ResizeObserver(() => chart.resize());
-
-    observer.observe(element);
-    sizeObservers.set(key, observer);
+    return {
+        animation: false,
+        grid: { left: 44, right: 8, top: 20, bottom: 22 },
+        xAxis: {
+            type: "category",
+            data: rows.map((row) => row[DAY.date]),
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: colours.axis } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                hideOverlap: true,
+                formatter: dayTick,
+            },
+        },
+        yAxis: {
+            type: "value",
+            min: 0,
+            max: ({ max }) => (Number.isFinite(max) ? Math.max(1, Math.ceil(max)) : 1),
+            splitNumber: 2,
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                formatter: (value) => `${width.format(value)} °C`,
+            },
+            splitLine: { lineStyle: { color: colours.grid } },
+        },
+        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index])),
+        series: [
+            {
+                name: "base",
+                type: "line",
+                connectNulls: false,
+                symbol: "circle",
+                symbolSize: 6,
+                lineStyle: { color: colours.label, width: 1.5, type: "dashed" },
+                itemStyle: { color: colours.label },
+                data: rows.map((row) => row[DAY.baseWidth]),
+            },
+            {
+                name: "corrected",
+                type: "line",
+                connectNulls: false,
+                symbol: "circle",
+                symbolSize: 8,
+                lineStyle: { color: colours.temperature, width: 2 },
+                itemStyle: { color: colours.temperature },
+                markLine: changeMarks(rows, colours),
+                data: rows.map((row) => row[DAY.width]),
+            },
+        ],
+    };
 }
+
+const OPTIONS = { days: daysOption, hours: hoursOption, widths: widthsOption };
 
 function dispose(key) {
     painted.delete(key);
-    sizeObservers.get(key)?.disconnect();
-    sizeObservers.delete(key);
+    unwatchSize(key);
     charts.get(key)?.dispose();
     charts.delete(key);
 }
@@ -443,25 +507,26 @@ function mount(force = false) {
             watchSize(key, chart, canvas);
         }
 
-        if (!force && painted.get(key) === element.dataset.accuracyRows) {
+        const payload = `${element.dataset.accuracyRows}|${element.dataset.referenceRows ?? ""}`;
+
+        if (!force && painted.get(key) === payload) {
             return;
         }
 
-        let rows;
-
-        try {
-            rows = JSON.parse(element.dataset.accuracyRows);
-        } catch {
-            rows = [];
-        }
-
-        painted.set(key, element.dataset.accuracyRows);
-        chart.setOption(OPTIONS[key](rows, canvas), { notMerge: true });
+        painted.set(key, payload);
+        chart.setOption(
+            OPTIONS[key](
+                parsed(element.dataset.accuracyRows),
+                canvas,
+                parsed(element.dataset.referenceRows),
+            ),
+            { notMerge: true },
+        );
     });
 }
 
 /**
- * After every morph of the dashboard: a poll or a horizon switch may rewrite a
+ * After every morph of the page: a poll or a horizon switch may rewrite a
  * chart's rows, or a poll bring the whole forecast block back. A hook, not a MutationObserver on the
  * body - that one would fire on every tooltip ECharts redraws.
  */
@@ -475,25 +540,10 @@ function watchMorphs() {
     }
 }
 
-/** Flux toggles `.dark` on the root; a canvas has to be repainted. */
-function watchTheme() {
-    let dark = isDark();
-
-    new MutationObserver(() => {
-        if (dark !== isDark()) {
-            dark = isDark();
-            mount(true);
-        }
-    }).observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ["class"],
-    });
-}
-
 document.addEventListener("DOMContentLoaded", () => {
     mount();
     watchMorphs();
-    watchTheme();
+    watchThemeChange(() => mount(true));
 });
 
 document.addEventListener("livewire:navigated", () => mount(true));

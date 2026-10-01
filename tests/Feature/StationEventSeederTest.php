@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Livewire\Dashboard;
+use App\Livewire\Charts;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use Database\Seeders\MeasurementSeeder;
@@ -25,10 +25,10 @@ it('seeds events every seeded station marks in its default week', function (stri
         // Two side by side, so the chart shows how neighbouring icons sit.
         ->and($times->sliding(2)->contains(fn (Collection $pair): bool => $pair->last() - $pair->first() <= 3600))->toBeTrue();
 
-    /** @var Dashboard $dashboard */
-    $dashboard = Livewire::withQueryParams(['sensor' => $sensor->slug])
-        ->test(Dashboard::class)
+    /** @var Charts $charts */
+    $charts = Livewire::withQueryParams(['sensor' => $sensor->slug])
+        ->test(Charts::class)
         ->instance();
 
-    expect($dashboard->stationEvents)->toHaveCount(6);
+    expect($charts->stationEvents)->toHaveCount(6);
 })->with(['sensor-001', 'sensor-002']);

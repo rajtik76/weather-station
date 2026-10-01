@@ -1,0 +1,242 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\ValueObject;
+
+use App\Models\Forecast;
+use App\Queries\ForecastAccuracy;
+
+/**
+ * One horizon's score from the forecasts ForecastAccuracy paired with what
+ * came: over the whole span, by the local day the forecasts were made and by
+ * the local hour they were for, as shown and before the station correction,
+ * and the rain chance against what the microphone heard. Pure arithmetic on
+ * the pairs; ForecastAccuracy reads the database and does the pairing. The
+ * shapes and what each figure means are documented there.
+ *
+ * @phpstan-import-type Score from ForecastAccuracy
+ * @phpstan-import-type Scored from ForecastAccuracy
+ * @phpstan-import-type Miss from ForecastAccuracy
+ * @phpstan-import-type Figures from ForecastAccuracy
+ * @phpstan-import-type Rain from ForecastAccuracy
+ * @phpstan-import-type Day from ForecastAccuracy
+ * @phpstan-import-type Hour from ForecastAccuracy
+ * @phpstan-import-type Band from Forecast
+ */
+final readonly class ForecastScore
+{
+    /**
+     * @param  non-empty-list<Scored>  $scored  oldest first
+     * @param  array<string, array{model?: string, correction?: int}>  $tookOver  what took over, by the day it did
+     * @return Score
+     */
+    public static function of(int $hours, array $scored, array $tookOver, int $lastIssued): array
+    {
+        return [
+            'hours' => $hours,
+            'days' => self::byDay($scored, $tookOver, $lastIssued),
+            ...self::compared($scored),
+            // Every hour scored, not only those with a base: the headline is no comparison.
+            'shown' => self::figures($scored, 'corrected'),
+            'rain' => self::rain($scored),
+            'byHour' => self::byHour($scored),
+        ];
+    }
+
+    /**
+     * @param  Band  $band
+     * @return Miss
+     */
+    public static function miss(float $truth, array $band): array
+    {
+        return [
+            'inRange' => $truth >= $band['low'] && $truth <= $band['high'],
+            'difference' => $truth - $band['mid'],
+            'width' => $band['high'] - $band['low'],
+        ];
+    }
+
+    /**
+     * Every local day from the first forecast scored to the last one issued,
+     * a day with none scored included, so a gap in the service shows as a
+     * gap in the line and a model that took over today is marked before its
+     * first forecast comes true.
+     *
+     * @param  non-empty-list<Scored>  $scored  oldest first
+     * @param  array<string, array{model?: string, correction?: int}>  $tookOver
+     * @return list<Day>
+     */
+    private static function byDay(array $scored, array $tookOver, int $lastIssued): array
+    {
+        $grouped = [];
+
+        foreach ($scored as $one) {
+            $grouped[$one['date']][] = $one;
+        }
+
+        $days = [];
+
+        foreach (LocalTime::of($scored[0]['issuedAt'])->daysThrough(LocalTime::of($lastIssued)) as $day) {
+            $date = $day->date();
+
+            if (! isset($grouped[$date])) {
+                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null];
+
+                continue;
+            }
+
+            ['corrected' => $corrected, 'base' => $base] = self::compared($grouped[$date]);
+            $days[] = [
+                $date,
+                $corrected['count'],
+                $corrected['skill'],
+                $corrected['error'],
+                $corrected['naive'],
+                $corrected['inRange'],
+                $corrected['width'],
+                $base['skill'] ?? null,
+                $base['error'] ?? null,
+                $base['inRange'] ?? null,
+                $base['width'] ?? null,
+                $tookOver[$date]['model'] ?? null,
+                $tookOver[$date]['correction'] ?? null,
+            ];
+        }
+
+        return $days;
+    }
+
+    /**
+     * @param  list<Scored>  $scored
+     * @return list<Hour>
+     */
+    private static function byHour(array $scored): array
+    {
+        $grouped = [];
+
+        foreach ($scored as $one) {
+            $grouped[$one['hour']][] = $one['corrected'];
+        }
+
+        $hours = [];
+
+        for ($hour = 0; $hour < 24; $hour++) {
+            if (! isset($grouped[$hour])) {
+                $hours[] = [null, 0, null, null, null];
+
+                continue;
+            }
+
+            $count = count($grouped[$hour]);
+            $differences = array_column($grouped[$hour], 'difference');
+            $distances = array_map(abs(...), $differences);
+
+            $hours[] = [
+                self::percent(array_column($grouped[$hour], 'inRange')),
+                $count,
+                round(array_sum($distances) / $count, 2),
+                round(max($distances), 2),
+                round(array_sum($differences) / $count, 2),
+            ];
+        }
+
+        return $hours;
+    }
+
+    /**
+     * The forecast as shown and before the correction, on the same hours:
+     * once any hour has a base, the shown one is scored only on the hours
+     * that have one too, so the gap between them is the correction's and not
+     * a different mix of days. Without any, the shown forecast on them all.
+     *
+     * @param  non-empty-list<Scored>  $scored
+     * @return array{corrected: Figures, base: ?Figures}
+     */
+    private static function compared(array $scored): array
+    {
+        $withBase = array_values(array_filter($scored, fn (array $one): bool => $one['base'] !== null));
+
+        if ($withBase === []) {
+            return ['corrected' => self::figures($scored, 'corrected'), 'base' => null];
+        }
+
+        return ['corrected' => self::figures($withBase, 'corrected'), 'base' => self::figures($withBase, 'base')];
+    }
+
+    /**
+     * The forecast as shown (`corrected`) or before the correction (`base`),
+     * over the hours that have it; null when none has.
+     *
+     * @param  list<Scored>  $scored
+     * @param  'corrected'|'base'  $which
+     * @return ($which is 'corrected' ? Figures : ?Figures)
+     */
+    private static function figures(array $scored, string $which): ?array
+    {
+        $misses = [];
+        $paired = [];
+
+        foreach ($scored as $one) {
+            if ($one[$which] === null) {
+                continue;
+            }
+
+            $misses[] = $one[$which];
+
+            if ($one['naive'] !== null) {
+                $paired[] = [abs($one[$which]['difference']), $one['naive']];
+            }
+        }
+
+        if ($misses === []) {
+            return null;
+        }
+
+        $missed = array_sum(array_column($paired, 0));
+        $guessMissed = array_sum(array_column($paired, 1));
+
+        return [
+            'count' => count($misses),
+            // A guess that never missed leaves nothing to beat.
+            'skill' => $guessMissed > 0 ? round(100 * (1 - $missed / $guessMissed)) : null,
+            'error' => $paired === [] ? null : round($missed / count($paired), 2),
+            'naive' => $paired === [] ? null : round($guessMissed / count($paired), 2),
+            'inRange' => self::percent(array_column($misses, 'inRange')),
+            'width' => round(array_sum(array_column($misses, 'width')) / count($misses), 2),
+        ];
+    }
+
+    /**
+     * @param  list<Scored>  $scored
+     * @return Rain
+     */
+    private static function rain(array $scored): array
+    {
+        $rain = array_column(array_filter($scored, fn (array $one): bool => $one['rained'] === true), 'chance');
+        $dry = array_column(array_filter($scored, fn (array $one): bool => $one['rained'] === false), 'chance');
+
+        return [
+            'count' => count($rain) + count($dry),
+            'cases' => count($rain),
+            'chanceWhenRain' => self::meanPercent($rain),
+            'chanceWhenDry' => self::meanPercent($dry),
+        ];
+    }
+
+    /**
+     * @param  non-empty-list<bool>  $rights
+     */
+    private static function percent(array $rights): float
+    {
+        return round(100 * count(array_filter($rights)) / count($rights));
+    }
+
+    /**
+     * @param  list<float>  $chances  0-1
+     */
+    private static function meanPercent(array $chances): ?float
+    {
+        return $chances === [] ? null : round(100 * array_sum($chances) / count($chances));
+    }
+}

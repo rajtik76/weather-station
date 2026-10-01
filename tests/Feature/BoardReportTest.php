@@ -114,7 +114,7 @@ it('reports the clock drift with its sync time once the board has re-synced', fu
 
     expect($report)->toMatchArray([
         'clockDrift' => '+812 ms in 1 h 0 min',
-        'clockDriftWorst' => '-1 204 ms',
+        'clockDriftWorst' => '−1 204 ms',
         'clockSynced' => '24.9.2026 09:40',
     ]);
 });
@@ -144,7 +144,7 @@ it('signs the drift and groups its thousands with a space', function (int $milli
     expect($report['clockDrift'])->toBe("{$expected} in 1 min 0 s");
 })->with([
     'ahead' => [812, '+812 ms'],
-    'behind' => [-1_204, '-1 204 ms'],
+    'behind' => [-1_204, '−1 204 ms'],
     'spot on' => [0, '0 ms'],
     'over a million' => [1_234_567, '+1 234 567 ms'],
 ]);
@@ -156,5 +156,5 @@ it('takes the worst step from the drift itself when the board reports no maximum
         'clock_synced_at' => 1_790_000_000,
     ])))->toArray();
 
-    expect($report['clockDriftWorst'])->toBe('-350 ms');
+    expect($report['clockDriftWorst'])->toBe('−350 ms');
 });

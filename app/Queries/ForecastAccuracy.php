@@ -6,7 +6,9 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\ForecastScore;
 use App\ValueObject\LocalTime;
+use App\ValueObject\ModelName;
 use App\ValueObject\RainDetector;
 use Illuminate\Support\Facades\DB;
 
@@ -110,7 +112,7 @@ final readonly class ForecastAccuracy
             $date = LocalTime::of($forecast->issued_at)->date();
 
             if ($previousModel !== null && $forecast->model !== $previousModel) {
-                $tookOver[$date]['model'] = $this->modelName($forecast->model);
+                $tookOver[$date]['model'] = ModelName::of($forecast->model);
             }
 
             if ($forecast->correction !== null) {
@@ -139,8 +141,8 @@ final readonly class ForecastAccuracy
                     'naive' => $now === null ? null : abs($truth - $now),
                     'rained' => $this->rainedWithin($forecast->issued_at, $hours, $heard, $rainy),
                     'chance' => $horizon['rain_probability'],
-                    'corrected' => $this->miss($truth, $horizon['temperature']),
-                    'base' => isset($horizon['base']) ? $this->miss($truth, $horizon['base']['temperature']) : null,
+                    'corrected' => ForecastScore::miss($truth, $horizon['temperature']),
+                    'base' => isset($horizon['base']) ? ForecastScore::miss($truth, $horizon['base']['temperature']) : null,
                 ];
             }
         }
@@ -149,31 +151,10 @@ final readonly class ForecastAccuracy
         $scores = [];
 
         foreach ($tally as $hours => $scored) {
-            $scores[] = [
-                'hours' => $hours,
-                'days' => $this->byDay($scored, $tookOver, $forecasts->last()->issued_at),
-                ...$this->compared($scored),
-                // Every hour scored, not only those with a base: the headline is no comparison.
-                'shown' => $this->figures($scored, 'corrected'),
-                'rain' => $this->rain($scored),
-                'byHour' => $this->byHour($scored),
-            ];
+            $scores[] = ForecastScore::of($hours, $scored, $tookOver, $forecasts->last()->issued_at);
         }
 
         return $scores;
-    }
-
-    /**
-     * @param  Band  $band
-     * @return Miss
-     */
-    private function miss(float $truth, array $band): array
-    {
-        return [
-            'inRange' => $truth >= $band['low'] && $truth <= $band['high'],
-            'difference' => $truth - $band['mid'],
-            'width' => $band['high'] - $band['low'],
-        ];
     }
 
     /**
@@ -217,7 +198,7 @@ final readonly class ForecastAccuracy
             /** @var list<int> $bands */
             $bands = json_decode((string) $row->bands, true, flags: JSON_THROW_ON_ERROR);
 
-            if (RainDetector::hears(array_map(fn (int $level): float => $level / 100, $bands))) {
+            if (RainDetector::hearsStored($bands)) {
                 $rainy[$slot] = true;
             }
         }
@@ -245,200 +226,5 @@ final readonly class ForecastAccuracy
         }
 
         return $rained;
-    }
-
-    /**
-     * Every local day from the first forecast scored to the last one issued,
-     * a day with none scored included, so a gap in the service shows as a
-     * gap in the line and a model that took over today is marked before its
-     * first forecast comes true.
-     *
-     * @param  non-empty-list<Scored>  $scored  oldest first
-     * @param  array<string, array{model?: string, correction?: int}>  $tookOver
-     * @return list<Day>
-     */
-    private function byDay(array $scored, array $tookOver, int $lastIssued): array
-    {
-        $grouped = [];
-
-        foreach ($scored as $one) {
-            $grouped[$one['date']][] = $one;
-        }
-
-        $days = [];
-
-        foreach (LocalTime::of($scored[0]['issuedAt'])->daysThrough(LocalTime::of($lastIssued)) as $day) {
-            $date = $day->date();
-
-            if (! isset($grouped[$date])) {
-                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null];
-
-                continue;
-            }
-
-            ['corrected' => $corrected, 'base' => $base] = $this->compared($grouped[$date]);
-            $days[] = [
-                $date,
-                $corrected['count'],
-                $corrected['skill'],
-                $corrected['error'],
-                $corrected['naive'],
-                $corrected['inRange'],
-                $corrected['width'],
-                $base['skill'] ?? null,
-                $base['error'] ?? null,
-                $base['inRange'] ?? null,
-                $base['width'] ?? null,
-                $tookOver[$date]['model'] ?? null,
-                $tookOver[$date]['correction'] ?? null,
-            ];
-        }
-
-        return $days;
-    }
-
-    /**
-     * @param  list<Scored>  $scored
-     * @return list<Hour>
-     */
-    private function byHour(array $scored): array
-    {
-        $grouped = [];
-
-        foreach ($scored as $one) {
-            $grouped[$one['hour']][] = $one['corrected'];
-        }
-
-        $hours = [];
-
-        for ($hour = 0; $hour < 24; $hour++) {
-            if (! isset($grouped[$hour])) {
-                $hours[] = [null, 0, null, null, null];
-
-                continue;
-            }
-
-            $count = count($grouped[$hour]);
-            $differences = array_column($grouped[$hour], 'difference');
-            $distances = array_map(abs(...), $differences);
-
-            $hours[] = [
-                $this->percent(array_column($grouped[$hour], 'inRange')),
-                $count,
-                round(array_sum($distances) / $count, 2),
-                round(max($distances), 2),
-                round(array_sum($differences) / $count, 2),
-            ];
-        }
-
-        return $hours;
-    }
-
-    /**
-     * The forecast as shown and before the correction, on the same hours:
-     * once any hour has a base, the shown one is scored only on the hours
-     * that have one too, so the gap between them is the correction's and not
-     * a different mix of days. Without any, the shown forecast on them all.
-     *
-     * @param  non-empty-list<Scored>  $scored
-     * @return array{corrected: Figures, base: ?Figures}
-     */
-    private function compared(array $scored): array
-    {
-        $withBase = array_values(array_filter($scored, fn (array $one): bool => $one['base'] !== null));
-
-        if ($withBase === []) {
-            return ['corrected' => $this->figures($scored, 'corrected'), 'base' => null];
-        }
-
-        return ['corrected' => $this->figures($withBase, 'corrected'), 'base' => $this->figures($withBase, 'base')];
-    }
-
-    /**
-     * The forecast as shown (`corrected`) or before the correction (`base`),
-     * over the hours that have it; null when none has.
-     *
-     * @param  list<Scored>  $scored
-     * @param  'corrected'|'base'  $which
-     * @return ($which is 'corrected' ? Figures : ?Figures)
-     */
-    private function figures(array $scored, string $which): ?array
-    {
-        $misses = [];
-        $paired = [];
-
-        foreach ($scored as $one) {
-            if ($one[$which] === null) {
-                continue;
-            }
-
-            $misses[] = $one[$which];
-
-            if ($one['naive'] !== null) {
-                $paired[] = [abs($one[$which]['difference']), $one['naive']];
-            }
-        }
-
-        if ($misses === []) {
-            return null;
-        }
-
-        $missed = array_sum(array_column($paired, 0));
-        $guessMissed = array_sum(array_column($paired, 1));
-
-        return [
-            'count' => count($misses),
-            // A guess that never missed leaves nothing to beat.
-            'skill' => $guessMissed > 0 ? round(100 * (1 - $missed / $guessMissed)) : null,
-            'error' => $paired === [] ? null : round($missed / count($paired), 2),
-            'naive' => $paired === [] ? null : round($guessMissed / count($paired), 2),
-            'inRange' => $this->percent(array_column($misses, 'inRange')),
-            'width' => round(array_sum(array_column($misses, 'width')) / count($misses), 2),
-        ];
-    }
-
-    /**
-     * @param  list<Scored>  $scored
-     * @return Rain
-     */
-    private function rain(array $scored): array
-    {
-        $rain = array_column(array_filter($scored, fn (array $one): bool => $one['rained'] === true), 'chance');
-        $dry = array_column(array_filter($scored, fn (array $one): bool => $one['rained'] === false), 'chance');
-
-        return [
-            'count' => count($rain) + count($dry),
-            'cases' => count($rain),
-            'chanceWhenRain' => $this->meanPercent($rain),
-            'chanceWhenDry' => $this->meanPercent($dry),
-        ];
-    }
-
-    /**
-     * The service stamps a model with the ISO moment it was trained; anything
-     * else prints as it came. Checked by shape first: strtotime() reads even
-     * "v3.4.0" as a time.
-     */
-    private function modelName(string $model): string
-    {
-        $trainedAt = preg_match('/^\d{4}-\d{2}-\d{2}T/', $model) === 1 ? strtotime($model) : false;
-
-        return $trainedAt === false ? $model : LocalTime::of($trainedAt)->stamp();
-    }
-
-    /**
-     * @param  non-empty-list<bool>  $rights
-     */
-    private function percent(array $rights): float
-    {
-        return round(100 * count(array_filter($rights)) / count($rights));
-    }
-
-    /**
-     * @param  list<float>  $chances  0-1
-     */
-    private function meanPercent(array $chances): ?float
-    {
-        return $chances === [] ? null : round(100 * array_sum($chances) / count($chances));
     }
 }

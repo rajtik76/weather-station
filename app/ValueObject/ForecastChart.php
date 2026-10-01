@@ -1,0 +1,127 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\ValueObject;
+
+/**
+ * The overview's forecast chart: the last six hours as measured on the left
+ * half, the forecast's median and its 10-90 % range on the right, both on one
+ * temperature scale. Coordinates are percentages of a 100 × 100 box, y growing
+ * down, so the SVG stretches it with `preserveAspectRatio="none"` and HTML
+ * labels sit at the same numbers.
+ *
+ * @phpstan-import-type Hour from ForecastHours
+ *
+ * @phpstan-type Point array{x: float, y: float}
+ * @phpstan-type Tick array{value: float, y: float}
+ */
+final readonly class ForecastChart
+{
+    /** Seconds of history on the left half; the forecast's six hours fill the right one. */
+    public const int HISTORY_SECONDS = 6 * 3600;
+
+    private const int HORIZON_HOURS = 6;
+
+    /** Room above and below the data, as a share of its range. */
+    private const float PADDING = 0.12;
+
+    /**
+     * @param  non-empty-list<Point>  $measured
+     * @param  non-empty-list<Point>  $median
+     * @param  non-empty-list<Point>  $high
+     * @param  non-empty-list<Point>  $low
+     * @param  list<Tick>  $ticks
+     * @param  list<array{x: float, y: float, clock: string, t: float, rain: int}>  $hours
+     */
+    private function __construct(
+        public array $measured,
+        public array $median,
+        public array $high,
+        public array $low,
+        public array $ticks,
+        public array $hours,
+    ) {}
+
+    /**
+     * @param  non-empty-list<array{at: int, t: float}>  $readings  oldest first, the newest is "now"
+     * @param  non-empty-list<Hour>  $horizons
+     */
+    public static function of(array $readings, array $horizons): self
+    {
+        $now = $readings[count($readings) - 1];
+        $values = [...array_column($readings, 't'), ...array_column($horizons, 'tLow'), ...array_column($horizons, 'tHigh')];
+        $span = max(max($values) - min($values), 1.0);
+        $low = min($values) - $span * self::PADDING;
+        $high = max($values) + $span * self::PADDING;
+        $y = fn (float $value): float => round(($high - $value) / ($high - $low) * 100, 2);
+        // By the hour's own epoch, not its number: a forecast issued a window before the newest reading lands that much left.
+        $hourX = fn (array $hour): float => round(50 + ($hour['at'] - $now['at']) / (self::HORIZON_HOURS * 3600) * 50, 2);
+        $start = ['x' => 50.0, 'y' => $y($now['t'])];
+
+        return new self(
+            measured: array_map(fn (array $reading): array => [
+                'x' => round(max(0.0, 50 - ($now['at'] - $reading['at']) / self::HISTORY_SECONDS * 50), 2),
+                'y' => $y($reading['t']),
+            ], $readings),
+            median: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['t'])], $horizons)],
+            high: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tHigh'])], $horizons)],
+            low: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tLow'])], $horizons)],
+            ticks: self::ticks($low, $high, $y),
+            hours: array_map(fn (array $hour): array => [
+                'x' => $hourX($hour),
+                'y' => $y($hour['t']),
+                'clock' => $hour['clock'],
+                't' => $hour['t'],
+                'rain' => $hour['rain'],
+            ], $horizons),
+        );
+    }
+
+    public function measuredLine(): string
+    {
+        return Trace::through($this->measured)->line();
+    }
+
+    public function medianLine(): string
+    {
+        return Trace::through($this->median)->line();
+    }
+
+    /** Out along the top of the range, back along its bottom. */
+    public function band(): string
+    {
+        return Trace::through($this->high)->band(Trace::through($this->low));
+    }
+
+    /**
+     * Where "now" sits: the newest reading, at the middle of the box.
+     *
+     * @return Point
+     */
+    public function now(): array
+    {
+        return $this->median[0];
+    }
+
+    /**
+     * Whole degrees at a step of 1, 2 or 5, whichever gives three to five labels.
+     *
+     * @param  callable(float): float  $y
+     * @return list<Tick>
+     */
+    private static function ticks(float $low, float $high, callable $y): array
+    {
+        foreach ([1, 2, 5, 10] as $step) {
+            $first = (int) ceil($low / $step) * $step;
+            $last = (int) floor($high / $step) * $step;
+            $values = $first > $last ? [] : range($first, $last, $step);
+
+            if (count($values) <= 5) {
+                break;
+            }
+        }
+
+        return array_map(fn (int $value): array => ['value' => (float) $value, 'y' => $y((float) $value)], $values);
+    }
+}

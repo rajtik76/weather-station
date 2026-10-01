@@ -74,16 +74,10 @@ final readonly class BoardReport
         ];
     }
 
-    /** "+812 ms", "-1 204 ms", "0 ms". */
+    /** "+812 ms", "−1 204 ms", "0 ms". */
     private function signedMilliseconds(int $milliseconds): string
     {
-        $sign = match (true) {
-            $milliseconds > 0 => '+',
-            $milliseconds < 0 => '-',
-            default => '',
-        };
-
-        return $sign.number_format(abs($milliseconds), 0, ',', ' ').' ms';
+        return Figure::signed($milliseconds, 0, plusOnZero: false).' ms';
     }
 
     /** "3 d 4 h", "4 h 12 min", "12 min 5 s". */

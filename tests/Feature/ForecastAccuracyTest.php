@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Livewire\Dashboard;
+use App\Livewire\Overview;
 use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
@@ -391,134 +391,7 @@ it('scores only the sensor\'s own forecasts from the given time on', function ()
         ->and(new ForecastAccuracy($sensor->id)->since($issued + 1))->toBe([]);
 });
 
-it('folds the accuracy into the forecast, closed until asked', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
-
-    // Nothing has come true yet.
-    Livewire::test(Dashboard::class)->assertSee('Next six hours')->assertDontSee('How the forecast scores');
-
-    measuredAt($sensor, $issued + 3600, 1300);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
-
-    $dashboard = Livewire::test(Dashboard::class);
-    $dashboard->assertSeeInOrder([
-        'id="forecast"', 'How the forecast scores', 'With correction', 'Base model', 'data-accuracy-chart="days"',
-        '+1 h', 'With correction', '+80 %', '0,2 · 1,0 °C', '100 %', '1,5 °C', '<td class="py-1.5">1</td>',
-        'Rain chance · rained / dry', 'not listened', 'By hour of the day', 'data-accuracy-chart="hours"',
-    ], false);
-
-    expect($dashboard->html())
-        ->toMatch('/aria-expanded="false"[^>]*aria-controls="forecast-accuracy"[^>]*aria-label="Expand Forecast accuracy"/')
-        ->toContain('<div id="forecast-accuracy" class="hidden" x-bind:class="{ hidden: collapsed }">')
-        ->toContain('data-accuracy-rows="'.e(json_encode([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null]], JSON_THROW_ON_ERROR)).'"')
-        // Stored without a base: no row for it.
-        ->not->toContain('<td class="py-1.5 pr-6 whitespace-nowrap">Base model</td>')
-        // The hour-of-day chart opens by its button, closed until then, and gets all 24 hours.
-        ->toMatch('/aria-expanded="false"[^>]*aria-controls="forecast-accuracy-hours"/')
-        ->toContain('<div id="forecast-accuracy-hours" class="hidden pt-2" x-bind:class="{ hidden: ! open }">')
-        ->toContain('data-accuracy-rows="'.e(json_encode(byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]]), JSON_THROW_ON_ERROR)).'"');
-});
-
-it('sets the base model beside the forecast shown', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    measuredAt($sensor, $issued + 3600, 1300);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5, base: [12.0, 12.4, 12.9])]]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
-
-    Livewire::test(Dashboard::class)->assertSeeInOrder([
-        'With correction</td>', '+80 %', '0,2 · 1,0 °C', '100 %', '1,5 °C',
-        'Base model</td>', '+40 %', '0,6 · 1,0 °C', '0 %', '0,9 °C',
-    ], false);
-});
-
-it('charts the chosen horizon, and the first one scored until it has come true', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    measuredAt($sensor, $issued + 3600, 1300);
-    measuredAt($sensor, $issued + 7200, 1500);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5), scoredHorizon(2, 12.5, 13.0, 14.0)]]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
-
-    // Three hours ahead has not come true: the panel opens on one, and the control says so.
-    $dashboard = Livewire::test(Dashboard::class)->assertSee('+80 %')->assertSet('accuracyHorizon', 1);
-
-    // Every hour the forecast reaches is offered; the ones not scored yet are disabled.
-    expect($dashboard->html())
-        ->not->toMatch('/<[^>]*value="2"[^>]*disabled/')
-        ->toMatch('/<[^>]*value="3"[^>]*disabled/')
-        ->toMatch('/<[^>]*value="6"[^>]*disabled/');
-
-    // The segmented control sends the value as a string.
-    $dashboard->set('accuracyHorizon', '2')->assertSee('+33 %')->assertDontSee('+80 %');
-    expect($dashboard->get('accuracyScore')['hours'])->toBe(2);
-
-    // One that has not come true falls back, and the control follows.
-    $dashboard->set('accuracyHorizon', 5)->assertSet('accuracyHorizon', 1);
-});
-
-it('moves the choice onto the horizon shown when a poll takes its scores away', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    measuredAt($sensor, $issued + 3600, 1300);
-    measuredAt($sensor, $issued + 7200, 1500);
-    $both = Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5), scoredHorizon(2, 12.5, 13.0, 14.0)]]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
-
-    $dashboard = Livewire::test(Dashboard::class)->set('accuracyHorizon', 2)->assertSet('accuracyHorizon', 2);
-
-    // The two-hour forecast is gone, and a newer forecast brings a fresh score.
-    $both->update(['data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7800]);
-
-    $dashboard->call('$refresh')->assertSet('accuracyHorizon', 1)->assertSee('+80 %');
-});
-
-it('says which side of the rain score it has no case for', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-
-    // It rained within every hour scored: there is no dry case to average.
-    foreach (range(0, 6) as $slot) {
-        listenedAt($sensor, $issued + $slot * 600, $slot === 2);
-    }
-
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 11.0, 12.0, 13.0, 0.47)]]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
-
-    Livewire::test(Dashboard::class)->assertSeeInOrder(['How the forecast scores', '+1 h', '47 %', '/', 'no dry spell']);
-});
-
-it('shows no accuracy without a current forecast to fold it into', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    measuredAt($sensor, $issued + 3600, 1300);
-    // Scored, but an hour older than the newest reading: the forecast block is gone.
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
-
-    // The verdict is history: it stays while the forecast is stale.
-    Livewire::test(Dashboard::class)->assertDontSee('Next six hours')->assertDontSee('How the forecast scores')
-        ->assertSee('Last 30 days, 1 forecast scored');
-});
-
-it('holds the verdict back until a day of forecasts has come true', function (): void {
-    $sensor = Sensor::factory()->create();
-    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
-    measuredAt($sensor, $issued, 1200);
-    measuredAt($sensor, $issued + 3600, 1300);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
-
-    Livewire::test(Dashboard::class)->assertSee('Too early to say')->assertDontSee('miss than assuming it stays as warm as now');
-});
-
-it('answers six hours ahead, with every horizon beside it', function (float $offBy, string $skill, string $direction, string $inRange): void {
+it('answers six hours ahead on the overview, with every horizon on the forecast page', function (float $offBy, string $skill, string $direction, string $inRange): void {
     $sensor = Sensor::factory()->create();
     $start = Date::parse('2026-09-23 00:00:00', 'UTC')->getTimestamp();
 
@@ -536,18 +409,22 @@ it('answers six hours ahead, with every horizon beside it', function (float $off
         ]);
     }
 
-    Livewire::test(Dashboard::class)
-        ->assertDontSee('Too early to say')
+    Livewire::test(Overview::class)
+        ->assertDontSee('Too early to tell')
         ->assertSeeInOrder([
-            'Last 30 days, 144 forecasts scored',
-            $skill, "{$direction} miss than assuming it stays as warm as now, 6 h ahead",
-            number_format($offBy, 1, ',', ' '), 'naive guess 3,6 °C',
-            $inRange, 'target 80 %',
-            '+1 h', '+50 %', '+6 h',
+            'Verdict · 6 h ahead · last 30 days',
+            $skill, "skill: the forecast misses by {$skill} % {$direction} than the naive guess",
+            'Forecast, mean miss', number_format($offBy, 2, ',', ' ').' °C',
+            'Naive guess, mean miss', '3,60 °C',
+            'Reading inside the range', $inRange, 'target 80 %',
         ]);
+
+    $this->get(route('forecast'))
+        ->assertOk()
+        ->assertSeeInOrder(['Verdict by horizon', '1 h', '+50 %', '6 h']);
 })->with([
-    'beating the guess' => [0.9, '75', 'smaller', '100'],
-    'losing to it' => [5.4, '50', 'larger', '0'],
+    'beating the guess' => [0.9, '75', 'less', '100'],
+    'losing to it' => [5.4, '50', 'more', '0'],
 ]);
 
 it('keeps the score until the next forecast arrives', function (): void {
@@ -558,14 +435,14 @@ it('keeps the score until the next forecast arrives', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(Livewire::test(Dashboard::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
 
     // A reading alone completes the second forecast's hour, but the score waits for the next forecast.
     measuredAt($sensor, $issued + 7200, 1300);
-    expect(Livewire::test(Dashboard::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
 
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
-    expect(Livewire::test(Dashboard::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(2);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(2);
 });
 
 it('keeps one score per sensor in the cache, however many forecasts come', function (): void {
@@ -575,10 +452,10 @@ it('keeps one score per sensor in the cache, however many forecasts come', funct
     measuredAt($sensor, $issued + 3600, 1300);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
-    Livewire::test(Dashboard::class);
+    Livewire::test(Overview::class);
 
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
-    Livewire::test(Dashboard::class);
+    Livewire::test(Overview::class);
 
     // The database store deletes an expired row only when it reads it; a key per forecast was never read again.
     expect(DB::table('cache')->count())->toBe(1);
@@ -595,5 +472,5 @@ it('scores afresh over a cached score of an older shape', function (): void {
     // What an earlier deploy left under the same key, for the same forecast.
     Cache::put("forecast-accuracy:{$sensor->id}", ['shape' => 0, 'issuedAt' => $issued + 3600, 'scores' => [['inRange' => 100.0]]], 900);
 
-    expect(Livewire::test(Dashboard::class)->get('forecastAccuracy')[0])->toHaveKey('corrected');
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0])->toHaveKey('corrected');
 });

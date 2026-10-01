@@ -21,7 +21,7 @@
         @livewireStyles
         @fluxAppearance
     </head>
-    <body class="min-h-screen bg-[#eef3f8] dark:bg-[#0a0f1c]">
+    <body class="min-h-screen bg-[#f5f6f8] dark:bg-[#0a111d]">
         {{ $slot }}
 
         @livewireScripts

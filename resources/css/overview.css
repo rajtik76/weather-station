@@ -1,0 +1,500 @@
+/* The instrument look (mockup B, "Oscilloscope"): every page's shell.
+   Every quantity is a channel with one colour everywhere: CH1 temperature,
+   CH2 humidity, CH3 pressure, CH4 noise, AUX light. */
+
+@theme inline {
+    --color-bg: var(--bg);
+    --color-screen: var(--screen);
+    --color-line: var(--line);
+    --color-line-2: var(--line-2);
+    --color-ink: var(--ink);
+    --color-ink-2: var(--ink-2);
+    --color-ink-3: var(--ink-3);
+    --color-ch1: var(--ch1);
+    --color-ch2: var(--ch2);
+    --color-ch3: var(--ch3);
+    --color-ch4: var(--ch4);
+    --color-aux: var(--aux);
+    --color-ref: var(--ref);
+    --font-display: "Red Hat Display", ui-sans-serif, system-ui, sans-serif;
+}
+
+.instrument {
+    --bg: #f5f6f8;
+    --screen: #ffffff;
+    --line: #dce1e9;
+    --line-2: #c3cad6;
+    --grid: rgba(22, 38, 70, 0.075);
+    --grid-2: rgba(22, 38, 70, 0.22);
+    --ink: #0c1424;
+    --ink-2: #334055;
+    --ink-3: #536077;
+    --ch1: #c3610d;
+    --ch2: #0079a2;
+    --ch3: #6e3ead;
+    --ch4: #008760;
+    --aux: #a8890f;
+    --ref: #536077;
+    --glow: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+.dark .instrument {
+    --bg: #0a111d;
+    --screen: #0d1625;
+    --line: #1c2840;
+    --line-2: #2b3b58;
+    --grid: rgba(160, 182, 220, 0.085);
+    --grid-2: rgba(160, 182, 220, 0.24);
+    --ink: #e9eef6;
+    --ink-2: #bdc8da;
+    --ink-3: #95a3ba;
+    --ch1: #f7ab5d;
+    --ch2: #5ad0e7;
+    --ch3: #a58bec;
+    --ch4: #5aca94;
+    --aux: #ece189;
+    --ref: #95a3ba;
+    --glow: 1;
+}
+
+.instrument .num {
+    font-variant-numeric: tabular-nums;
+}
+.instrument :focus-visible {
+    outline: 2px solid var(--ch2);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+
+@utility page-wrap {
+    margin-inline: auto;
+    max-width: 1200px;
+    padding-inline: 16px;
+    @media (width >= 40rem) {
+        padding-inline: 24px;
+    }
+    @media (width >= 64rem) {
+        padding-inline: 40px;
+    }
+}
+
+@utility label-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+@utility link-ink {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--line-2);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    &:hover {
+        text-decoration-color: var(--ink);
+    }
+}
+
+@utility swatch {
+    display: inline-block;
+    width: 16px;
+    height: 2px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+
+/* Main navigation: the page shown gets a 2 px rule, like a selected softkey. */
+.instrument .navlink {
+    position: relative;
+    color: var(--ink-3);
+    text-decoration: none;
+    padding: 6px 0;
+}
+.instrument .navlink:hover,
+.instrument .navlink[aria-current="page"] {
+    color: var(--ink);
+}
+.instrument .navlink[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 2px;
+    background: var(--ink);
+    border-radius: 2px;
+}
+
+/* The electron: the station's pulse, breathing between uploads. */
+.instrument .electron {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 calc(var(--glow) * 8px) currentColor;
+    animation: electron-pulse 2.6s ease-in-out infinite;
+}
+@keyframes electron-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.55;
+        transform: scale(0.8);
+    }
+}
+
+.instrument .graticule line {
+    vector-effect: non-scaling-stroke;
+}
+
+/* Static charts: stretched SVG layers in a plot box, HTML labels around them. */
+.instrument .plot {
+    position: absolute;
+}
+.instrument .layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+.instrument .layer path,
+.instrument .layer line,
+.instrument .layer rect {
+    vector-effect: non-scaling-stroke;
+}
+.instrument .ylab,
+.instrument .xlab {
+    position: absolute;
+    font:
+        400 12px/1 "Red Hat Mono",
+        ui-monospace,
+        monospace;
+    color: var(--ink-3);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.instrument .ylab {
+    right: 100%;
+    margin-right: 10px;
+    transform: translateY(-50%);
+}
+.instrument .xlab {
+    top: 100%;
+    margin-top: 10px;
+    transform: translateX(-50%);
+}
+.instrument .tag {
+    position: absolute;
+    font:
+        400 12px/1 "Red Hat Mono",
+        ui-monospace,
+        monospace;
+    color: var(--ink-2);
+    white-space: nowrap;
+    background: var(--screen);
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+.instrument .phosphor {
+    filter: drop-shadow(
+        0 0 calc(var(--glow) * 4px) color-mix(in srgb, var(--trace) 65%, transparent)
+    );
+}
+.instrument .pt {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: var(--screen);
+    border: 2px solid var(--ch1);
+}
+
+/* The trigger point: the electron at the newest sample, with a slow ring. */
+.instrument .trig {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    margin: -4.5px 0 0 -4.5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 calc(var(--glow) * 12px) currentColor;
+}
+.instrument .trig::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    animation: trig-ring 3.2s ease-out infinite;
+}
+@keyframes trig-ring {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(3.8);
+        opacity: 0;
+    }
+}
+
+/* Wiring diagram: the station drawn on the screen's graticule. */
+.instrument .sch {
+    font-family: "Red Hat Mono", ui-monospace, monospace;
+}
+.instrument .sch .sheet {
+    fill: var(--screen);
+}
+.instrument .sch .g-minor {
+    stroke: var(--grid);
+}
+.instrument .sch .g-major {
+    stroke: var(--grid-2);
+    opacity: 0.55;
+}
+.instrument .sch .box {
+    fill: var(--screen);
+    stroke: var(--line-2);
+    stroke-width: 1.25;
+}
+.instrument .sch .box-mcu {
+    stroke: var(--ink-2);
+}
+.instrument .sch .box-soft {
+    stroke-dasharray: 4 3;
+}
+.instrument .sch .bound {
+    fill: none;
+    stroke: var(--line-2);
+    stroke-width: 1;
+    stroke-dasharray: 5 4;
+}
+.instrument .sch .sch-wire {
+    fill: none;
+    stroke: var(--ink-3);
+    stroke-width: 1.25;
+}
+.instrument .sch .bus {
+    fill: none;
+    stroke: var(--ink-2);
+    stroke-width: 3.5;
+    stroke-linecap: square;
+}
+.instrument .sch .junction,
+.instrument .sch .arrowhead {
+    fill: var(--ink-2);
+}
+.instrument .sch .sine {
+    fill: none;
+    stroke-width: 1.25;
+}
+.instrument .sch .t-part {
+    fill: var(--ink);
+    font-size: 14px;
+    font-weight: 500;
+}
+.instrument .sch .t-fn {
+    fill: var(--ink-2);
+    font-size: 12px;
+    font-family: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+}
+.instrument .sch .t-pin,
+.instrument .sch .t-note {
+    fill: var(--ink-3);
+    font-size: 11.5px;
+}
+.instrument .sch .t-net {
+    fill: var(--ink-2);
+    font-size: 11.5px;
+    font-weight: 500;
+}
+.instrument .sch .t-ch {
+    font-size: 11px;
+    font-weight: 500;
+}
+.instrument .sch .s-ch1 {
+    fill: var(--ch1);
+}
+.instrument .sch .s-ch2 {
+    fill: var(--ch2);
+}
+.instrument .sch .s-ch3 {
+    fill: var(--ch3);
+}
+.instrument .sch .s-ch4 {
+    fill: var(--ch4);
+}
+.instrument .sch .s-aux {
+    fill: var(--aux);
+}
+.instrument .sch .sine.s-ch1 {
+    fill: none;
+    stroke: var(--ch1);
+}
+.instrument .sch .sine.s-ch4 {
+    fill: none;
+    stroke: var(--ch4);
+}
+.instrument .sch .bead {
+    color: var(--ink);
+}
+.instrument .sch .b-ch1 {
+    color: var(--ch1);
+}
+.instrument .sch .b-ch2 {
+    color: var(--ch2);
+}
+.instrument .sch .b-aux {
+    color: var(--aux);
+}
+.instrument .sch .b-ch3 {
+    color: var(--ch3);
+}
+.instrument .sch .b-ch4 {
+    color: var(--ch4);
+}
+.instrument .sch .bead-halo {
+    fill: currentColor;
+    opacity: 0.22;
+}
+.instrument .sch .bead-core {
+    fill: currentColor;
+    stroke: var(--screen);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 4px currentColor);
+}
+@media (prefers-reduced-motion: reduce) {
+    .instrument .sch .bead {
+        display: none;
+    }
+}
+
+/* The forecast pipeline: one wire through the steps, the electron travelling along it. */
+.instrument .flow-h {
+    position: relative;
+    height: 1px;
+    background: var(--line-2);
+}
+.instrument .wire-electron {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ch2);
+    box-shadow: 0 0 calc(var(--glow) * 10px) var(--ch2);
+    animation: wire-flow-h 6s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+}
+@keyframes wire-flow-h {
+    0% {
+        left: 0;
+        opacity: 0;
+    }
+    8% {
+        opacity: 1;
+    }
+    92% {
+        opacity: 1;
+    }
+    100% {
+        left: calc(100% - 7px);
+        opacity: 0;
+    }
+}
+
+/* Segmented control, like a scope's softkeys: the one pressed is inverted. */
+.instrument .seg {
+    display: inline-flex;
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+    background: var(--screen);
+}
+.instrument .seg button {
+    font:
+        500 14px/1 "Red Hat Mono",
+        ui-monospace,
+        monospace;
+    color: var(--ink-3);
+    padding: 9px 14px;
+    border-radius: 4px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.instrument .seg button:hover {
+    color: var(--ink);
+}
+.instrument .seg button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--screen);
+}
+
+/* Tables in the measurement style. */
+.instrument .mtable {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+.instrument .mtable th {
+    font:
+        500 12.5px/1.3 "Red Hat Mono",
+        ui-monospace,
+        monospace;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: right;
+    padding: 0 0 10px 20px;
+    border-bottom: 1px solid var(--line-2);
+    white-space: nowrap;
+}
+.instrument .mtable td {
+    font:
+        400 15px/1.4 "Red Hat Mono",
+        ui-monospace,
+        monospace;
+    color: var(--ink);
+    text-align: right;
+    padding: 11px 0 11px 20px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+}
+.instrument .mtable th:first-child,
+.instrument .mtable td:first-child {
+    text-align: left;
+    padding-left: 0;
+}
+.instrument .mtable td.dim {
+    color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .instrument .trig::after {
+        animation: none !important;
+        opacity: 0;
+    }
+    .instrument .electron {
+        animation: none !important;
+    }
+    .instrument .wire-electron {
+        animation: none !important;
+        left: 50%;
+    }
+}

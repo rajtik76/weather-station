@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ProtocolVersion;
-use App\Livewire\Dashboard;
+use App\Livewire\Charts;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\ValueObject\CarriesNoise;
@@ -65,20 +65,20 @@ it('seeds the first station\'s last day with light that follows the sun', functi
 it('draws the light strip only for the station that sends it', function (): void {
     seed(MeasurementSeeder::class);
 
-    Livewire::test(Dashboard::class)->assertSee('lx inside the radiation shield');
-    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Dashboard::class)->assertDontSee('lx inside the radiation shield');
+    Livewire::test(Charts::class)->assertSee('Light in the shield, lx, log scale');
+    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->assertDontSee('Light in the shield, lx, log scale');
 });
 
 it('draws the noise strips for the seeded station with a microphone only', function (): void {
     seed(MeasurementSeeder::class);
 
-    Livewire::test(Dashboard::class)->assertSee('Noise spectrum');
-    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Dashboard::class)->assertDontSee('Noise spectrum');
+    Livewire::test(Charts::class)->assertSee('Noise spectrum');
+    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->assertDontSee('Noise spectrum');
 });
 
 it('seeds showers the waterfall marks, only where there is a microphone', function (): void {
     seed(MeasurementSeeder::class);
 
-    expect(Livewire::test(Dashboard::class)->get('rainSlots'))->not->toBeEmpty()
-        ->and(Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Dashboard::class)->get('rainSlots'))->toBeEmpty();
+    expect(Livewire::test(Charts::class)->get('rainSlots'))->not->toBeEmpty()
+        ->and(Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->get('rainSlots'))->toBeEmpty();
 });
