@@ -21,16 +21,7 @@ return [
     // Models use local solar time: longitude only.
     'longitude' => StationSite::LONGITUDE,
 
-    // ČHMÚ reference station: stored as a sensor of its own, kept out of the sensor picker.
-    'reference' => [
-        'name' => 'Plzeň-Mikulka (ČHMÚ)',
-        'wsi' => '0-20000-0-11450',
-        'longitude' => 13.378889,
-        // One JSON file per station and UTC day; about a month back.
-        'url' => 'https://opendata.chmi.cz/meteorology/climate/recent/data/10min',
-    ],
-
-    // Numerical weather model fetched with every forecast as the second baseline. Empty URL: none.
+    // Numerical weather model temperature stored with every forecast. Empty URL: none.
     'nwp' => [
         'url' => env('FORECAST_NWP_URL', 'https://api.open-meteo.com/v1/forecast'),
         // DWD ICON: D2 (2 km) for the first two days, then EU and global.

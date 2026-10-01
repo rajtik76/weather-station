@@ -25,8 +25,6 @@ const DAY = {
     baseWidth: 10,
     tookOver: 11,
     correctionTo: 12,
-    // The numerical weather model's skill against the naive guess.
-    nwpSkill: 13,
 };
 
 // A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
@@ -50,7 +48,7 @@ const charts = new Map();
 const painted = new Map();
 
 function palette() {
-    return { ...basePalette(), temperature: token("--ch1"), reference: token("--ink-2") };
+    return { ...basePalette(), temperature: token("--ch1") };
 }
 
 const pad = (hour) => String(hour).padStart(2, "0");
@@ -68,7 +66,7 @@ function versus(skill) {
 }
 
 /** Short lines, one fact each: a phone is 320 px wide. */
-function dayTooltipHtml(row, reference = null) {
+function dayTooltipHtml(row) {
     const tookOver =
         (row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`) +
         (row[DAY.correctionTo] === null ? "" : `<br>correction ${row[DAY.correctionTo]} took over`);
@@ -102,14 +100,6 @@ function dayTooltipHtml(row, reference = null) {
         `${celsius.format(row[DAY.width])}${hasBase ? `, base ${celsius.format(row[DAY.baseWidth])}` : ""} °C wide`,
     );
     lines.push(forecastHours(row[DAY.count]));
-
-    if (row[DAY.nwpSkill] !== null) {
-        lines.push(`weather model ${versus(row[DAY.nwpSkill])}`);
-    }
-
-    if (reference !== null) {
-        lines.push(`Mikulka ${versus(reference)}`);
-    }
 
     return lines.join("<br>") + tookOver;
 }
@@ -198,10 +188,8 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
-/** `reference`: the same model's skill on the ČHMÚ station, one per day (null where none). */
-function daysOption(rows, canvas, reference = []) {
+function daysOption(rows, canvas) {
     const colours = palette();
-    const referenceOn = (index) => reference[index] ?? null;
 
     return {
         animation: false,
@@ -233,30 +221,8 @@ function daysOption(rows, canvas, reference = []) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) =>
-            dayTooltipHtml(rows[index], referenceOn(index)),
-        ),
+        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index])),
         series: [
-            {
-                name: "reference",
-                type: "line",
-                connectNulls: false,
-                symbol: "diamond",
-                symbolSize: 6,
-                lineStyle: { color: colours.reference, width: 1.5, type: [1, 3], cap: "round" },
-                itemStyle: { color: colours.reference },
-                data: rows.map((row, index) => referenceOn(index)),
-            },
-            {
-                name: "nwp",
-                type: "line",
-                connectNulls: false,
-                symbol: "triangle",
-                symbolSize: 7,
-                lineStyle: { color: colours.text, width: 1.5 },
-                itemStyle: { color: colours.text },
-                data: rows.map((row) => row[DAY.nwpSkill]),
-            },
             {
                 name: "base",
                 type: "line",
@@ -462,21 +428,16 @@ function mount(force = false) {
             watchSize(key, chart, canvas);
         }
 
-        const payload = `${element.dataset.accuracyRows}|${element.dataset.referenceRows ?? ""}`;
+        const payload = element.dataset.accuracyRows;
 
         if (!force && painted.get(key) === payload) {
             return;
         }
 
         painted.set(key, payload);
-        chart.setOption(
-            OPTIONS[key](
-                parsed(element.dataset.accuracyRows),
-                canvas,
-                parsed(element.dataset.referenceRows),
-            ),
-            { notMerge: true },
-        );
+        chart.setOption(OPTIONS[key](parsed(element.dataset.accuracyRows), canvas), {
+            notMerge: true,
+        });
     });
 }
 

@@ -12,20 +12,20 @@ chance of rain one to six hours ahead from the station's own readings alone.
 Every forecast is scored against what the station then measured, and the
 front page sets the last 30 days' verdict beside the next six hours.
 
-There are two bars to clear. The first is persistence: the temperature stays
-as it is. Anything that knows the time of day beats that six hours out, so
-the real bar is the second one: a numerical weather model (DWD ICON via
-Open-Meteo), fetched for the station's spot when each forecast is made. A
-station that only looks at itself should not beat a model that sees the
-whole of Europe. Where it does, it is because the model cannot see this
-balcony.
+The bar to clear is persistence: the temperature stays as it is. The target
+is not the air temperature a weather service forecasts but what this sensor
+will read, and it is no professional sensor: on clear mornings the sun heats
+its shield and the reading runs more than 10 °C high. A forecast for Plzeň
+knows nothing of that, so it is no yardstick here. The model has to learn
+this balcony, morning sun included, and the score shows how far the station
+correction gets it: every forecast is also scored as the base model gave it,
+before the correction.
 
 The verdict is given for six hours ahead, with every shorter horizon beside
 it, in three numbers over the last 30 days:
 
 - **skill** - how much smaller the forecast's miss was than persistence's; below zero the forecast did worse
 - **mean miss** - in °C, beside persistence's
-- **against the weather model** - both mean misses on the hours the model was recorded for, and the skill of the forecast against it
 - **in range** - how often the reading landed inside the forecast range; the range is drawn to hold 80 %, so less means too narrow
 
 Until a day of forecasts has come true, the verdict says it is too early.

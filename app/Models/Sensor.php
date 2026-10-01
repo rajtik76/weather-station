@@ -6,8 +6,6 @@ namespace App\Models;
 
 use Database\Factories\SensorFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Scope;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,8 +13,7 @@ use Illuminate\Support\Str;
 
 /**
  * One station, created by the first upload under a new `name`. `slug` is set
- * once so `?sensor=` links keep working. The ČHMÚ reference row
- * (forecast.reference) is no station: stations() keeps it out of the picker.
+ * once so `?sensor=` links keep working.
  *
  * @property int $id
  * @property string $name
@@ -34,29 +31,6 @@ class Sensor extends Model
         static::creating(function (Sensor $sensor): void {
             $sensor->slug ??= self::uniqueSlug($sensor->name);
         });
-    }
-
-    /** The reference row, created on first use. */
-    public static function reference(): self
-    {
-        return self::query()->firstOrCreate(['name' => (string) config('forecast.reference.name')]);
-    }
-
-    /** The reference row, or null before the job has run. */
-    public static function findReference(): ?self
-    {
-        return self::query()->where('name', (string) config('forecast.reference.name'))->first();
-    }
-
-    /**
-     * Every sensor but the reference.
-     *
-     * @param  Builder<self>  $query
-     */
-    #[Scope]
-    protected function stations(Builder $query): void
-    {
-        $query->where('name', '!=', (string) config('forecast.reference.name'));
     }
 
     /** Names can slug alike; a symbols-only name slugs to ''. */

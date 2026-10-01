@@ -79,12 +79,11 @@ it('scores every horizon side by side', function (): void {
         ->assertDontSee('No forecast has come true yet');
 });
 
-it('sets the weather model beside every horizon once forecasts carry it', function (): void {
+it('keeps the stored weather model off the page', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     pageReading($sensor, $issued, 1200);
     pageReading($sensor, $issued + 3600, 1300);
-    // Model off by 0.5 against the guess's 1 (+50 %); the forecast's 0.2 beats it by 60 %.
     Forecast::factory()->for($sensor)->create([
         'issued_at' => $issued,
         'data' => [[...pageHorizon(1, 12.0, 12.8, 13.5), 'nwp' => ['temperature' => 13.5]]],
@@ -92,14 +91,9 @@ it('sets the weather model beside every horizon once forecasts carry it', functi
 
     $this->get(route('forecast'))
         ->assertOk()
-        ->assertSeeInOrder(['Weather model', 'Skill vs model', '1 h', '+80 %', '+50 %', '+60 %'])
-        ->assertSee('DWD ICON via Open-Meteo');
-});
-
-it('leaves the weather model out before any forecast carries it', function (): void {
-    scoredStation();
-
-    $this->get(route('forecast'))->assertOk()->assertDontSee('Skill vs model');
+        ->assertSeeInOrder(['Verdict by horizon', '1 h', '+80 %'])
+        ->assertDontSee('Weather model')
+        ->assertDontSee('Open-Meteo');
 });
 
 it('charts the verdict\'s horizon in detail, the longest scored until it has come true', function (): void {
@@ -112,7 +106,7 @@ it('charts the verdict\'s horizon in detail, the longest scored until it has com
         ->toContain('data-accuracy-chart="widths"')
         ->toContain('data-accuracy-chart="hours"')
         ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/')
-        ->toContain('data-accuracy-rows="'.e(json_encode([['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null, null]], JSON_THROW_ON_ERROR)).'"');
+        ->toContain('data-accuracy-rows="'.e(json_encode([['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null]], JSON_THROW_ON_ERROR)).'"');
 
     $page->set('horizon', 1)->assertSet('horizon', 1)->assertSee('1 h ahead');
     expect($page->get('score')['hours'])->toBe(1);

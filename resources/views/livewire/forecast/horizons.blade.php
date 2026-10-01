@@ -1,6 +1,4 @@
 @php($rows = $this->scoreboard)
-@php($hasReference = array_filter(array_column($rows, 'referenceSkill'), fn (?float $skill): bool => $skill !== null) !== [])
-@php($hasNwp = array_filter(array_column($rows, 'nwpSkill'), fn (?float $skill): bool => $skill !== null) !== [])
 <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="horizons-h">
     <div class="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-1">
         <h2 id="horizons-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Verdict by horizon</h2>
@@ -16,13 +14,6 @@
                     <tr>
                         <th scope="col">Horizon</th>
                         <th scope="col" class="w-[34%]">Skill vs naive</th>
-                        @if ($hasNwp)
-                            <th scope="col">Weather model</th>
-                            <th scope="col">Skill vs model</th>
-                        @endif
-                        @if ($hasReference)
-                            <th scope="col">Mikulka</th>
-                        @endif
                         <th scope="col" class="w-[28%]">Reading in range</th>
                         <th scope="col">Range width</th>
                         <th scope="col">Forecasts</th>
@@ -38,13 +29,6 @@
                                     <span class="w-14">{{ $row['skill'] === null ? 'n/a' : \App\ValueObject\Figure::signed($row['skill'], 0).' %' }}</span>
                                 </span>
                             </td>
-                            @if ($hasNwp)
-                                <td class="dim">{{ $row['nwpSkill'] === null ? 'n/a' : \App\ValueObject\Figure::signed($row['nwpSkill'], 0).' %' }}</td>
-                                <td>{{ $row['versusNwp'] === null ? 'n/a' : \App\ValueObject\Figure::signed($row['versusNwp'], 0).' %' }}</td>
-                            @endif
-                            @if ($hasReference)
-                                <td class="dim">{{ $row['referenceSkill'] === null ? 'n/a' : \App\ValueObject\Figure::signed($row['referenceSkill'], 0).' %' }}</td>
-                            @endif
                             <td>
                                 <span class="flex items-center justify-end gap-3">
                                     <span class="relative h-1.5 w-full max-w-[160px] rounded-full bg-line">
@@ -67,12 +51,6 @@
             </table>
             <p class="m-0 py-3 text-[14px] text-ink-3">
                 Skill: how much smaller the forecast's miss is than the naive guess's. Below zero would mean worse. The tick marks the 80 % target.
-                @if ($hasNwp)
-                    Weather model: DWD ICON via Open-Meteo, its skill vs naive; skill vs model: how much smaller the forecast's miss is than the weather model's, on the hours both have.
-                @endif
-                @if ($hasReference)
-                    Mikulka: the same model, without a station correction, on the ČHMÚ station Plzeň-Mikulka 3,5 km away.
-                @endif
             </p>
         </div>
     @endif

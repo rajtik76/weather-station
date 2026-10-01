@@ -32,3 +32,4 @@ Data ČHMÚ 10-minute, 2018-2024, 32 stations below 700 m · Server v3.4.0
 - Missed the rain of 24 September 2026 at the balcony (1-4 % beforehand)
 - Server v4.0.6: 1 h rain chance capped by the 2 h one (alone 50-100 % on dry balcony days, 94 % on the sunny morning of 1 October 2026); correction version stays 2; `base` keeps the classifier's own `rain_probability`
 - Server v4.1.0: `POST /base` takes `"full": true` (each horizon as `POST /forecast` without the correction); used nightly for the Plzeň-Mikulka reference
+- Server v4.4.0: `"full"` removed with the Plzeň-Mikulka reference

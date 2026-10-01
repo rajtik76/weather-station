@@ -10,10 +10,9 @@ use App\Queries\ForecastAccuracy;
 /**
  * The page's answer: six hours ahead against the naive guess, plus every horizon's skill. Independent of the accuracy panel's horizon choice.
  *
- * @phpstan-type Answer array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, nwp: ?Nwp, horizons: list<array{hours: int, skill: ?float}>}
+ * @phpstan-type Answer array{hours: int, ready: bool, count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float, horizons: list<array{hours: int, skill: ?float}>}
  *
  * @phpstan-import-type Score from ForecastAccuracy
- * @phpstan-import-type Nwp from ForecastAccuracy
  */
 final readonly class Verdict
 {
@@ -42,7 +41,6 @@ final readonly class Verdict
             'hours' => $headline['hours'],
             'ready' => $figures['skill'] !== null && $figures['count'] >= self::MIN_FORECASTS,
             ...$figures,
-            'nwp' => $headline['nwp'],
             'horizons' => array_map(fn (array $score): array => ['hours' => $score['hours'], 'skill' => $score['shown']['skill']], $scores),
         ];
     }

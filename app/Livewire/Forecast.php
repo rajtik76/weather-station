@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
-use App\Models\Sensor;
-use App\Queries\CachedForecastAccuracy;
 use App\Queries\ForecastAccuracy;
 use App\Queries\ForecastChanges;
-use App\ValueObject\ReferenceSkill;
 use App\ValueObject\Scoreboard;
 use App\ValueObject\Verdict;
 use Illuminate\Contracts\View\View;
@@ -22,9 +19,7 @@ use Livewire\Attributes\Title;
  * @phpstan-import-type Row from Scoreboard
  * @phpstan-import-type Change from ForecastChanges
  *
- * @property-read list<Score> $referenceAccuracy
  * @property-read list<Row> $scoreboard
- * @property-read list<?float> $referenceSkillByDay
  * @property-read Score|null $score
  * @property-read list<Change> $changes
  */
@@ -52,29 +47,7 @@ class Forecast extends StationPage
     #[Computed]
     public function scoreboard(): array
     {
-        return Scoreboard::of($this->forecastAccuracy, ReferenceSkill::byHorizon($this->referenceAccuracy));
-    }
-
-    /**
-     * Empty until the reference job has run.
-     *
-     * @return list<Score>
-     */
-    #[Computed]
-    public function referenceAccuracy(): array
-    {
-        $reference = Sensor::findReference();
-
-        return $reference instanceof Sensor ? new CachedForecastAccuracy($reference->id)->lastDays(self::ACCURACY_DAYS) : [];
-    }
-
-    /**
-     * @return list<?float>
-     */
-    #[Computed]
-    public function referenceSkillByDay(): array
-    {
-        return $this->score === null ? [] : ReferenceSkill::byDay($this->score, $this->referenceAccuracy);
+        return Scoreboard::of($this->forecastAccuracy);
     }
 
     /**

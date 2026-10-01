@@ -24,9 +24,6 @@ use Illuminate\Support\Facades\DB;
  * 0 worse. Misses are summed before dividing; a forecast whose own window went
  * unmeasured is left out of skill and misses only.
  *
- * `nwp` scores the numerical weather model stored with each forecast: its skill against
- * the naive guess and the shown forecast's skill against it, on the hours all three have.
- *
  * Rain truth is the microphone (RainDetector) within the n hours; hours it did not
  * listen through are left out of the rain figures only. Days carry the model name
  * or correction version that took over that day; a null correction is skipped.
@@ -34,23 +31,21 @@ use Illuminate\Support\Facades\DB;
  *
  * A Day is `[date, forecast hours scored, skill in %, mean miss and mean naive
  * miss in °C, percent in range, mean range width in °C, base: skill, miss,
- * percent in range, width, model that took over, correction that took over,
- * NWP skill in %]`.
+ * percent in range, width, model that took over, correction that took over]`.
  * An Hour is `[percent in range, hours scored, mean and largest distance of the
  * reading from the forecast middle in °C, mean signed reading minus middle in °C]`.
  * Nulls where nothing was scored.
  *
  * @phpstan-type Hour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}
- * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int, 13: ?float}
+ * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}
  * @phpstan-type Figures array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
- * @phpstan-type Nwp array{count: int, skill: ?float, versus: ?float, error: float, shownError: float, naive: float}
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
- * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, shown: Figures, nwp: ?Nwp, rain: Rain, byHour: list<Hour>}
+ * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, shown: Figures, rain: Rain, byHour: list<Hour>}
  * @phpstan-type Miss array{inRange: bool, difference: float, width: float}
  *
  * @phpstan-import-type Band from Forecast
  *
- * @phpstan-type Scored array{issuedAt: int, date: string, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss, nwp: ?float}
+ * @phpstan-type Scored array{issuedAt: int, date: string, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss}
  */
 final readonly class ForecastAccuracy
 {
@@ -123,7 +118,6 @@ final readonly class ForecastAccuracy
                     'chance' => $horizon['rain_probability'],
                     'corrected' => ForecastScore::miss($truth, $horizon['temperature']),
                     'base' => isset($horizon['base']) ? ForecastScore::miss($truth, $horizon['base']['temperature']) : null,
-                    'nwp' => isset($horizon['nwp']) ? abs($truth - $horizon['nwp']['temperature']) : null,
                 ];
             }
         }

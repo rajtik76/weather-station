@@ -23,20 +23,20 @@ Rain is detected by `App\ValueObject\RainDetector` per ten-minute window: ring a
 
 ## Layout
 
-| Path                | Contents                                                                                                                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`         | Arduino sketches; [`README`](../firmware/README.md), [`CHANGELOG`](../firmware/CHANGELOG.md)                                                                                                                                                                        |
-| `forecast/`         | ČHMÚ fetching, training, scoring, the service; [`README`](../forecast/README.md), [`CHANGELOG`](../forecast/CHANGELOG.md)                                                                                                                                           |
-| `app/Http/`         | Ingest endpoint, form request, bearer token middleware                                                                                                                                                                                                              |
-| `app/Enums/`        | `ProtocolVersion` (payload version to decoder), bucket widths per span                                                                                                                                                                                              |
-| `app/ValueObject/`  | Per-version payload decoding; calculations for the pages: sea-level pressure, dew point, rain, forecast scores, number format                                                                                                                                       |
-| `app/Models/`       | Sensors, measurements, station reports, forecasts, events                                                                                                                                                                                                           |
-| `app/Queries/`      | Everything pages and jobs read: chart buckets, scoring, newest forecast and report, ČHMÚ day files, the one client of the forecast service, the station correction cached for a day                                                                                 |
-| `app/Jobs/`         | `ForecastWeather` (asks the service once an hour, from the first upload of the hour, stores the answer); `BackfillForecastBase` (`php artisan forecast:backfill-base`); `ForecastReferenceDay` (`php artisan forecast:reference`, forecasts a day of Plzeň-Mikulka) |
-| `app/Livewire/`     | The three pages; views and partials in `resources/views/livewire/`                                                                                                                                                                                                  |
-| `database/seeders/` | A month of two stations (first: last three days with noise and two showers, last day with light), two weeks of forecasts each                                                                                                                                       |
-| `docs/`             | [API contract](api.md); KiCad projects in `docs/hardware/kicad/`                                                                                                                                                                                                    |
-| `docker/`           | nginx, PHP-FPM, supervisord config for the production image; init script for the local test database                                                                                                                                                                |
+| Path                | Contents                                                                                                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`         | Arduino sketches; [`README`](../firmware/README.md), [`CHANGELOG`](../firmware/CHANGELOG.md)                                                                           |
+| `forecast/`         | ČHMÚ fetching, training, scoring, the service; [`README`](../forecast/README.md), [`CHANGELOG`](../forecast/CHANGELOG.md)                                              |
+| `app/Http/`         | Ingest endpoint, form request, bearer token middleware                                                                                                                 |
+| `app/Enums/`        | `ProtocolVersion` (payload version to decoder), bucket widths per span                                                                                                 |
+| `app/ValueObject/`  | Per-version payload decoding; calculations for the pages: sea-level pressure, dew point, rain, forecast scores, number format                                          |
+| `app/Models/`       | Sensors, measurements, station reports, forecasts, events                                                                                                              |
+| `app/Queries/`      | Everything pages and jobs read: chart buckets, scoring, newest forecast and report, the one client of the forecast service, the station correction cached for a day    |
+| `app/Jobs/`         | `ForecastWeather` (asks the service once an hour, from the first upload of the hour, stores the answer); `BackfillForecastBase` (`php artisan forecast:backfill-base`) |
+| `app/Livewire/`     | The three pages; views and partials in `resources/views/livewire/`                                                                                                     |
+| `database/seeders/` | A month of two stations (first: last three days with noise and two showers, last day with light), two weeks of forecasts each                                          |
+| `docs/`             | [API contract](api.md); KiCad projects in `docs/hardware/kicad/`                                                                                                       |
+| `docker/`           | nginx, PHP-FPM, supervisord config for the production image; init script for the local test database                                                                   |
 
 ## Running it
 
@@ -55,13 +55,13 @@ PostgreSQL everywhere (same image as production); the charts average buckets in 
 
 ### `.env`
 
-| Variable                 | Meaning                                                                                                                                            |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SENSOR_API_TOKEN`       | Bearer token the firmware sends; the endpoint denies everything while empty                                                                        |
-| `SENSOR_HEARTBEAT_URL`   | Optional; requested after each stored batch (push monitor)                                                                                         |
-| `FORECAST_URL`           | Optional; forecast service address, locally `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`; unset, no forecasts                    |
-| `FORECAST_HISTORY_SINCE` | Local date such as `2026-09-17`; earlier readings stay out of the station correction; invalid value is reported and ignored                        |
-| `FORECAST_NWP_URL`       | Numerical weather model fetched with every forecast, default Open-Meteo `https://api.open-meteo.com/v1/forecast`; empty disables it (the tests do) |
+| Variable                 | Meaning                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SENSOR_API_TOKEN`       | Bearer token the firmware sends; the endpoint denies everything while empty                                                                                    |
+| `SENSOR_HEARTBEAT_URL`   | Optional; requested after each stored batch (push monitor)                                                                                                     |
+| `FORECAST_URL`           | Optional; forecast service address, locally `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`; unset, no forecasts                                |
+| `FORECAST_HISTORY_SINCE` | Local date such as `2026-09-17`; earlier readings stay out of the station correction; invalid value is reported and ignored                                    |
+| `FORECAST_NWP_URL`       | Numerical weather model stored with every forecast (not scored), default Open-Meteo `https://api.open-meteo.com/v1/forecast`; empty disables it (the tests do) |
 
 ### Sample data
 
@@ -75,4 +75,3 @@ PostgreSQL everywhere (same image as production); the charts average buckets in 
 - Entrypoint caches config, routes and views at start; it does not run migrations - do that in the deploy
 - Forecast service: second image from `forecast/`, model mounted; no public address, point `FORECAST_URL` at it on the internal network; see [`forecast/README.md`](../forecast/README.md#deploying)
 - Once, after both are deployed: `php artisan forecast:backfill-base`
-- Once: `php artisan forecast:reference --days=30` fills the Plzeň-Mikulka reference (ČHMÚ keeps about a month)

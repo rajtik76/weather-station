@@ -15,6 +15,6 @@ final readonly class Stations
      */
     public function all(): Collection
     {
-        return Sensor::query()->stations()->orderBy('id')->get();
+        return Sensor::query()->orderBy('id')->get();
     }
 }

@@ -40,13 +40,6 @@
                     <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Naive guess, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::format($verdict['naive'], 2) }} °C</span></div>
                     <div class="mt-2 h-1.5 rounded-full bg-line"><div class="h-full rounded-full bg-ref" style="width: {{ $verdict['naive'] > 0 ? min(100, $verdict['naive'] / max($verdict['error'], $verdict['naive']) * 100) : 0 }}%"></div></div>
                 </div>
-                @if ($verdict['nwp'] !== null)
-                    @php($nwp = $verdict['nwp'])
-                    <div>
-                        <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Weather model, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::format($nwp['error'], 2) }} °C</span></div>
-                        <p class="m-0 mt-1.5 font-mono text-[12.5px] text-ink-3">forecast {{ \App\ValueObject\Figure::format($nwp['shownError'], 2) }} °C on the same {{ $nwp['count'] }} hours, skill {{ $nwp['versus'] === null ? 'n/a' : \App\ValueObject\Figure::signed($nwp['versus'], 0).' %' }}</p>
-                    </div>
-                @endif
                 <div>
                     <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Reading inside the range</span><span class="num font-mono">{{ \App\ValueObject\Figure::format($verdict['inRange'], 0) }} %</span></div>
                     <div class="relative mt-2 h-1.5 rounded-full bg-line">

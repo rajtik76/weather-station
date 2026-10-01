@@ -15,10 +15,9 @@ POST /forecast  {"longitude", "readings", "correction"?}
                     "base": {"temperature": band, "humidity": band, "rain_probability": raw, pre nest_rain()}}]}
   readings: 54 h before the latest suffice (48 h of features behind the forecast issued 6 h earlier,
   whose verified error the correction reads). "correction": a /correction answer; another model or version -> 409.
-POST /base  {"longitude", "since" (required), "readings", "full"?: bool}
+POST /base  {"longitude", "since" (required), "readings"}
   -> {"model", "forecasts": [{"issued_at", "horizons": [{"hours", "temperature", "humidity",
       "rain_probability"}]}]}  - uncorrected, per reading from since on; readings should start 48 h earlier.
-  "full": true gives /forecast's horizon shape without base.
 GET /health -> {"status": "ok", "model", "correction"}
 """
 import json
@@ -217,9 +216,6 @@ def finite(value: object, name: str) -> float:
 def make_base(payload: dict) -> dict:
     longitude, current = station_history(payload)
     since = timestamp(payload.get("since"), "since", required=True)
-    full = payload.get("full", False)
-    if not isinstance(full, bool):
-        raise InvalidRequest("full must be true or false")
 
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
@@ -231,7 +227,7 @@ def make_base(payload: dict) -> dict:
         "forecasts": [
             {
                 "issued_at": int(time.timestamp()),
-                "horizons": [{"hours": n, **(shown_bands(row, n) if full else base_bands(row, n))} for n in bundle["horizons"]],
+                "horizons": [{"hours": n, **base_bands(row, n)} for n in bundle["horizons"]],
             }
             for time, row in forecast[issued].iterrows()
         ],
@@ -243,7 +239,7 @@ def band(row: pd.Series, variable: str, n: int) -> dict:
 
 
 def shown_bands(row: pd.Series, n: int) -> dict:
-    """All bands and the shown rain chance (corrected row in /forecast, model's own in /base full)."""
+    """All bands and the shown rain chance of the corrected row."""
     return {
         **{NAMES[variable]: band(row, variable, n) for variable in FIELDS.values()},
         "rain_probability": round(float(row[f"rain_{n}h"]), 3),
