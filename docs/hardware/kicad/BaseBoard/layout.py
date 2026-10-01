@@ -1,50 +1,35 @@
-"""Hole grid, parts and runs of the base board, shared by the generators.
+"""Hole grid, parts and runs of the base board, shared by the generators (plain Python 3.9).
 
-Plain Python 3.9, no KiCad or CadQuery imports. The perfboard is double
-sided, plated and pre-drilled, 22 x 27 holes. Seen from the component side,
-upright: columns printed 22 to 01 from left to right, rows A-Z and a second A
-from the bottom up, so A22 is bottom left and A01 bottom right. Holes are
-(column, row) counted from 1 from the top left, as KiCad draws them. Rows 1
-and 27 are both printed A; the layout keeps them empty so every label is
-unique.
-
-A run is built from 0 ohm resistors lying on the component side wherever a
-straight stretch of free holes takes one, and from solder bridges between
-neighbouring pads on the solder side everywhere else: next to part pads, at
-corners and at branches.
+Perfboard 22 x 27 holes, plated. Printed labels, component side upright: columns 22..01 left to right,
+rows A-Z then A bottom-up (A22 bottom left). Holes here are (column, row) from 1, top left, as KiCad draws them.
+Rows 1 and 27 are both printed A, so the layout keeps them empty.
+Runs: 0 ohm links over straight free stretches (component side), solder bridges elsewhere (solder side).
 """
 
 PITCH = 2.54
 COLS, ROWS = 22, 27
 BOARD_W, BOARD_H = 60.0, 80.0
-# First hole relative to the top left board corner
 HOLE_X = (BOARD_W - (COLS - 1) * PITCH) / 2
 HOLE_Y = (BOARD_H - (ROWS - 1) * PITCH) / 2
 
 
 def row_letter(row):
-    """Printed letter of a row counted from the top; A is the bottom row."""
     return chr(ord("A") + (ROWS - row) % 26)
 
 
 def col_number(col):
-    """Printed number of a column counted from the left; 22 is the left one."""
     return f"{COLS + 1 - col:02d}"
 
 
 def hole_name(col, row):
-    """Hole label as printed on the board, e.g. Z17."""
     return f"{row_letter(row)}{col_number(col)}"
 
 
 def strip(count):
-    """Pads of a 2.54 mm single row running down the footprint from pin 1."""
     return [(str(n + 1), 0.0, n * PITCH) for n in range(count)]
 
 
-# Footprint pads (number, x, y) in mm, footprint Y down. DevKit, antenna up:
-# left row EN (15) at the top down to VIN (1), right row D23 (30) down to
-# 3V3 (16), 25.4 mm apart. Pin 15 is the origin.
+# Footprint pads (number, x, y) in mm, Y down. DevKit, antenna up: left row EN (15) to VIN (1), right row D23 (30) to 3V3 (16), 25.4 mm apart; pin 15 is the origin.
 FOOTPRINT_PADS = {
     "DOIT_ESP32_DevKit_V1_Socketed": ([(str(n), 0.0, (15 - n) * PITCH) for n in range(1, 16)]
                                       + [(str(n), 25.4, (30 - n) * PITCH) for n in range(16, 31)]),
@@ -66,14 +51,13 @@ NETS = {
 # Parts: reference, footprint, value, origin hole, orientation, pad nets.
 # Orientation turns the footprint's down direction: 0 down, 90 right, -90 left, 180 up.
 PARTS = [
-    # DevKit lies with the USB port to the left edge and the antenna to the right
+    # USB port to the left edge, antenna to the right
     ("U1", "DOIT_ESP32_DevKit_V1_Socketed", "ESP32 DevKit V1", (20, 3), -90,
      {"1": "5V", "2": "GND", "7": "SCK", "8": "WS", "9": "SD",
       "16": "3V3", "17": "GND", "26": "SDA", "29": "SCL"}),
-    # Breakout pins read SDO..VCC from the left, chip side up, board towards the bottom edge
+    # Pins read SDO..VCC from the left, chip side up
     ("U2", "BMP280_Module_Socketed", "BMP280 0x76", (12, 23), -90,
      {"1": "3V3", "2": "GND", "3": "SCL", "4": "SDA", "5": "3V3", "6": "GND"}),
-    # R2 and R1 share one 1x4 female header
     ("R2", "R_Socketed_1x02", "4k7", (8, 21), 90, {"1": "3V3", "2": "SDA"}),
     ("R1", "R_Socketed_1x02", "4k7", (11, 21), -90, {"1": "3V3", "2": "SCL"}),
     ("R3", "R_Axial_P10.16", "47R", (12, 5), 180, {"1": "SCK", "2": "SCK_CABLE"}),
@@ -85,15 +69,14 @@ PARTS = [
       "6": "GND", "7": "GND", "8": "SDA", "9": "SCL"}),
     ("J2", "PinHeader_1x02", "5V in", (1, 2), 0, {"1": "5V", "2": "GND"}),
 ]
-# Where some pads have to land; the board script checks them after placement
+# Expected pad holes, checked by the board script
 EXPECTED = {("U1", "1"): (6, 3), ("U1", "15"): (20, 3), ("U1", "16"): (6, 13), ("U1", "30"): (20, 13),
             ("U2", "6"): (7, 23), ("R2", "2"): (9, 21), ("R1", "2"): (10, 21),
             ("R3", "2"): (8, 5), ("C2", "2"): (7, 19),
             ("J1", "9"): (10, 17), ("J2", "2"): (1, 3)}
-# The DevKit joins its two GND pins on its own ground plane
+# DevKit joins its two GND pins internally
 INTERNAL_LINKS = [(("U1", "2"), ("U1", "17"))]
 
-# Runs, hole to hole along rows and columns
 ROUTES = [
     ("5V", [(6, 3), (6, 2), (1, 2)]),
     ("GND", [(7, 3), (7, 4), (1, 4)]),
@@ -113,23 +96,18 @@ ROUTES = [
     ("SCL", [(19, 13), (19, 16), (10, 16), (10, 23)]),
     ("3V3", [(11, 21), (12, 21), (12, 24)]),
 ]
-# 0 ohm links placed by hand. They are the crossings: the holes under the body
-# stay free for another net's solder bridges. This one carries 3V3 under the
-# breakout over the GND spur to V11.
+# Hand-placed 0 ohm links (crossings): holes under the body stay free for other nets' bridges.
 CROSSINGS = [("3V3", (8, 24), (12, 24))]
-# Lengths of the 0 ohm links in holes: 3 holes (7.62 mm) fits the 6.3 mm body,
-# 8 holes (20.32 mm) is as far as its leads reach comfortably
+# Link lengths in holes: 3 fits the 6.3 mm body, 8 is the comfortable lead reach
 LINK_SPANS = {span: f"R_Jumper_P{span * PITCH:.2f}" for span in range(3, 9)}
 FOOTPRINT_PADS.update({name: [("1", 0.0, 0.0), ("2", span * PITCH, 0.0)] for span, name in LINK_SPANS.items()})
 
 
 def rotate(x, y, angle):
-    """Footprint point turned by a KiCad orientation, Y down."""
     return {0: (x, y), 90: (y, -x), -90: (-y, x), 180: (-x, -y)}[angle]
 
 
 def part_pads(part):
-    """(pad number, hole) of every pad of one part."""
     ref, name, _, (col, row), angle, _ = part
     result = []
     for number, x, y in FOOTPRINT_PADS[name]:
@@ -139,7 +117,6 @@ def part_pads(part):
 
 
 def expand(nodes):
-    """Every hole along a polyline of straight row or column runs."""
     holes = [nodes[0]]
     for (c1, r1), (c2, r2) in zip(nodes, nodes[1:]):
         if c1 != c2 and r1 != r2:
@@ -151,7 +128,6 @@ def expand(nodes):
 
 
 def occupied():
-    """Hole -> (reference, pad number, net key or None) for every part pad."""
     result = {}
     for part in PARTS:
         ref, pad_nets = part[0], part[5]
@@ -166,12 +142,11 @@ def occupied():
 
 
 def between(a, b):
-    """Holes strictly between two holes of one row or column."""
     return expand([a, b])[1:-1]
 
 
 def check():
-    """Reject shorts and split nets; return hole -> net key for every used hole."""
+    """Reject shorts and split nets; return hole -> net key."""
     parts = occupied()
     crossed = {spot for _, a, b in CROSSINGS for spot in between(a, b)}
     for (ref, number), spot in EXPECTED.items():
@@ -219,15 +194,7 @@ def check():
 
 
 def wiring():
-    """Split every run into 0 ohm links and solder bridges.
-
-    Returns (links, bridges): links are (net, first hole, last hole), bridges
-    (net, hole, neighbouring hole). A link lies straight over free holes of
-    its own run. Its legs may not sit on a part pad or a crossing, and a
-    branch takes at most one leg; the other runs meet it with a bridge.
-    Nothing may lie under a body but its own run. Per run the fewest bridges
-    win, then the fewest links.
-    """
+    """Split runs into (links, bridges): links (net, first, last), bridges (net, hole, neighbour). Fewest bridges, then fewest links."""
     parts = occupied()
     crossed = {spot for _, a, b in CROSSINGS for spot in between(a, b)}
     uses = {}
@@ -236,7 +203,6 @@ def wiring():
             uses[spot] = uses.get(spot, 0) + 1
     legs = {spot for _, a, b in CROSSINGS for spot in (a, b)}
     branches = {spot for spot, count in uses.items() if count > 1}
-    # No leg on a pad or a crossing; no body over those or over a branch
     no_leg = set(parts) | crossed | legs
     no_body = no_leg | branches
     links = [(signal, a, b) for signal, a, b in CROSSINGS]
@@ -253,7 +219,7 @@ def wiring():
             return (straight(i, j) and run[i] not in no_leg and run[j] not in no_leg
                     and not any(run[k] in no_body for k in range(i + 1, j)))
 
-        # cost[i] = (bridges, links) to wire run[0..i]; a link may not start on the hole the last one ended on
+        # cost[i] = (bridges, links) to wire run[0..i]; a link may not start where the last one ended
         best = {(0, False): ((0, 0), [])}
         for i in range(steps + 1):
             for ended in (False, True):
@@ -275,12 +241,11 @@ def wiring():
         for kind, i, j in final[1]:
             (links if kind == "link" else bridges).append((signal, run[i], run[j]))
             if kind == "link":
-                # A branch hole now carries a leg; later runs must bridge to it
+                # A branch hole now carries a leg: later runs must bridge to it
                 no_leg.update((run[i], run[j]))
     return links, bridges
 
 
 def free_holes():
-    """Holes with neither a part pad nor a 0 ohm link leg."""
     taken = set(occupied()) | {spot for _, a, b in wiring()[0] for spot in (a, b)}
     return [(col, row) for row in range(1, ROWS + 1) for col in range(1, COLS + 1) if (col, row) not in taken]

@@ -1,8 +1,6 @@
-"""Build approximate STEP models of the two sensor breakouts and pin headers.
+"""Build approximate STEP models of the sensor breakouts and pin headers (needs CadQuery).
 
-Run with a Python environment containing CadQuery. The SHT45 STEP is the
-unmodified LaskaKit model in models/Temp-HumSensor_SHT45.step.
-Coordinates are KiCad footprint 3D coordinates: Y is opposite 2D footprint Y.
+The SHT45 STEP is the unmodified LaskaKit model. 3D Y is opposite 2D footprint Y.
 """
 
 from pathlib import Path
@@ -39,7 +37,6 @@ def drilled(shape, points, diameter):
 
 
 def pin_header(assembly, points, strips):
-    """Long header tails pass through the base; short ends enter the modules."""
     for index, (x, y, sx, sy) in enumerate(strips):
         assembly.add(box(x, y, 1.25, sx, sy, 2.5),
                      name=f"header_spacer_{index}", color=BLACK)
@@ -92,7 +89,7 @@ pin_header(sht_header, [(0, -step * 2.54) for step in range(4)],
 sht_header.save(str(MODELS / "SHT45_pin_header.step"), exportType="STEP")
 
 
-# R5 lies diagonally over 3 x 2 holes; leads bend down from the body axis into the pads
+# R5 lies diagonally over 3 x 2 holes
 R5_SPAN = (3 ** 2 + 2 ** 2) ** 0.5 * 2.54
 R5_AXIS = 1.3  # body lies on the board, clear of the mic can at 2.7 mm
 R5_BODY = 6.3

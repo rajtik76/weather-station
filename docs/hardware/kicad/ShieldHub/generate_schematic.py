@@ -1,8 +1,6 @@
-"""Build the KiCad schematic of the shield hub and its symbol library.
+"""Build ShieldHub.kicad_sch and symbols/ShieldHub.kicad_sym (plain Python, no KiCad modules).
 
-Plain Python, no KiCad modules needed. Writes ShieldHub.kicad_sch and
-symbols/ShieldHub.kicad_sym. Signals are drawn as wires; supply and ground use
-+3V3 and GND power symbols. J1 drives both nets, so ERC needs no PWR_FLAG.
+J1 drives +3V3 and GND, so ERC needs no PWR_FLAG. Net names match generate_board.py.
 """
 
 from pathlib import Path
@@ -36,8 +34,8 @@ def poly(points, fill="none", width=0.254):
     return f"(polyline (pts {pts}) (stroke (width {width}) (type default)) (fill (type {fill})))"
 
 
-# Library symbols: name -> pins [(number, name, type, x, y, angle, length)], graphics, fields.
-# Angle is the direction from the connection point into the body.
+# Symbols: name -> pins [(number, name, type, x, y, angle, length)], graphics, fields.
+# Angle points from the connection point into the body.
 MODULE_BODY = [rect(-7.62, 7.62, 7.62, -5.08)]
 SYMBOLS = {
     "FTP_8_Wires": {
@@ -135,7 +133,7 @@ SYMBOLS = {
     },
 }
 FOOTPRINTED = {"FTP_8_Wires", "SHT45_LaskaKit", "VEML7700_Techfun", "INMP441_Round", "R_Axial_P10_16", "C_Radial_P2_54"}
-# R5 lies diagonally on the board, over a shorter span than its symbol name says
+# R5 lies diagonally, spanning less than its symbol name says
 FOOTPRINT_NAMES = {"R_Axial_P10_16": "R_Axial_P9_16"}
 
 
@@ -182,7 +180,6 @@ def lib_symbol(name, prefix=""):
 
 
 def place(x, y, rot, lx, ly):
-    """Map a library point (Y up) to schematic coordinates (Y down)."""
     if rot == 90:
         lx, ly = -ly, lx
     return x + lx, y - ly
@@ -251,7 +248,6 @@ class Sheet:
 
 
 def draw(sheet):
-    # J1: the FTP cable from the ESP32 board enters on the left
     sheet.symbol("FTP_8_Wires", "J1", "FTP 4 m", 25.4, 99.06)
     j1 = lambda name: sheet.pin("J1", name)
 
@@ -264,7 +260,6 @@ def draw(sheet):
     sheet.junction((x_power, gnd_b[1]))
     sheet.symbol("GND", None, "GND", x_power, 109.22)
 
-    # I2C: SCL on top, SDA below it, both run to U4 at the end of the bus; U3 taps in
     sheet.symbol("SHT45_LaskaKit", "U3", "SHT45", 71.12, 45.72)
     sheet.symbol("VEML7700_Techfun", "U4", "VEML7700", 111.76, 66.04)
     scl_bus, sda_bus = sheet.pin("U4", "SCL")[1], sheet.pin("U4", "SDA")[1]
@@ -280,7 +275,6 @@ def draw(sheet):
         sheet.symbol("GND", None, "GND", *sheet.pin(ref, "GND"))
     sheet.no_connect(sheet.pin("U4", "3Vo"))
 
-    # I2S: SCK and WS straight to the microphone, SD through R5 at this end
     sheet.symbol("INMP441_Round", "U5", "INMP441", 111.76, 99.06)
     sheet.wire(j1("SCK"), sheet.pin("U5", "SCK"))
     sheet.wire(j1("WS"), sheet.pin("U5", "WS"))
@@ -297,12 +291,10 @@ def draw(sheet):
     sheet.junction(tee)
     sheet.symbol("GND", None, "GND", tee[0], tee[1] + 2.54)
 
-    # C2 buffers the 3V3 supply at the end of the 4 m cable
     sheet.symbol("C_Radial_P2_54", "C2", "10u", 50.8, 124.46)
     sheet.symbol("+3V3", None, "+3V3", *sheet.pin("C2", "1"))
     sheet.symbol("GND", None, "GND", *sheet.pin("C2", "2"))
 
-    # Net names match the board built by generate_board.py
     for name, x, y in (("SCL", 81.28, scl_bus), ("SDA", 88.9, sda_bus), ("SCK", 50.8, j1("SCK")[1]),
                        ("WS", 50.8, j1("WS")[1]), ("SD", 50.8, j1("SD")[1]), ("SD_MIC", 86.36, j1("SD")[1])):
         sheet.label(name, x, y)

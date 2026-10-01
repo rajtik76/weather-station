@@ -1,8 +1,6 @@
-"""Build the KiCad layout of the 30 x 70 mm isolated-pad perfboard.
+"""Build the 30 x 70 mm isolated-pad perfboard layout (KiCad's bundled Python 3.9).
 
-Run with KiCad's bundled Python 3.9. Tracks on B.Cu represent soldered tinned
-wire on the back of an already manufactured perfboard. Tracks on F.Cu represent
-insulated top-side wire links. Neither layer is intended for etched fabrication.
+B.Cu tracks stand for soldered wire on the back, F.Cu tracks for insulated top-side links; not for etching.
 """
 
 from pathlib import Path
@@ -32,7 +30,6 @@ def hole(col, row):
 
 
 def footprint(name, pads, lines, value, circles=(), models=()):
-    """Write a through-hole module footprint with pin 1 at its local origin."""
     content = [f'(footprint "{name}" (version 20240108) (generator "pcbnew")',
                '  (layer "F.Cu")',
                f'  (property "Reference" "REF**" (at 0 -2 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))',
@@ -106,7 +103,6 @@ footprint("INMP441_Round",
            (-10.81, -2.54, 3.19, -2.54, "F.Fab")], "INMP441",
           [(-3.81, -2.54, 7.0, "F.Fab")],
           [("INMP441_Round_approx.step", (0, 0, 0), (0, 0, 0))])
-# R5 lies diagonally over 3 x 2 holes
 R5_SPAN = (3 ** 2 + 2 ** 2) ** 0.5 * PITCH
 footprint("R_Axial_P9_16",
           [(1, 0, 0, "1"), (2, 0, round(R5_SPAN, 4), "2")],
@@ -124,7 +120,7 @@ board.GetTitleBlock().SetRevision("1")
 
 nets = {}
 for name in ("3V3", "GND", "SDA", "SCL", "SD", "SD_MIC", "SCK", "WS"):
-    # Power nets carry the global names of the schematic's power symbols
+    # Power nets use the schematic's global power-symbol names
     net_name = {"3V3": "+3V3", "GND": "GND"}.get(name, f"/{name}")
     net = pcb.NETINFO_ITEM(board, net_name)
     board.Add(net)
@@ -162,14 +158,13 @@ mic = add_footprint("INMP441_Round", "U5", (10, 9), "INMP441", {
     "5": "WS", "6": "SCK"})
 resistor = add_footprint("R_Axial_P9_16", "R5", (11, 5), "47R", {
     "1": "SD", "2": "SD_MIC"})
-# Pad 2 points down by default; turn it towards G8
 resistor.SetOrientationDegrees(-56.31)
 offset = resistor.FindPadByNumber("2").GetPosition() - hole(8, 7)
 if max(abs(offset.x), abs(offset.y)) > mm(0.01):
     raise RuntimeError(f"R5 pad 2 is {pcb.ToMM(offset.x)}, {pcb.ToMM(offset.y)} mm off G8")
 capacitor = add_footprint("C_Radial_P2_54", "C2", (3, 10), "10u", {
     "1": "3V3", "2": "GND"})
-# Label positions placed by hand in pcbnew: (reference, value), None keeps the footprint default
+# Hand-placed label positions: (reference, value), None keeps the default
 for item, reference, value in (
         (capacitor, (109.5, 121.5), None),
         (ftp, None, (116.5, 102.0)),
@@ -271,7 +266,6 @@ def top_link(signal, *coordinates):
 
 
 def wire_end(signal, col, row):
-    """Perfboard hole taking a top wire end, soldered to the bottom run."""
     via = pcb.PCB_VIA(board)
     via.SetPosition(hole(col, row))
     via.SetWidth(mm(1.7))

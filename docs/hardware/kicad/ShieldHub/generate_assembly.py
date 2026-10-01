@@ -1,9 +1,4 @@
-"""Export a perforated 3D assembly of the shield hub as a STEP file.
-
-The KiCad board uses guide graphics for unoccupied perfboard holes so that its
-electrical DRC stays meaningful. This separate mechanical assembly contains
-all 240 physical bores and annular rings.
-"""
+"""Export the shield hub as a STEP assembly with all 240 physical bores and rings (the KiCad board draws only guide graphics)."""
 
 from pathlib import Path
 
@@ -62,14 +57,11 @@ def place_model(filename, col, row, name, angle=0):
 
 place_model("VEML7700_Techfun_approx.step", 18, 6, "U4_VEML7700")
 place_model("INMP441_Round_approx.step", 10, 9, "U5_INMP441")
-# R5 runs diagonally from E11 to G8, as in the KiCad footprint
 place_model("R5_47R_approx.step", 11, 5, "R5_47R", -56.31)
 place_model("C2_10u_approx.step", 3, 10, "C2_10u")
 place_model("SHT45_pin_header.step", 20, 2, "U3_pin_header")
 
-# LaskaKit STEP uses the centre of its four-pin header as the origin. Rotating
-# its positive Y (tongue) into positive board X also aligns its pin row with
-# the 2D footprint when the SDA pin is used as the footprint origin.
+# LaskaKit STEP origin is the header centre; +Y (tongue) onto board +X aligns the pin row with the footprint (SDA pin as origin).
 sht = cq.importers.importStep(str(MODELS / "Temp-HumSensor_SHT45.step")).val()
 sht = sht.rotate((0, 0, 0), (0, 0, 1), -90)
 x, y = hole(20, 2)

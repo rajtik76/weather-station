@@ -1,9 +1,6 @@
-"""Build the KiCad schematic of the ESP32 base board and its symbol library.
+"""Build BaseBoard.kicad_sch and symbols/BaseBoard.kicad_sym (plain Python, no KiCad modules).
 
-Plain Python, no KiCad modules needed. Writes BaseBoard.kicad_sch and
-symbols/BaseBoard.kicad_sym. Signals are drawn as wires; supplies and ground
-use +5V, +3V3 and GND power symbols. J2 drives +5V and GND and the DevKit
-drives +3V3, so ERC needs no PWR_FLAG. Net names match generate_board.py.
+J2 drives +5V and GND, the DevKit drives +3V3, so ERC needs no PWR_FLAG. Net names match generate_board.py.
 """
 
 from pathlib import Path
@@ -37,9 +34,8 @@ def poly(points, fill="none", width=0.254):
     return f"(polyline (pts {pts}) (stroke (width {width}) (type default)) (fill (type {fill})))"
 
 
-# Library symbols: name -> pins [(number, name, type, x, y, angle, length)], graphics, fields.
-# Angle is the direction from the connection point into the body. Only the
-# DevKit pins this board uses are drawn; the other 21 have no net.
+# Symbols: name -> pins [(number, name, type, x, y, angle, length)], graphics, fields.
+# Angle points from the connection point into the body. Only the DevKit pins in use are drawn.
 SYMBOLS = {
     "DevKit_V1_BaseBoard": {
         "pins": [
@@ -213,7 +209,6 @@ def lib_symbol(name, prefix=""):
 
 
 def place(x, y, rot, lx, ly):
-    """Map a library point (Y up) to schematic coordinates (Y down)."""
     if rot == 90:
         lx, ly = -ly, lx
     return x + lx, y - ly
@@ -235,7 +230,6 @@ class Sheet:
         ref_x, ref_y, ref_j = spec["ref"]
         val_x, val_y, val_j = spec["value"]
         if rot == 90:
-            # Horizontal resistor: reference above, value below
             ref_pos, val_pos = (x, y - 2.54), (x, y + 2.54)
             ref_j = val_j = None
         else:
@@ -284,7 +278,7 @@ def draw(sheet):
     sheet.symbol("DevKit_V1_BaseBoard", "U1", "ESP32 DevKit V1", 63.5, 101.6)
     u1 = lambda name: sheet.pin("U1", name)
 
-    # J2: 5 V from the charger straight onto VIN and the top GND pin
+    # J2: 5 V straight onto VIN and the top GND pin
     sheet.symbol("Power_In_5V", "J2", "5V in", 33.02, 87.63)
     vin, gnd_top = u1("VIN"), u1("2")
     sheet.wire(sheet.pin("J2", "5V"), vin)
@@ -301,7 +295,6 @@ def draw(sheet):
     sheet.symbol("FTP_9_Pins", "J1", "FTP cable", 200.66, 99.06)
     j1 = lambda name: sheet.pin("J1", name)
 
-    # I2C: SCL rises to the top bus, SDA runs straight across under it
     scl_bus, scl_drop = 58.42, 190.5
     sheet.wire(u1("D22/SCL"), (86.36, u1("D22/SCL")[1]), (86.36, scl_bus), (scl_drop, scl_bus),
                (scl_drop, j1("SCL")[1]), j1("SCL"))
@@ -334,7 +327,6 @@ def draw(sheet):
     sheet.wire(u2("SDO"), (149.86, u2("SDO")[1]))
     sheet.symbol("GND", None, "GND", 149.86, u2("SDO")[1])
 
-    # I2S: 47R in SCK and WS at this end; the lines step up into J1 near the header
     sheet.symbol("R", "R3", "47R", 99.06, u1("D26/SCK")[1], rot=90, footprint="R_Axial_P10.16")
     sheet.symbol("R", "R4", "47R", 119.38, u1("D25/WS")[1], rot=90, footprint="R_Axial_P10.16")
     for pin, signal, resistor, step_x in (("D26/SCK", "SCK", "R3", 180.34), ("D25/WS", "WS", "R4", 182.88),
@@ -345,7 +337,7 @@ def draw(sheet):
             start = sheet.pin(resistor, "2")
         sheet.wire(start, (step_x, start[1]), (step_x, end[1]), end)
 
-    # Supply and ground at the cable, drain grounded at this end only
+    # Cable drain grounded at this end only
     sheet.wire(j1("3V3"), (193.04, j1("3V3")[1]))
     sheet.symbol("+3V3", None, "+3V3", 193.04, j1("3V3")[1])
     gnd_a, gnd_b, drain = j1("1"), j1("6"), j1("DRAIN")
@@ -355,13 +347,11 @@ def draw(sheet):
     sheet.junction((193.04, drain[1]))
     sheet.symbol("GND", None, "GND", 193.04, drain[1])
 
-    # Supply filter for the cable
     for ref, name, value, x in (("C1", "C", "100n", 78.74), ("C2", "C_Polarized", "10u", 93.98)):
         sheet.symbol(name, ref, value, x, 132.08)
         sheet.symbol("+3V3", None, "+3V3", *sheet.pin(ref, "1"))
         sheet.symbol("GND", None, "GND", *sheet.pin(ref, "2"))
 
-    # Net names match the board built by generate_board.py
     for name, x, y in (("SCL", 88.9, scl_bus), ("SDA", 152.4, sda_bus),
                        ("SCK", 81.28, u1("D26/SCK")[1]), ("SCK_CABLE", 104.14, u1("D26/SCK")[1]),
                        ("WS", 81.28, u1("D25/WS")[1]), ("WS_CABLE", 124.46, u1("D25/WS")[1]),

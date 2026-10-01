@@ -1,10 +1,6 @@
-"""Build the STEP models: the BMP280 breakout, the 0 ohm links, and the
-perfboard's tinned rings with the solder bridges.
+"""Build STEP models (BMP280 breakout, 0 ohm links, perfboard rings, solder bridges); needs CadQuery, run before generate_board.py.
 
-Run with a Python environment containing CadQuery, before generate_board.py.
-The ESP32 DevKit model is a downloaded file, see
-models/DOIT_ESP32_DevKit_V1-SOURCE.md. Coordinates are KiCad footprint 3D
-coordinates: Y is opposite 2D footprint Y.
+The DevKit model is a downloaded file (models/DOIT_ESP32_DevKit_V1-SOURCE.md). 3D Y is opposite 2D footprint Y.
 """
 
 import gzip
@@ -43,8 +39,7 @@ def drilled(shape, points, diameter):
     return shape
 
 
-# BMP280: pin 1 (VCC) is the origin, the six pins run down the footprint
-# (3D -Y) and the breakout lies flat on its header, reaching 10 mm to +X.
+# BMP280: pin 1 (VCC) is the origin, pins run along 3D -Y, the breakout reaches 10 mm to +X.
 pins = [(0, -step * PITCH) for step in range(6)]
 middle = -2.5 * PITCH
 bottom = SOCKET + SPACER
@@ -57,7 +52,6 @@ bmp.add(breakout, name="purple_breakout_pcb", color=PURPLE)
 bmp.add(box(0, middle, SOCKET + SPACER / 2, 2.54, 15.24, SPACER),
         name="header_spacer", color=BLACK)
 top = bottom + BOARD
-# Pins reach 6 mm into the socket and stand 0.6 mm proud of the breakout
 pin_low, pin_high = SOCKET - 6.0, top + 0.6
 for index, (x, y) in enumerate(pins):
     bmp.add(box(x, y, (pin_low + pin_high) / 2, 0.64, 0.64, pin_high - pin_low),
@@ -70,8 +64,7 @@ for index, (x, y) in enumerate(((2.4, middle + 4.0), (2.4, middle - 4.0),
 bmp.save(str(MODELS / "BMP280_Module_approx.step"), exportType="STEP")
 
 
-# 0 ohm links: pin 1 is the origin, pin 2 lies span holes along +X. The body
-# lies on the board, the leads bend down into both holes.
+# 0 ohm links: pin 1 is the origin, pin 2 lies span holes along +X.
 BEIGE = cq.Color(0.83, 0.72, 0.52)
 LEAD, BODY_LENGTH, BODY_RADIUS = 0.3, 6.3, 1.25
 for span, name in LINK_SPANS.items():
@@ -89,8 +82,7 @@ for span, name in LINK_SPANS.items():
     link.save(str(MODELS / f"{name}.step"), exportType="STEP")
 
 
-# Perfboard: origin at hole A01. KiCad draws the pads of the parts and links,
-# so the rings go on the free holes only.
+# Perfboard: origin at hole A01; rings on free holes only (KiCad draws the pads).
 TIN = cq.Color(0.78, 0.79, 0.8)
 HOLE = cq.Color(0.02, 0.02, 0.02)
 THICKNESS, COPPER = 1.6, 0.035
@@ -107,7 +99,6 @@ for col, row in free_holes():
         outer = cq.Solid.makeCylinder(0.9, COPPER, cq.Vector(x, y, z))
         rings.append(outer.cut(cq.Solid.makeCylinder(0.5, COPPER, cq.Vector(x, y, z))))
         bores.append(cq.Solid.makeCylinder(0.5, COPPER / 2, cq.Vector(x, y, z)))
-# Solder bridges: a flat bead of solder from pad to pad on the solder side
 beads = []
 for _, a, b in wiring()[1]:
     (x1, y1), (x2, y2) = at(*a), at(*b)

@@ -1,13 +1,7 @@
-"""Build the KiCad layout of the ESP32 base board on a 60 x 80 mm perfboard.
+"""Build the base board layout (60 x 80 mm perfboard) from layout.py.
 
-Run with KiCad's bundled Python 3.9 after generate_models.py. Parts and runs
-come from layout.py, which rejects shorts and split nets before anything is
-written. Runs are 0 ohm links (JP*) on the component side and solder bridges
-(B.Cu tracks, one pitch each) on the solder side. The links are board-only
-footprints whose two pads are one net, so the schematic leaves them out.
-
-The free holes are thin rings on User.Drawings, so the copper stays readable.
-PERF1 carries no pads, only the 3D model of the tinned rings and the bridges.
+Run with KiCad's bundled Python 3.9 after generate_models.py. Runs are 0 ohm links (JP*, board-only,
+absent from the schematic) on the component side and solder bridges (B.Cu tracks) on the solder side.
 """
 
 from pathlib import Path
@@ -40,7 +34,6 @@ def hole(col, row):
 
 
 def footprint(name, lines=(), circles=(), models=(), attributes="through_hole", value=None, extra=()):
-    """Write a through-hole footprint with the pads listed in layout.py."""
     content = [f'(footprint "{name}" (version 20240108) (generator "pcbnew")',
                '  (layer "F.Cu")',
                '  (property "Reference" "REF**" (at 0 -2.5 0) (layer "F.SilkS") '
@@ -72,15 +65,13 @@ def rectangle(x1, y1, x2, y2, layer):
 
 
 def outline(x1, y1, x2, y2):
-    """Silkscreen, fab drawing and courtyard of one rectangular body."""
     return (rectangle(x1, y1, x2, y2, "F.SilkS") + rectangle(x1, y1, x2, y2, "F.Fab")
             + rectangle(x1, y1, x2, y2, "F.CrtYd"))
 
 
 footprint(
     "DOIT_ESP32_DevKit_V1_Socketed",
-    # DevKit PCB, micro-USB, the antenna end of the WROOM-32 and both headers
-    # The courtyard is the two headers only: low parts may sit under the raised DevKit
+    # Courtyard is the two headers only: low parts may sit under the raised DevKit
     lines=(rectangle(8.64, 40.73, 16.64, 46.53, "F.Fab")
            + rectangle(-1.76, -6.57, 27.24, 45.43, "F.Fab")
            + rectangle(3.7, -6.47, 21.7, -0.5, "F.Fab")
@@ -92,11 +83,9 @@ footprint(
         (f"{OWN}/DOIT_ESP32_DevKit_V1_30pin_microUSB.step.gz", (0.64, -42.83, 12.67), (0, 0, 0)),
     ],
     value="ESP32 DevKit V1",
-    # Both GND pins meet on the DevKit's own ground plane
     extra=['  (jumper_pad_groups ("2" "17"))'])
 footprint(
     "BMP280_Module_Socketed",
-    # The breakout lies on its header and reaches 10 mm to +X
     lines=(outline(-1.27, -1.27, 1.27, 13.97)
            + rectangle(-1.27, -1.15, 8.73, 13.85, "F.Fab")),
     models=[
@@ -106,11 +95,9 @@ footprint(
     value="BMP280")
 footprint(
     "R_Socketed_1x02",
-    # Two of these make one 1x4 header: silkscreen on the long sides only
     lines=([(-1.27, -1.1, -1.27, 3.64, "F.SilkS"), (1.27, -1.1, 1.27, 3.64, "F.SilkS")]
            + rectangle(-1.27, -1.27, 1.27, 3.81, "F.Fab")
            + rectangle(-1.2, -1.2, 1.2, 3.74, "F.CrtYd")),
-    # The vertical resistor's bent lead points to +X; turn it onto pad 2
     models=[
         (f"{STOCK}/Connector_PinSocket_2.54mm.3dshapes/PinSocket_1x02_P2.54mm_Vertical.step", (0, 0, 0), (0, 0, 0)),
         (f"{STOCK}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P2.54mm_Vertical.step", (0, 0, 8.5), (0, 0, 90)),
@@ -147,9 +134,8 @@ for span, name in LINK_SPANS.items():
         models=[(f"{OWN}/{name}.step", (0, 0, 0), (0, 0, 0))],
         attributes="through_hole board_only exclude_from_pos_files exclude_from_bom",
         value="0R",
-        # Both pads are one net: the link joins them itself
         extra=['  (jumper_pad_groups ("1" "2"))'])
-# PERF1: no pads, only the tinned rings and the solder bridges in 3D
+# PERF1: no pads, only the 3D model of tinned rings and bridges
 footprint(
     "Perfboard_22x27",
     models=[(f"{OWN}/Perfboard_rings_and_bridges.step.gz", (0, 0, 0), (0, 0, 0))],
@@ -186,7 +172,7 @@ def add(ref, name, value, origin, angle):
     return item
 
 
-# layout.py placed every pad on paper; pcbnew must agree to the hundredth of a mm
+# pcbnew pads must agree with layout.py to 0.01 mm
 spots = occupied()
 for ref, name, value, origin, angle, pad_nets in PARTS:
     item = add(ref, name, value, origin, angle)
@@ -219,7 +205,7 @@ for index, (signal, a, b) in enumerate(links, start=1):
         if max(abs(offset.x), abs(offset.y)) > mm(0.01):
             raise RuntimeError(f"JP{index} pad {pad.GetNumber()} is off its hole")
 
-# Reference labels that would sit on a pad, moved to free holes (column, row)
+# Labels moved off pads onto free holes (column, row)
 LABELS = {"J1": (11.6, 17), "C1": (6.5, 15.3), "C2": (8.9, 18.6), "R2": (8.5, 19.8), "R1": (10.5, 19.8)}
 for item in board.GetFootprints():
     spot = LABELS.get(item.GetReference())
@@ -249,7 +235,7 @@ for a, b in zip(corners, corners[1:] + corners[:1]):
     edge.SetEnd(point(*b))
     board.Add(edge)
 
-# Free holes as thin rings on User.Drawings; hide the layer for a clean view
+# Free holes as rings on User.Drawings (keeps copper readable)
 for col, row in free_holes():
     ring = shape(pcb.S_CIRCLE, pcb.Dwgs_User, 0.08)
     ring.SetCenter(hole(col, row))
@@ -280,7 +266,7 @@ def text(content, x, y, layer, size=0.9, justify=None):
     board.Add(label)
 
 
-# Hole labels in the margins, as printed on the perfboard, on both sides
+# Hole labels in the margins, as printed on the perfboard
 for layer in (pcb.F_SilkS, pcb.B_SilkS):
     for col in range(1, COLS + 1):
         x = BOARD_X + HOLE_X + (col - 1) * PITCH
