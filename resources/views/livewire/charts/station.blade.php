@@ -9,7 +9,7 @@
                 <p class="label-mono m-0">Last {{ count($this->recentTransmissions) }} windows · when they arrived</p>
                 <ol class="m-0 mt-4 list-none space-y-5 p-0">
                     @foreach ($this->recentTransmissions as $transmission)
-                        <li class="min-w-0 border-t border-line pt-4 first:border-t-0 first:pt-0">
+                        <li class="min-w-0 border-t border-line pt-4 first:border-t-0 first:pt-0" x-data="{ open: false }">
                             <p class="num m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[14px]">
                                 <span class="text-ink">{{ $transmission['at'] }}</span>
                                 <span class="text-ink-3">{{ $transmission['ago'] }}</span>
@@ -17,7 +17,18 @@
                                 <span><span class="text-ch2">CH2</span> {{ \App\ValueObject\Figure::format($transmission['h'], 2) }} %</span>
                                 <span><span class="text-ch3">CH3</span> {{ \App\ValueObject\Figure::format($transmission['p'], 1) }} hPa</span>
                             </p>
-                            <pre class="m-0 mt-2 overflow-x-auto rounded-md bg-bg px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink-2">{{ json_encode($transmission['packet'], JSON_UNESCAPED_SLASHES) }}</pre>
+                            <button
+                                type="button"
+                                x-on:click="open = ! open"
+                                aria-controls="packet-{{ $transmission['timestamp'] }}"
+                                x-bind:aria-expanded="open ? 'true' : 'false'"
+                                aria-expanded="false"
+                                class="mt-2 flex cursor-pointer items-center gap-1.5 rounded-md font-mono text-[12.5px] text-ink-3 hover:text-ink"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" class="transition-transform" x-bind:class="{ '-rotate-90': ! open }"><path d="M3 5.5 7 9.5 11 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                                JSON
+                            </button>
+                            <pre id="packet-{{ $transmission['timestamp'] }}" x-bind:class="{ hidden: ! open }" class="m-0 mt-2 overflow-x-auto rounded-md bg-bg px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink-2">{{ \App\ValueObject\PacketJson::format($transmission['packet']) }}</pre>
                         </li>
                     @endforeach
                 </ol>

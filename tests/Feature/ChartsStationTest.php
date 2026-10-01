@@ -32,7 +32,7 @@ it('lists a V3 packet with its noise object', function (): void {
     $this->get(route('charts'))
         ->assertOk()
         ->assertSee('"noise"', false)
-        ->assertSee('"laeq":5562');
+        ->assertSee('"laeq": 5562');
 });
 
 it('lists the last three transmissions as the station sent them', function (): void {
@@ -63,7 +63,7 @@ it('lists the last three transmissions as the station sent them', function (): v
     $this->get(route('charts'))
         ->assertOk()
         ->assertSee('Last 3 windows')
-        ->assertSee('"temperature":2134')
+        ->assertSee('"temperature": 2134')
         ->assertSee('5812')
         ->assertSee('97389')
         ->assertSee('2112')
@@ -92,10 +92,10 @@ it('lists a V2 packet under its own keys', function (): void {
 
     $this->get(route('charts'))
         ->assertOk()
-        ->assertSee('"temperature_min":2101')
-        ->assertSee('"humidity_max":5900')
-        ->assertSee('"pressure_max":97395')
-        ->assertSee('"samples":20');
+        ->assertSee('"temperature_min": 2101')
+        ->assertSee('"humidity_max": 5900')
+        ->assertSee('"pressure_max": 97395')
+        ->assertSee('"samples": 20');
 });
 
 it('dates the tail by arrival, not by the measurement', function (): void {
@@ -235,4 +235,15 @@ it('shows the selected sensor\'s report, not another station\'s', function (): v
         ->assertOk()
         ->assertSee('north-build')
         ->assertDontSee('south-build');
+});
+
+it('folds each packet behind a JSON button by default', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
+
+    $html = Livewire::test(Charts::class)->html();
+
+    expect(Str::after($html, 'aria-label="Last transmissions"'))
+        ->toContain('x-data="{ open: false }"')
+        ->toContain('aria-expanded="false"')
+        ->toContain('x-bind:class="{ hidden: ! open }"');
 });
