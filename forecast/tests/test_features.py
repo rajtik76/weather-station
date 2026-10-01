@@ -49,7 +49,6 @@ def test_to_grid_leaves_the_input_untouched() -> None:
 def test_dew_point_matches_the_magnus_formula() -> None:
     dew = dew_point(pd.Series([20.0, 20.0]), pd.Series([100.0, 50.0]))
 
-    # Saturated air is at its dew point; 20 °C at 50 % is the textbook 9.3 °C.
     assert dew.iloc[0] == pytest.approx(20.0)
     assert dew.iloc[1] == pytest.approx(9.26, abs=0.01)
 
@@ -88,7 +87,6 @@ def test_features_carry_no_pressure_level() -> None:
 
 
 def test_changes_are_fixed_offsets_back_in_time() -> None:
-    # 0.1 °C, 1 % and 0.01 hPa per 10-minute step.
     frame = grid_frame(400, T=lambda i: 0.1 * i, H=lambda i: 1.0 * i, P=lambda i: 900 + 0.01 * i)
 
     features = build_features(frame, 13.4)
@@ -101,9 +99,7 @@ def test_changes_are_fixed_offsets_back_in_time() -> None:
     assert row["H_d1h"] == pytest.approx(6.0)
     assert row["P_d12h"] == pytest.approx(0.72)
     assert row["P_d48h"] == pytest.approx(2.88)
-    # A steady fall is not speeding up.
     assert row["P_accel3h"] == pytest.approx(0.0, abs=1e-4)
-    # Not enough history behind the first rows.
     assert features["T_d1h"].iloc[:STEPS_PER_HOUR].isna().all()
     assert features["P_d48h"].iloc[: 48 * STEPS_PER_HOUR].isna().all()
 
@@ -114,10 +110,8 @@ def test_a_gap_blanks_only_the_windows_that_reach_into_it() -> None:
 
     features = build_features(frame, 13.4)
 
-    # The change over one hour at 200 has no end, and at 206 no start.
     assert np.isnan(features["T_d1h"].iloc[200])
     assert np.isnan(features["T_d1h"].iloc[200 + STEPS_PER_HOUR])
-    # The neighbours keep their fixed offsets instead of sliding over the hole.
     assert features["T_d1h"].iloc[201] == pytest.approx(0.6)
     assert features["T_d1h"].iloc[200 + STEPS_PER_HOUR + 1] == pytest.approx(0.6)
 
@@ -125,7 +119,7 @@ def test_a_gap_blanks_only_the_windows_that_reach_into_it() -> None:
 def test_a_thin_window_gives_nan_rather_than_a_statistic_of_a_few_readings() -> None:
     frame = grid_frame(400, T=10.0, H=50.0, P=lambda i: 1000 + 0.01 * i)
     thin = frame.copy()
-    # Leave 30 of the 48 hours before row 300: fewer than the 36 the swing needs.
+    # 30 of the 48 hours remain: fewer than the 36 the swing needs.
     thin.iloc[300 - 288 : 300 - 30, thin.columns.get_loc("P")] = np.nan
 
     assert np.isfinite(build_features(frame, 13.4)["P_range48h"].iloc[300])
@@ -164,7 +158,6 @@ def test_rain_inputs_are_nan_for_a_station_without_a_rain_source() -> None:
 
 
 def test_jitter_is_computed_on_readings_rounded_to_the_chmi_resolution() -> None:
-    # A sensor finer than ČHMÚ's: noise below 0.05 °C and 0.5 % vanishes.
     wobble = lambda i: np.where(i % 2 == 0, 0.0, 0.04)  # noqa: E731
     frame = grid_frame(100, T=lambda i: 10 + wobble(i), H=lambda i: 50 + wobble(i) * 10, P=1000.0)
 
@@ -217,7 +210,6 @@ def test_targets_are_the_change_n_hours_ahead(n: int) -> None:
     assert targets[f"T_{n}h"].iloc[10] == pytest.approx(0.1 * steps, abs=1e-4)
     assert targets[f"H_{n}h"].iloc[10] == pytest.approx(-0.2 * steps, abs=1e-4)
     assert targets[f"P_{n}h"].iloc[10] == pytest.approx(0.01 * steps, abs=1e-4)
-    # Nothing to compare with once the horizon runs past the record.
     assert targets[f"T_{n}h"].iloc[-steps:].isna().all()
     assert targets[f"T_{n}h"].iloc[-steps - 1] == pytest.approx(0.1 * steps, abs=1e-4)
 
@@ -228,7 +220,6 @@ def test_a_missing_future_reading_blanks_only_its_own_target() -> None:
 
     targets = build_targets(frame)
 
-    # Issued 3 h before the gap, or at the gap itself: no target; the rows around are fine.
     assert np.isnan(targets["T_3h"].iloc[100 - 3 * STEPS_PER_HOUR])
     assert np.isnan(targets["T_3h"].iloc[100])
     assert targets["T_3h"].iloc[99] == pytest.approx(1.8)
@@ -241,7 +232,6 @@ def test_rain_target_looks_strictly_ahead_of_the_issue_time() -> None:
 
     targets = build_targets(frame)
 
-    # Rain in slot 50 is ahead of slot 49 and earlier, but already past for slot 50.
     assert targets["rain_1h"].iloc[49] == 1
     assert targets["rain_1h"].iloc[44] == 1
     assert targets["rain_1h"].iloc[43] == 0
@@ -271,7 +261,6 @@ def test_rain_target_is_unknown_unless_every_slot_ahead_was_reported() -> None:
     assert targets["rain_1h"].iloc[44:50].isna().all()
     assert targets["rain_1h"].iloc[43] == 0
     assert targets["rain_1h"].iloc[50] == 0
-    # The last rows have no full window ahead.
     assert targets["rain_1h"].iloc[-STEPS_PER_HOUR:].isna().all()
 
 

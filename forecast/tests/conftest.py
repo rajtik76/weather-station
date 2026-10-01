@@ -1,4 +1,4 @@
-"""Shared fixtures: no network, small frames, and a tiny fitted model bundle."""
+"""Shared fixtures: no network, small frames, a tiny model bundle."""
 
 import ipaddress
 import socket
@@ -11,13 +11,12 @@ from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostin
 from features import HORIZONS, build_features, build_targets
 from forecast import QUANTILES, VARIABLES
 
-# A Sunday, 00:00 UTC: a round starting point for hand-built grids.
 START = pd.Timestamp("2026-09-06", tz="UTC")
 
 
 @pytest.fixture(autouse=True)
 def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Only loopback connections may happen: the HTTP tests talk to a local server."""
+    """Loopback only."""
     connect = socket.socket.connect
 
     def guarded(self: socket.socket, address: object) -> None:
@@ -29,7 +28,7 @@ def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def grid_frame(steps: int, start: pd.Timestamp = START, **columns: object) -> pd.DataFrame:
-    """A frame on the 10-minute grid; each column is a scalar or a callable of the step index."""
+    """10-minute grid frame; columns are scalars or callables of the step index."""
     index = pd.date_range(start, periods=steps, freq="10min", name="time")
     steps_index = np.arange(steps)
     data = {name: value(steps_index) if callable(value) else np.full(steps, value) for name, value in columns.items()}
@@ -37,7 +36,7 @@ def grid_frame(steps: int, start: pd.Timestamp = START, **columns: object) -> pd
 
 
 def weather_frame(steps: int, rain: bool = True) -> pd.DataFrame:
-    """A smooth, day-shaped series with a few rain showers, deterministic."""
+    """Deterministic day-shaped series with a few showers."""
     rng = np.random.default_rng(1)
     columns: dict[str, object] = {
         "T": lambda i: 12 + 6 * np.sin(2 * np.pi * i / 144) + rng.normal(0, 0.1, len(i)),
@@ -50,7 +49,7 @@ def weather_frame(steps: int, rain: bool = True) -> pd.DataFrame:
 
 
 class Constant:
-    """A stand-in model that always gives the same answer."""
+    """Stub model with a constant answer."""
 
     def __init__(self, value: float) -> None:
         self.value = value
@@ -64,7 +63,7 @@ class Constant:
 
 @pytest.fixture(scope="session")
 def bundle() -> dict:
-    """The same structure train.py writes, fitted on a week of synthetic weather."""
+    """train.py's bundle structure, fitted on synthetic weather."""
     frame = weather_frame(7 * 144)
     rows = build_features(frame, 13.4).join(build_targets(frame))
     names = list(build_features(frame, 13.4).columns)

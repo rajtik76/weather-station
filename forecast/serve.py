@@ -1,56 +1,21 @@
-"""The forecast service: readings in, 1-6 hour forecast out.
+"""Forecast service (internal network, no auth, stateless): uv run serve.py ($HOST:$PORT, model from $MODEL_PATH).
 
-    uv run serve.py   # listens on $HOST:$PORT (0.0.0.0:8000), model from $MODEL_PATH
+Readings: {"timestamp": unix s, "temperature": °C, "humidity": %, "pressure": hPa (station level),
+"rain": mm per 10 min or null}. Bands: {"low", "mid", "high"}. Request keys: "longitude", "readings",
+"since" (optional, unix s UTC; the station correction learns only from readings from then on).
 
-Stateless and without a database: Laravel sends the station's recent
-readings (up to ~60 days, so the station correction has history to learn
-from) and stores what comes back. Only reachable on the internal Docker
-network, hence no authentication.
-
-POST /forecast
-    {"longitude": 13.40,
-     "readings": [{"timestamp": 1790000000, "temperature": 9.7,
-                   "humidity": 76.0, "pressure": 976.6, "rain": null}, ...]}
-    temperature °C, humidity %, pressure hPa (station level), rain mm in
-    the 10 minutes (null or absent when the station has no rain source).
-
-    "since" (optional, UTC Unix seconds): the station correction learns only
-    from the readings from then on; the rest still feed the base models.
-
-    -> {"issued_at": 1790000000, "model": "<trained_at>", "corrected": true,
-        "correction": 2,
-        "horizons": [{"hours": 1,
-                      "temperature": {"low": .., "mid": .., "high": ..},
-                      "humidity": {...}, "pressure": {...},
-                      "rain_probability": 0.02,
-                      "base": {"temperature": {...}, "humidity": {...},
-                               "rain_probability": 0.02}}, ...]}
-    issued_at is the latest reading's 10-minute window (UTC Unix seconds);
-    correction the CORRECTION_VERSION of the station correction's logic;
-    base is the forecast before the station correction, for the variables
-    it corrects, so the correction's worth can be scored, and the rain
-    chance as its classifier gave it, before nest_rain() capped it.
-
-POST /base
-    {"longitude": 13.40, "since": 1789400000, "readings": [...]}
-    -> {"model": "<trained_at>",
-        "forecasts": [{"issued_at": 1789400000,
-                       "horizons": [{"hours": 1, "temperature": {...},
-                                     "humidity": {...},
-                                     "rain_probability": 0.02}, ...]}, ...]}
-    The forecast before correction for every reading from since on, to fill
-    in base for forecasts stored before it was kept. The base models look
-    48 hours back, so the readings should start that much before since.
-
-    "full": true answers each horizon in the shape POST /forecast does,
-    without base: temperature, humidity and pressure bands and the rain
-    chance as shown (the first hour capped). For a reference station whose
-    forecasts are stored and scored like the balcony's, where no station
-    correction applies.
-
-GET /health -> {"status": "ok", "model": "<trained_at>", "correction": 2}
+POST /forecast  {"longitude", "readings", "since"?}
+  -> {"issued_at": unix s of the latest 10-min window, "model": trained_at, "corrected": bool,
+      "correction": CORRECTION_VERSION,
+      "horizons": [{"hours": n, "temperature": band, "humidity": band, "pressure": band,
+                    "rain_probability",
+                    "base": {"temperature": band, "humidity": band, "rain_probability": raw, pre nest_rain()}}]}
+POST /base  {"longitude", "since" (required), "readings", "full"?: bool}
+  -> {"model", "forecasts": [{"issued_at", "horizons": [{"hours", "temperature", "humidity",
+      "rain_probability"}]}]}  - uncorrected, per reading from since on; readings should start 48 h earlier.
+  "full": true gives /forecast's horizon shape without base.
+GET /health -> {"status": "ok", "model", "correction"}
 """
-
 import json
 import math
 import os
@@ -67,9 +32,7 @@ from forecast import QUANTILES, predict
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", Path(__file__).parent / "models" / "forecast.joblib"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
-# Guards against nonsense, not a copy of Laravel's history_days: a year is far
-# more than it sends, and the history is snapped onto a 10-minute grid, so a
-# stray timestamp decades off would lay out millions of empty slots.
+# Caps stray timestamps: the history is snapped onto a 10-minute grid, so one decades off would allocate millions of slots.
 MAX_SPAN_DAYS = 366
 MAX_SPAN_SECONDS = MAX_SPAN_DAYS * 86_400
 MAX_READINGS = MAX_SPAN_DAYS * 24 * 6
@@ -79,7 +42,7 @@ NAMES = {column: field for field, column in FIELDS.items()}
 
 
 class Model:
-    """The bundle on disk, reloaded when a retrained file replaces it."""
+    """The bundle on disk, reloaded when the file changes."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -122,7 +85,7 @@ def number(value: object) -> float:
         return math.nan
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidRequest("readings values must be numbers or null")
-    # An int past float's range overflows, and JSON's 1e400 parses as inf.
+    # Huge ints overflow float; JSON 1e400 parses as inf.
     try:
         result = float(value)
     except OverflowError:
@@ -143,7 +106,6 @@ def readings_frame(readings: object) -> pd.DataFrame:
         row |= {column: number(reading.get(field)) for field, column in FIELDS.items()}
         row["SRA10M"] = number(reading.get("rain"))
         rows.append(row)
-    # Every stamp lies between these two, so checking them covers the rest.
     oldest = min(row["time"] for row in rows)
     newest = max(row["time"] for row in rows)
     timestamp(oldest, "a reading's timestamp", required=True)
@@ -156,9 +118,7 @@ def readings_frame(readings: object) -> pd.DataFrame:
 
 
 def station_history(payload: dict) -> tuple[float, pd.DataFrame]:
-    """The longitude and the readings on the grid, as both endpoints take them.
-    A station with no rain source loses the column, so the rain inputs are NaN
-    rather than a gauge that read zero."""
+    """Longitude and gridded readings; without a rain source the column is dropped so rain inputs are NaN, not zero."""
     longitude = number(payload.get("longitude"))
     if math.isnan(longitude):
         raise InvalidRequest("longitude is required")
@@ -179,14 +139,14 @@ def make_forecast(payload: dict) -> dict:
     horizons = bundle["horizons"]
     features = build_features(current, longitude)
     forecast = predict(bundle, features, current)
-    # The latest row is the one forecast; every earlier one teaches the correction.
+    # Latest row is forecast; earlier rows teach the correction.
     corrections = fit(forecast.iloc[:-1], current.iloc[:-1], horizons, longitude, since)
     latest = apply(corrections, forecast, current, horizons, longitude).iloc[-1]
 
     return {
         "issued_at": int(latest.name.timestamp()),
         "model": bundle["trained_at"],
-        # Only when every target was: a sparse history can leave some without a verified row.
+        # True only if every target was corrected (sparse history can skip some).
         "corrected": len(corrections) == len(horizons) * len(CORRECTED_VARIABLES),
         "correction": CORRECTION_VERSION,
         "horizons": [
@@ -225,8 +185,7 @@ def band(row: pd.Series, variable: str, n: int) -> dict:
 
 
 def shown_bands(row: pd.Series, n: int) -> dict:
-    """Every variable's band and the rain chance as POST /forecast shows it: from
-    the corrected row there, from the model's own with /base's full."""
+    """All bands and the shown rain chance (corrected row in /forecast, model's own in /base full)."""
     return {
         **{NAMES[variable]: band(row, variable, n) for variable in FIELDS.values()},
         "rain_probability": round(float(row[f"rain_{n}h"]), 3),
@@ -234,8 +193,7 @@ def shown_bands(row: pd.Series, n: int) -> dict:
 
 
 def base_bands(row: pd.Series, n: int) -> dict:
-    """The uncorrected forecast of the variables the station correction touches,
-    and the rain chance before nest_rain()."""
+    """Uncorrected bands of the corrected variables, rain chance before nest_rain()."""
     return {
         **{NAMES[variable]: band(row, variable, n) for variable in CORRECTED_VARIABLES},
         "rain_probability": round(float(row[f"rain_{n}h_raw"]), 3),

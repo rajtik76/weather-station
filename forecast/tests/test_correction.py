@@ -1,4 +1,4 @@
-"""The station correction, on small hand-built frames with known answers."""
+"""Station correction on small hand-built frames."""
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,7 @@ def flat_frame(steps: int) -> pd.DataFrame:
 
 
 def base_forecast(current: pd.DataFrame, bias: object, spread: float = 1.0) -> pd.DataFrame:
-    """A forecast whose median is `bias` below what actually came, in T and H, for each horizon."""
+    """Forecast whose median is `bias` below the truth."""
     forecast = pd.DataFrame(index=current.index)
     for n in HORIZONS:
         for variable in ("T", "H", "P"):
@@ -45,7 +45,6 @@ def test_error_is_the_truth_minus_the_median_indexed_by_issue_time() -> None:
 
     error = errors(forecast, current, "T", 1)
 
-    # Issued at step 2, truth is step 8.
     assert error.iloc[2] == 8.0 - 4.0
     assert error.iloc[0] == 6.0 - 4.0
     assert error.iloc[-STEPS_PER_HOUR:].isna().all()
@@ -65,7 +64,6 @@ def test_inputs_mark_exactly_one_solar_bin_of_the_target_time() -> None:
 def test_morning_bins_are_twenty_minutes_and_the_rest_of_the_day_an_hour() -> None:
     current = flat_frame(288)
     forecast = base_forecast(current, 0.0)
-    # The bin of an issue time whose target falls at the given UTC clock time, at longitude 0.
     bin_of = lambda clock: inputs(forecast, current, "T", 1, 0.0).filter(like="solar_").idxmax(axis=1)[  # noqa: E731
         pd.Timestamp(f"2026-09-06 {clock}", tz="UTC") - pd.Timedelta(hours=1)
     ]
@@ -98,11 +96,9 @@ def test_error_inputs_are_what_was_already_verified_at_issue_time() -> None:
 
     x = inputs(forecast, current, "T", 3, LONGITUDE)
 
-    # error at issue time j is bias[j] (truth is flat 0 -> mid = -bias[j] -> error = +bias[j]).
-    # The 3 h forecast issued 3 h ago and the 1 h forecast issued 1 h ago are verified now.
+    # error at issue time j is bias[j]; the 3 h and 1 h forecasts issued 3 h / 1 h ago are verified now.
     assert x["error_same"].iloc[100] == 100 - 3 * STEPS_PER_HOUR
     assert x["error_1h"].iloc[100] == 100 - STEPS_PER_HOUR
-    # Nothing verified yet at the start of the record: zero, not NaN.
     assert x["error_same"].iloc[0] == 0.0
     assert not x.isna().any().any()
 
@@ -156,13 +152,12 @@ def test_a_constant_bias_is_learned_and_removed() -> None:
     known = current["T"].shift(-STEPS_PER_HOUR).notna()
     truth = current["T"].shift(-STEPS_PER_HOUR)[known]
     assert corrected.loc[known, "T_1h_mid"].to_numpy() == pytest.approx(truth.to_numpy(), abs=0.05)
-    # The bias in this frame was 2 everywhere, so the uncorrected median is off by 2.
     assert (forecast.loc[known, "T_1h_mid"] - truth).to_numpy() == pytest.approx(-2.0)
 
 
 def test_a_bias_that_depends_on_solar_time_is_learned_per_bin() -> None:
     current = weather_frame(1000)
-    # The forecast is 3 degrees too cold when the target falls between 8 and 10 solar time, right otherwise.
+    # 3 degrees too cold for targets between 8 and 10 solar time, right otherwise.
     target = current.index + pd.Timedelta(hours=1)
     solar = (target.hour + target.minute / 60 + LONGITUDE / 15) % 24
     bias = pd.Series(np.where((solar >= 8) & (solar < 10), 3.0, 0.0), index=current.index)
@@ -176,7 +171,7 @@ def test_a_bias_that_depends_on_solar_time_is_learned_per_bin() -> None:
     before = (forecast["T_1h_mid"] - truth)[morning].abs().mean()
     after = (corrected["T_1h_mid"] - truth)[morning].abs().mean()
     assert before == pytest.approx(3.0)
-    # A ridge shrinks a little, with a dozen rows or so in each morning bin.
+    # Ridge shrinks a little.
     assert after < 1.0
     assert (corrected["T_1h_mid"] - truth)[known & ~morning].abs().mean() < 0.5
 
@@ -184,7 +179,6 @@ def test_a_bias_that_depends_on_solar_time_is_learned_per_bin() -> None:
 def test_the_range_is_rescaled_until_it_holds_four_readings_in_five() -> None:
     current = weather_frame(1500)
     rng = np.random.default_rng(7)
-    # Noise the correction cannot learn, far wider than the range the model gave.
     noise = pd.Series(rng.normal(0, 2.0, len(current)), index=current.index)
     forecast = base_forecast(current, noise, spread=0.2)
 
@@ -213,7 +207,6 @@ def test_a_range_that_was_too_wide_is_narrowed() -> None:
 
 def test_since_keeps_older_readings_from_teaching_the_correction() -> None:
     current = weather_frame(1000)
-    # Before row 400 the forecast was 5 too cold, from then on 2.
     bias = pd.Series(np.where(np.arange(1000) < 400, 5.0, 2.0), index=current.index)
     forecast = base_forecast(current, bias)
 

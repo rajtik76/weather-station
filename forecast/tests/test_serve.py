@@ -1,4 +1,4 @@
-"""The service's contract with the Laravel app: payload in, forecast out, 422 for bad input."""
+"""Service contract with the Laravel app: payload in, forecast out, 422 for bad input."""
 
 import http.client
 import json
@@ -23,7 +23,7 @@ BAND = {"low", "mid", "high"}
 
 
 def readings(hours: float, rain: bool = False, offset: int = 37) -> list[dict]:
-    """What ForecastWeather sends: oldest first, seconds into each 10-minute window."""
+    """What ForecastWeather sends: oldest first, offset seconds into each 10-minute window."""
     frame = weather_frame(int(hours * 6))
     return [
         {
@@ -39,7 +39,7 @@ def readings(hours: float, rain: bool = False, offset: int = 37) -> list[dict]:
 
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch, bundle: dict) -> dict:
-    """The service running on the tiny fitted model instead of models/forecast.joblib."""
+    """Service on the tiny test bundle."""
     monkeypatch.setattr(serve, "model", SimpleNamespace(get=lambda: bundle))
     return bundle
 
@@ -81,11 +81,9 @@ def test_a_forecast_has_the_shape_laravel_stores(service: dict) -> None:
             assert set(horizon[variable]) == BAND
             assert horizon[variable]["low"] <= horizon[variable]["mid"] <= horizon[variable]["high"]
         assert 0 <= horizon["rain_probability"] <= 1
-        # Only what the correction touches has a base, and rain as its classifier gave it.
         assert set(horizon["base"]) == {"temperature", "humidity", "rain_probability"}
         assert set(horizon["base"]["temperature"]) == BAND
         assert round(horizon["base"]["rain_probability"], 3) == horizon["base"]["rain_probability"]
-    # Laravel stores this as json.
     assert json.loads(json.dumps(answer)) == answer
 
 
@@ -113,7 +111,6 @@ def test_issued_at_is_the_ten_minute_window_of_the_latest_reading(service: dict)
 
     answer = make_forecast({"longitude": LONGITUDE, "readings": payload})
 
-    # The station reports 37 seconds into the window; the window starts at the grid.
     assert payload[-1]["timestamp"] % 600 == 37
     assert answer["issued_at"] == payload[-1]["timestamp"] - 37
 
@@ -135,7 +132,7 @@ def test_since_keeps_the_correction_off_but_not_the_base_models(service: dict) -
     without = make_forecast({"longitude": LONGITUDE, "readings": payload})
 
     assert without["corrected"] is True
-    # 36 h of history counted from since: too little to learn from.
+    # 36 h after since: too little to learn from.
     assert with_since["corrected"] is False
     assert [h["base"] for h in with_since["horizons"]] == [h["base"] for h in without["horizons"]]
     assert [h["pressure"] for h in with_since["horizons"]] == [h["pressure"] for h in without["horizons"]]
@@ -290,7 +287,6 @@ def test_base_forecasts_every_complete_window_from_since(service: dict) -> None:
 
     assert answer["model"] == service["trained_at"]
     issued = [forecast["issued_at"] for forecast in answer["forecasts"]]
-    # Nine windows from since on, without the one missing its pressure.
     assert issued == [reading["timestamp"] - 37 for reading in payload[-10:] if reading["pressure"] is not None]
     horizon = answer["forecasts"][0]["horizons"][0]
     assert set(horizon) == {"hours", "temperature", "humidity", "rain_probability"}
@@ -322,7 +318,6 @@ def test_full_base_answers_in_the_shape_the_forecast_endpoint_does_without_its_c
     assert full["forecasts"][0]["horizons"] == [
         {
             "hours": h["hours"],
-            # The model alone: the base for what the correction touches, the rest as shown.
             "temperature": h["base"]["temperature"],
             "humidity": h["base"]["humidity"],
             "pressure": h["pressure"],

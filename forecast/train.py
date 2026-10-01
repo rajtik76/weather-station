@@ -1,13 +1,6 @@
-"""Train the 1-6 hour forecast models on ČHMÚ station history.
+"""Train the 1-6 h forecast models on ČHMÚ history: uv run train.py
 
-    uv run train.py
-
-Per horizon: three quantile models (10/50/90 %) for the change of each of
-T, H and P after n hours, and a classifier for the chance of measurable rain
-within the next n hours. Trained on 2018-2024; scored on 2025 at stations
-the models never saw. The median is scored against persistence ("nothing
-changes"), the 10-90 % range by how often it holds the truth (aim: 80 %),
-rain against the climatological rate. Writes models/forecast.joblib.
+Trained on 2018-2024, scored on 2025 at held-out stations. Writes models/forecast.joblib.
 """
 
 import time
@@ -29,7 +22,7 @@ MODELS = Path(__file__).parent / "models"
 # Mountain stations behave unlike a city balcony (inversions, exposed summits).
 MAX_ELEVATION_M = 700
 
-# Never trained on: Plzeň-Mikulka (nearest to the balcony) and a spread of others.
+# Never trained on; Mikulka is nearest to the balcony.
 HOLDOUT_STATIONS = {
     "0-20000-0-11450",  # Plzeň-Mikulka
     "0-20000-0-11406",  # Cheb
@@ -38,8 +31,7 @@ HOLDOUT_STATIONS = {
 }
 TEST_YEAR = 2025
 
-# The balcony's rain source (the microphone) can be missing or down; hiding
-# the rain inputs on a share of training rows teaches the models to cope.
+# Hide rain inputs on a share of rows: the balcony's rain source (microphone) can be down.
 RAIN_INPUT_DROPOUT = 0.3
 
 
@@ -54,7 +46,7 @@ def load_rows() -> tuple[pd.DataFrame, list[str]]:
         frame = pd.read_parquet(path)
         features = build_features(frame, station.lon)
         rows = features.join(build_targets(frame))
-        # Hourly samples: neighbouring 10-minute rows add little but time.
+        # Hourly samples only.
         rows = rows[(rows.index.minute == 0) & rows["T"].notna() & rows["H"].notna()]
         rows["station"] = station.wsi
         frames.append(rows)
@@ -104,7 +96,7 @@ def main() -> None:
         scored = test[test[target].notna()]
         chance = model.predict_proba(scored[feature_names])[:, 1]
         climatology = np.full(len(scored), fit[target].mean())
-        # Onset: rows where it has not rained in the last hour - the hard case.
+        # Onset: no rain in the last hour.
         dry = (scored["rain_past1h"] == 0).to_numpy()
         models[target] = model
         report.append({

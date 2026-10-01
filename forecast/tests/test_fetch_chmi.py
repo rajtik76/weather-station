@@ -1,4 +1,4 @@
-"""ČHMÚ file listing, retrying download and the CSV-to-parquet build, all offline."""
+"""ČHMÚ listing, retrying download and parquet build, offline."""
 
 import urllib.request
 from pathlib import Path
@@ -46,11 +46,9 @@ def test_list_files_keeps_each_elements_own_files_under_its_directory_and_year(
 
     files = dict(list_files())
 
-    # One listing per element and year.
     assert len(requested) == len(fetch_chmi.ELEMENTS) * len(fetch_chmi.YEARS)
     url = f"{fetch_chmi.BASE}/data/10min/temperature/2018/10m-0-20000-0-11450-T-202501.csv"
     assert files[url] == fetch_chmi.RAW / "T" / "2018" / "10m-0-20000-0-11450-T-202501.csv"
-    # The humidity file listed in the temperature directory is not taken for temperature.
     assert not any("temperature" in file_url and "-H-" in file_url for file_url in files)
     assert f"{fetch_chmi.BASE}/data/10min/precipitation/2025/10m-0-20000-0-11406-SRA10M-202512.csv" in files
 
@@ -107,7 +105,6 @@ def test_build_keeps_good_readings_on_a_regular_grid_and_writes_the_station_list
     (raw / "T" / "10m-0-20000-0-11450-T-202501.csv").write_text(
         "ELEMENT,DT,VALUE,QUALITY\n"
         "T,2025-01-01T00:00:00Z,1.5,0\n"
-        # Suspect, poor and missing readings are dropped; estimated and unknown are kept.
         "T,2025-01-01T00:10:00Z,99.0,1\n"
         "T,2025-01-01T00:20:00Z,99.0,2\n"
         "T,2025-01-01T00:30:00Z,2.5,3\n"
@@ -132,7 +129,6 @@ def test_build_keeps_good_readings_on_a_regular_grid_and_writes_the_station_list
     assert (wide.index.to_series().diff().dropna() == pd.Timedelta("10min")).all()
     assert wide["T"].tolist()[0] == 1.5
     assert wide["T"].isna().tolist() == [False, True, True, False, True, False]
-    # The "#####" filler is not a number; a station without humidity gets an empty column.
     assert wide["SRA10M"].iloc[0] == pytest.approx(0.3)
     assert wide["SRA10M"].iloc[1:].isna().all()
     assert wide["H"].isna().all()

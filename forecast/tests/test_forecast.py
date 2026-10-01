@@ -1,4 +1,4 @@
-"""Turning feature rows and a model bundle into a forecast."""
+"""Feature rows and a model bundle into a forecast."""
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,6 @@ def test_forecast_is_the_current_value_plus_the_predicted_change() -> None:
 
 def test_quantiles_that_cross_are_put_back_in_order() -> None:
     current = weather_frame(5)
-    # Separately trained quantile models can disagree: low above high.
     bundle = constant_bundle([1], low=3.0, mid=1.0, high=-2.0, rain=0.1)
 
     forecast = predict(bundle, build_features(current, 13.4), current)
@@ -73,7 +72,6 @@ def test_a_fitted_bundle_gives_ordered_finite_ranges_and_probabilities(bundle: d
 def test_rain_within_the_first_hour_is_no_likelier_than_within_two() -> None:
     current = weather_frame(5)
     bundle = constant_bundle([1, 2, 3], low=-1.0, mid=0.0, high=1.0, rain=0.3)
-    # The 1 h classifier on a sunny morning: 94 % while the longer horizons say almost nothing.
     bundle["models"]["rain_1h"] = Constant(0.94)
     bundle["models"]["rain_2h"] = Constant(0.01)
 
@@ -81,9 +79,7 @@ def test_rain_within_the_first_hour_is_no_likelier_than_within_two() -> None:
 
     assert forecast["rain_1h"].tolist() == pytest.approx([0.01] * 5)
     assert forecast["rain_2h"].tolist() == pytest.approx([0.01] * 5)
-    # What the classifier said stays beside it, so a capped run can be found.
     assert forecast["rain_1h_raw"].tolist() == pytest.approx([0.94] * 5)
-    # Only the first hour is capped; the others keep what their models say.
     assert forecast["rain_3h"].tolist() == pytest.approx([0.3] * 5)
 
 

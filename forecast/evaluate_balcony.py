@@ -1,12 +1,6 @@
-"""Score the trained models on the balcony station's own record.
+"""Score the trained models on the balcony record: uv run evaluate_balcony.py
 
-    uv run evaluate_balcony.py
-
-Reads data/balcony.csv (timestamp, t, h, p exported from production) and
-takes rain from the ČHMÚ gauge at Plzeň-Mikulka, ~3.5 km away, since the
-balcony has no rain gauge: as labels, and as the stand-in for the
-microphone's rain detector in the "rain in the last hours" inputs. Every 10-minute reading is scored, against
-the same baselines as in training.
+Reads data/balcony.csv (timestamp, t, h, p); rain comes from the ČHMÚ gauge at Plzeň-Mikulka (~3.5 km).
 """
 
 import json
@@ -25,7 +19,6 @@ from forecast import QUANTILES, VARIABLES, predict
 
 DATA = Path(__file__).parent / "data"
 BALCONY_LONGITUDE = 13.40
-# The correction learns on the days before, and is scored on the days from.
 CORRECTION_SPLIT = pd.Timestamp("2026-09-19", tz="UTC")
 RECENT = "https://opendata.chmi.cz/meteorology/climate/recent/data/10min"
 MIKULKA = "0-20000-0-11450"
@@ -101,7 +94,7 @@ def main() -> None:
 
 
 def evaluate_correction(bundle: dict, balcony: pd.DataFrame, features: pd.DataFrame) -> None:
-    """Fit the station correction before CORRECTION_SPLIT, score it after."""
+    """Fit the correction before CORRECTION_SPLIT, score it after."""
     forecast = predict(bundle, features, balcony)
     before = forecast.index < CORRECTION_SPLIT
     corrections = fit(forecast[before], balcony[before], bundle["horizons"], BALCONY_LONGITUDE)

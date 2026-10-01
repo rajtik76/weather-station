@@ -1,9 +1,6 @@
-"""Download ČHMÚ 10-minute station history and pack it into one parquet per station.
+"""Download ČHMÚ 10-minute history (CC BY 4.0, opendata.chmi.cz/meteorology/climate/historical_csv/), one parquet per station.
 
-Source: https://opendata.chmi.cz/meteorology/climate/historical_csv/ (CC BY 4.0, ČHMÚ).
-Only the professional "20000" series stations are used: they are the ones that
-measure temperature, humidity, station pressure and precipitation together,
-which is what the balcony station has (plus precipitation as a training label).
+Only the "20000" series: stations measuring T, H, pressure and precipitation together.
 
     uv run fetch_chmi.py download   # raw CSVs into data/raw, resumable
     uv run fetch_chmi.py build      # data/stations/<wsi>.parquet + data/stations.csv
@@ -30,8 +27,7 @@ ELEMENTS = {
     "SRA10M": "precipitation",
 }
 
-# QUALITY codes from meta4.csv: 0 good, 3 estimated, 5 unknown are kept;
-# 1 suspect, 2 poor and 4 missing are dropped.
+# QUALITY codes (meta4.csv): keep 0 good, 3 estimated, 5 unknown; drop 1 suspect, 2 poor, 4 missing.
 GOOD_QUALITY = {0.0, 3.0, 5.0}
 
 DATA = Path(__file__).parent / "data"
@@ -54,7 +50,7 @@ def fetch(url: str, attempts: int = 4) -> bytes:
 
 
 def list_files() -> list[tuple[str, Path]]:
-    """Every (url, local path) pair for the wanted elements and years."""
+    """(url, local path) for every wanted element and year."""
     files = []
     for element, directory in ELEMENTS.items():
         for year in YEARS:
@@ -110,7 +106,7 @@ def build() -> None:
             .reindex(columns=list(ELEMENTS))
             .astype("float32")
         )
-        # A regular 10-minute grid, so shifts in the feature code mean fixed time offsets.
+        # Regular grid: feature shifts must mean fixed offsets.
         grid = pd.date_range(wide.index.min(), wide.index.max(), freq="10min", name="time")
         wide = wide.reindex(grid)
         wide.to_parquet(STATIONS / f"{wsi}.parquet")
@@ -118,7 +114,7 @@ def build() -> None:
 
     meta = pd.read_csv(DATA / "meta1.csv")
     meta = meta[meta["WSI"].isin(by_station)]
-    # The latest record per station is its current location; GEOGR1 is longitude.
+    # Latest record = current location; GEOGR1 is longitude.
     current = meta.sort_values("END_DATE").groupby("WSI").tail(1)
     current = current.rename(
         columns={"WSI": "wsi", "FULL_NAME": "name", "GEOGR1": "lon", "GEOGR2": "lat", "ELEVATION": "elevation"}

@@ -1,24 +1,8 @@
-"""Correct the ČHMÚ-trained forecast for one particular station.
+"""Station-specific correction of the base forecast, refitted from the station's own history on every run.
 
-A balcony is not a ČHMÚ screen on a lawn: morning sun, the warm wall and
-the sensor itself give it its own dynamics. The station's own history
-shows how the base models go wrong there, so the correction is refitted
-from that history on every run - nothing is stored, and it sharpens as the
-record grows.
-
-Per variable and horizon, a ridge regression predicts the base model's
-error from
-  - the solar time of the target time, in bins: recurring daily effects
-    such as the morning sun. Twenty minutes through the morning, when the
-    sun warms the shield within minutes, an hour elsewhere; two harmonics
-    smeared the morning's warming into the night and the afternoon,
-  - the error of the forecast that verified just now for the same horizon,
-    and of the latest 1-hour forecast: whatever is off today.
-Then the 10-90 % range is widened or narrowed so that it holds 80 % of the
-station's own readings (conformalized quantile regression).
-
-All frames must sit on the regular 10-minute grid (gaps as NaN rows), since
-the error inputs are fixed shifts.
+Per variable and horizon: ridge regression of the base model's error on solar-time bins and recent
+errors, then the 10-90 % range is widened/narrowed to hold 80 % of readings (conformalized).
+Frames must be on the regular 10-minute grid (gaps as NaN rows): the error inputs are fixed shifts.
 """
 
 from dataclasses import dataclass
@@ -33,11 +17,10 @@ MIN_HISTORY_ROWS = 3 * 24 * STEPS_PER_HOUR
 RIDGE_ALPHA = 10.0
 RANGE_COVERAGE = 0.8
 
-# Raised whenever the correction's logic changes, so a stored forecast says
-# which one made it: 1 fitted two daily harmonics, 2 the solar-time bins.
+# Bump when the correction logic changes; stored forecasts record it.
 CORRECTION_VERSION = 2
 
-# Solar hours of the morning bins, and the edges of every bin over the day.
+# Solar-hour bin edges: 20-minute bins in the morning (fast sun warming), hourly elsewhere.
 MORNING = (5, 12)
 SOLAR_BIN_EDGES = [
     *range(1, MORNING[0]),
@@ -45,7 +28,7 @@ SOLAR_BIN_EDGES = [
     *range(MORNING[1] + 1, 24),
 ]
 
-# Pressure has no balcony-specific dynamics; correcting it scored worse.
+# Pressure is left uncorrected (correcting it scored worse).
 CORRECTED_VARIABLES = ("T", "H")
 
 
@@ -56,20 +39,19 @@ class Correction:
 
 
 def errors(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int) -> pd.Series:
-    """Truth minus median forecast, indexed by issue time."""
+    """Truth minus median forecast, by issue time."""
     truth = current[variable].shift(-n * STEPS_PER_HOUR)
     return truth - forecast[f"{variable}_{n}h_mid"]
 
 
 def inputs(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int, longitude: float) -> pd.DataFrame:
-    """What the correction knows at issue time t."""
     target_time = forecast.index + pd.Timedelta(hours=n)
     solar = (target_time.hour + target_time.minute / 60 + longitude / 15) % 24
     bins = np.digitize(solar, SOLAR_BIN_EDGES)
     frame = pd.DataFrame(
         {
             **{f"solar_{b}": (bins == b).astype(float) for b in range(len(SOLAR_BIN_EDGES) + 1)},
-            # Issued n hours ago and verified at t, so already known at t.
+            # Issued n h ago, verified at t, so known at t.
             "error_same": errors(forecast, current, variable, n).shift(n * STEPS_PER_HOUR),
             "error_1h": errors(forecast, current, variable, 1).shift(STEPS_PER_HOUR),
         },
@@ -85,14 +67,7 @@ def fit(
     longitude: float,
     since: pd.Timestamp | None = None,
 ) -> dict:
-    """One Correction per 'T_3h'-style target; empty while the history is short,
-    and none for a target that has not a single verified row to learn from.
-
-    Only the rows from since on teach it, when given: readings from before a
-    change at the station would teach it the wrong thing. The frames still
-    reach further back, so the base forecasts and the errors fed in as inputs
-    stay as they were made.
-    """
+    """One Correction per 'T_3h'-style target; empty while history is short. Only rows from `since` teach it (station changes)."""
     learnable = forecast.index >= since if since is not None else np.full(len(forecast), True)
     if int(learnable.sum()) < MIN_HISTORY_ROWS:
         return {}
@@ -101,8 +76,7 @@ def fit(
         for variable in CORRECTED_VARIABLES:
             target = errors(forecast, current, variable, n)
             known = target.notna() & learnable
-            # Enough grid rows can still hold no verified pair at all: a sparse
-            # history is forecast without the correction, not refused.
+            # Sparse history: no verified pair at all, so skip the correction instead of failing.
             if not known.any():
                 continue
             x = inputs(forecast, current, variable, n, longitude)[known]
@@ -112,7 +86,7 @@ def fit(
             moved = shift.predict(x)
             low = forecast.loc[known, f"{variable}_{n}h_low"] + moved
             high = forecast.loc[known, f"{variable}_{n}h_high"] + moved
-            # How far the truth fell outside the range (negative: inside).
+            # Distance outside the range (negative: inside).
             outside = np.maximum(low - truth, truth - high)
             level = min(1.0, RANGE_COVERAGE * (1 + 1 / len(outside)))
             corrections[f"{variable}_{n}h"] = Correction(shift, float(np.quantile(outside, level)))
@@ -133,7 +107,7 @@ def apply(
             corrected[names[1]] = forecast[names[1]] + moved
             corrected[names[0]] = forecast[names[0]] + moved - correction.widen
             corrected[names[2]] = forecast[names[2]] + moved + correction.widen
-            # A negative widen may narrow the range, but never past the median.
+            # Narrowing must not cross the median.
             corrected[names[0]] = corrected[names[0]].clip(upper=corrected[names[1]])
             corrected[names[2]] = corrected[names[2]].clip(lower=corrected[names[1]])
     return corrected

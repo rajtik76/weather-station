@@ -9,11 +9,10 @@ dev = ["pytest>=9.1.1"]
 train = ["pyarrow>=25.0.1"]
 
 [tool.uv]
-# Training reads parquet; the service image installs without this group.
-# dev (pytest) is not a default group either: CI asks for it with --group dev.
+# train (parquet) stays out of the service image; dev (pytest) is requested with --group dev.
 default-groups = ["train"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# The service modules sit beside pyproject.toml and import each other flat.
+# Service modules sit beside pyproject.toml and import each other flat.
 pythonpath = ["."]
