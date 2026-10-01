@@ -17,6 +17,7 @@ use App\Queries\ForecastAccuracy;
  * @phpstan-import-type Rain from ForecastAccuracy
  * @phpstan-import-type Day from ForecastAccuracy
  * @phpstan-import-type Hour from ForecastAccuracy
+ * @phpstan-import-type Nwp from ForecastAccuracy
  * @phpstan-import-type Band from Forecast
  */
 final readonly class ForecastScore
@@ -34,6 +35,7 @@ final readonly class ForecastScore
             ...self::compared($scored),
             // Every hour scored, not only those with a base: the headline is no comparison.
             'shown' => self::figures($scored, 'corrected'),
+            'nwp' => self::nwp($scored),
             'rain' => self::rain($scored),
             'byHour' => self::byHour($scored),
         ];
@@ -73,7 +75,7 @@ final readonly class ForecastScore
             $date = $day->date();
 
             if (! isset($grouped[$date])) {
-                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null];
+                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null, null];
 
                 continue;
             }
@@ -93,6 +95,7 @@ final readonly class ForecastScore
                 $base['width'] ?? null,
                 $tookOver[$date]['model'] ?? null,
                 $tookOver[$date]['correction'] ?? null,
+                self::nwp($grouped[$date])['skill'] ?? null,
             ];
         }
 
@@ -192,6 +195,45 @@ final readonly class ForecastScore
             'naive' => $paired === [] ? null : round($guessMissed / count($paired), 2),
             'inRange' => self::percent(array_column($misses, 'inRange')),
             'width' => round(array_sum(array_column($misses, 'width')) / count($misses), 2),
+        ];
+    }
+
+    /**
+     * The numerical weather model against the naive guess (`skill`) and the shown forecast against it (`versus`),
+     * on the hours all three have; null before any hour has an NWP temperature.
+     *
+     * @param  list<Scored>  $scored
+     * @return Nwp|null
+     */
+    private static function nwp(array $scored): ?array
+    {
+        $shown = 0.0;
+        $nwp = 0.0;
+        $naive = 0.0;
+        $count = 0;
+
+        foreach ($scored as $one) {
+            if ($one['nwp'] === null || $one['naive'] === null) {
+                continue;
+            }
+
+            $shown += abs($one['corrected']['difference']);
+            $nwp += $one['nwp'];
+            $naive += $one['naive'];
+            $count++;
+        }
+
+        if ($count === 0) {
+            return null;
+        }
+
+        return [
+            'count' => $count,
+            'skill' => $naive > 0 ? round(100 * (1 - $nwp / $naive)) : null,
+            'versus' => $nwp > 0 ? round(100 * (1 - $shown / $nwp)) : null,
+            'error' => round($nwp / $count, 2),
+            'shownError' => round($shown / $count, 2),
+            'naive' => round($naive / $count, 2),
         ];
     }
 

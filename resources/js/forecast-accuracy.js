@@ -25,6 +25,8 @@ const DAY = {
     baseWidth: 10,
     tookOver: 11,
     correctionTo: 12,
+    // The numerical weather model's skill against the naive guess.
+    nwpSkill: 13,
 };
 
 // A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
@@ -100,6 +102,10 @@ function dayTooltipHtml(row, reference = null) {
         `${celsius.format(row[DAY.width])}${hasBase ? `, base ${celsius.format(row[DAY.baseWidth])}` : ""} °C wide`,
     );
     lines.push(forecastHours(row[DAY.count]));
+
+    if (row[DAY.nwpSkill] !== null) {
+        lines.push(`weather model ${versus(row[DAY.nwpSkill])}`);
+    }
 
     if (reference !== null) {
         lines.push(`Mikulka ${versus(reference)}`);
@@ -240,6 +246,16 @@ function daysOption(rows, canvas, reference = []) {
                 lineStyle: { color: colours.reference, width: 1.5, type: [1, 3], cap: "round" },
                 itemStyle: { color: colours.reference },
                 data: rows.map((row, index) => referenceOn(index)),
+            },
+            {
+                name: "nwp",
+                type: "line",
+                connectNulls: false,
+                symbol: "triangle",
+                symbolSize: 7,
+                lineStyle: { color: colours.text, width: 1.5 },
+                itemStyle: { color: colours.text },
+                data: rows.map((row) => row[DAY.nwpSkill]),
             },
             {
                 name: "base",

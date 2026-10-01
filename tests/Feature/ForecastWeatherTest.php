@@ -166,3 +166,67 @@ it('reports a failing service and stores nothing', function (): void {
     Exceptions::assertReported(RequestException::class);
     assertDatabaseCount(Forecast::class, 0);
 });
+
+/**
+ * @return array{hourly: array{time: list<int>, temperature_2m: list<float>}}
+ */
+function nwpAnswer(float $temperature): array
+{
+    $hour = intdiv(now()->getTimestamp(), 3600) * 3600;
+
+    return ['hourly' => [
+        'time' => [$hour, $hour + 3600, $hour + 7200, $hour + 10800],
+        'temperature_2m' => [$temperature, $temperature, $temperature, $temperature],
+    ]];
+}
+
+it('stores the weather model\'s temperature beside each horizon', function (): void {
+    freezeTime();
+    config()->set('forecast.nwp.url', 'https://nwp.test/v1/forecast');
+    $sensor = Sensor::factory()->create();
+    $recent = now()->subMinutes(10)->getTimestamp();
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    Http::fake([
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+        'https://nwp.test/*' => Http::response(nwpAnswer(14.2)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    expect(Forecast::query()->sole()->data[0])->toHaveKey('nwp', ['temperature' => 14.2]);
+});
+
+it('stores the forecast without the weather model when the model fails', function (): void {
+    freezeTime();
+    Exceptions::fake();
+    config()->set('forecast.nwp.url', 'https://nwp.test/v1/forecast');
+    $sensor = Sensor::factory()->create();
+    $recent = now()->subMinutes(10)->getTimestamp();
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    Http::fake([
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+        'https://nwp.test/*' => Http::response(['reason' => 'boom'], 500),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Exceptions::assertReported(RequestException::class);
+    expect(Forecast::query()->sole()->data)->toEqual(serviceForecast($recent)['horizons']);
+});
+
+it('asks the weather model nothing for a forecast issued from a late batch', function (): void {
+    freezeTime();
+    config()->set('forecast.nwp.url', 'https://nwp.test/v1/forecast');
+    $sensor = Sensor::factory()->create();
+    $late = now()->subMinutes(40)->getTimestamp();
+    forecastReading($sensor, $late, 1181, 8327, 97655);
+    Http::fake([
+        'http://forecast.test/forecast' => Http::response(serviceForecast($late)),
+        'https://nwp.test/*' => Http::response(nwpAnswer(14.2)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertNotSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://nwp.test'));
+    expect(Forecast::query()->sole()->data[0])->not->toHaveKey('nwp');
+});

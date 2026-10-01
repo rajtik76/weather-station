@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\Forecast;
 use App\Models\Sensor;
 use App\Queries\ForecastService;
+use App\Queries\OpenMeteoForecast;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
@@ -18,11 +19,9 @@ use Illuminate\Http\Client\RequestException;
 use InvalidArgumentException;
 
 /**
- * Asks the forecast service (forecast/serve.py) for the next six hours from the
- * sensor's recent history and stores the answer, the forecast before the
- * station correction included under each horizon's `base`. The service
- * keeps no state, so every run sends the whole window it learns the station
- * correction from.
+ * Asks the forecast service (forecast/serve.py) for the next six hours and stores the answer with the NWP temperature beside it.
+ *
+ * @phpstan-import-type Horizon from Forecast
  */
 class ForecastWeather
 {
@@ -30,6 +29,9 @@ class ForecastWeather
 
     /** Tolerated clock lead; a row stamped further ahead is a clock fault and would pin every forecast to a future issued_at. */
     private const int AHEAD_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
+    /** Older forecasts get no NWP: a model run fetched now would know more than the forecast did. */
+    private const int NWP_LAG_SECONDS = 2 * ChartWindow::STEP_SECONDS;
 
     public function __construct(public Sensor $sensor) {}
 
@@ -63,7 +65,7 @@ class ForecastWeather
                 'model' => $forecast['model'],
                 'corrected' => $forecast['corrected'],
                 'correction' => $forecast['correction'] ?? null,
-                'data' => $forecast['horizons'],
+                'data' => $this->withNwp($forecast['issued_at'], $forecast['horizons']),
             ],
         );
     }
@@ -72,6 +74,32 @@ class ForecastWeather
      * @param  list<Horizon>  $horizons
      * @return list<Horizon>
      */
+    private function withNwp(int $issuedAt, array $horizons): array
+    {
+        $nwp = OpenMeteoForecast::fromConfig();
+
+        if (! $nwp instanceof OpenMeteoForecast || $horizons === [] || now()->getTimestamp() - $issuedAt > self::NWP_LAG_SECONDS) {
+            return $horizons;
+        }
+
+        try {
+            $temperatures = $nwp->temperatures($issuedAt, array_column($horizons, 'hours'));
+        } catch (ConnectionException|RequestException $exception) {
+            // The forecast is stored without it.
+            report($exception);
+
+            return $horizons;
+        }
+
+        return array_map(
+            fn (array $horizon): array => isset($temperatures[$horizon['hours']])
+                ? [...$horizon, 'nwp' => ['temperature' => $temperatures[$horizon['hours']]]]
+                : $horizon,
+            $horizons,
+        );
+    }
+
+    /** Local midnight of history_since, from which the station correction learns; an unparsable date is reported and ignored. */
     private function correctionSince(): ?int
     {
         $since = config('forecast.history_since');

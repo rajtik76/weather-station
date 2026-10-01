@@ -19,7 +19,7 @@ use Livewire\Livewire;
  * @param  array{0: float, 1: float, 2: float}|null  $base
  * @return array<string, mixed>
  */
-function scoredHorizon(int $hours, float $low, float $mid, float $high, float $rain = 0.0, ?array $base = null): array
+function scoredHorizon(int $hours, float $low, float $mid, float $high, float $rain = 0.0, ?array $base = null, ?float $nwp = null): array
 {
     return [
         'hours' => $hours,
@@ -31,6 +31,7 @@ function scoredHorizon(int $hours, float $low, float $mid, float $high, float $r
             'temperature' => ['low' => $base[0], 'mid' => $base[1], 'high' => $base[2]],
             'humidity' => ['low' => 68.0, 'mid' => 75.0, 'high' => 82.0],
         ]]),
+        ...($nwp === null ? [] : ['nwp' => ['temperature' => $nwp]]),
     ];
 }
 
@@ -90,7 +91,7 @@ beforeEach(function (): void {
  */
 function emptyDay(string $date, ?string $tookOver = null, ?int $correction = null): array
 {
-    return [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver, $correction];
+    return [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver, $correction, null];
 }
 
 it('scores each horizon against the window that came n hours later, overall, by day and by local hour', function (): void {
@@ -113,19 +114,21 @@ it('scores each horizon against the window that came n hours later, overall, by 
     expect(new ForecastAccuracy($sensor->id)->since($issued))->toEqual([
         [
             'hours' => 1,
-            'days' => [['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null]],
+            'days' => [['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null, null]],
             'corrected' => ['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5],
             'base' => null,
             'shown' => ['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5],
+            'nwp' => null,
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
             'byHour' => byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]]),
         ],
         [
             'hours' => 2,
-            'days' => [['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null]],
+            'days' => [['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null, null]],
             'corrected' => ['count' => 1, 'skill' => 33.0, 'error' => 2.0, 'naive' => 3.0, 'inRange' => 0.0, 'width' => 1.5],
             'base' => null,
             'shown' => ['count' => 1, 'skill' => 33.0, 'error' => 2.0, 'naive' => 3.0, 'inRange' => 0.0, 'width' => 1.5],
+            'nwp' => null,
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
             'byHour' => byHour([12 => [0.0, 1, 2.0, 2.0, 2.0]]),
         ],
@@ -144,9 +147,27 @@ it('scores the base model on the same hours, beside the forecast shown', functio
         fn ($score) => $score
             ->corrected->toBe(['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5])
             ->base->toBe(['count' => 1, 'skill' => 40.0, 'error' => 0.6, 'naive' => 1.0, 'inRange' => 0.0, 'width' => 0.9])
-            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null]])
-            // The hour of day charts the forecast shown.
+            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null, null]])
             ->byHour->toBe(byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]])),
+    );
+});
+
+it('scores the weather model against the naive guess and the forecast against the model, on the hours that have it', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    measuredAt($sensor, $issued, 1200);
+    measuredAt($sensor, $issued + 600, 1200);
+    measuredAt($sensor, $issued + 3600, 1300);
+    measuredAt($sensor, $issued + 4200, 1300);
+    // Model off by 0.5 against the guess's 1 and the forecast's 0.2; the later forecast has no model and stays out.
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5, nwp: 13.5)]]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 600, 'data' => [scoredHorizon(1, 12.0, 11.0, 13.5)]]);
+
+    expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
+        fn ($score) => $score
+            ->nwp->toBe(['count' => 1, 'skill' => 50.0, 'versus' => 60.0, 'error' => 0.5, 'shownError' => 0.2, 'naive' => 1.0])
+            ->shown->count->toBe(2)
+            ->days->{0}->{13}->toBe(50.0),
     );
 });
 
@@ -168,8 +189,7 @@ it('compares the two on the hours that have a base, not the shown forecast on mo
             ->base->toMatchArray(['count' => 1, 'skill' => 40.0, 'error' => 0.6])
             // The headline is no comparison: every forecast shown, off by 2.2 against the guess's 3.
             ->shown->toMatchArray(['count' => 2, 'skill' => 27.0, 'error' => 1.1])
-            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null]])
-            // The hour of day is not a comparison: every forecast shown.
+            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null, null]])
             ->byHour->{11}->toBe([50.0, 2, 1.1, 2.0, 1.1]),
     );
 });
@@ -184,7 +204,7 @@ it('marks a model that took over before any of its forecasts came true', functio
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toBe([
-        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
+        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null, null],
         emptyDay('24.9.2026', '24.9.2026 10:40'),
     ]);
 });
@@ -201,7 +221,7 @@ it('sums the misses before it compares them, so a calm hour weighs less than a f
     }
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))
-        ->toBe([['24.9.2026', 2, 25.0, 1.5, 2.0, 50.0, 3.0, null, null, null, null, null, null]]);
+        ->toBe([['24.9.2026', 2, 25.0, 1.5, 2.0, 50.0, 3.0, null, null, null, null, null, null, null]]);
 });
 
 it('marks the day a new model took over, even when its first forecast was not scored, and leaves a day without forecasts empty', function (): void {
@@ -221,10 +241,10 @@ it('marks the day a new model took over, even when its first forecast was not sc
     Forecast::factory()->for($sensor)->create(['issued_at' => $after, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($before), '0.days'))->toBe([
-        ['21.9.2026', 1, 0.0, 1.0, 1.0, 100.0, 2.0, null, null, null, null, null, null],
+        ['21.9.2026', 1, 0.0, 1.0, 1.0, 100.0, 2.0, null, null, null, null, null, null, null],
         emptyDay('22.9.2026', '24.9.2026 10:40'),
         emptyDay('23.9.2026'),
-        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
+        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null, null],
     ]);
 });
 
@@ -244,8 +264,8 @@ it('marks the day a new version of the correction took over, and skips forecasts
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'correction' => 2, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toBe([
-        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
-        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, 2],
+        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null, null],
+        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, 2, null],
     ]);
 });
 
@@ -419,6 +439,33 @@ it('answers six hours ahead on the overview, with every horizon on the forecast 
     'beating the guess' => [0.9, '75', 'less', '100'],
     'losing to it' => [5.4, '50', 'more', '0'],
 ]);
+
+it('sets the weather model beside the verdict on the overview and the forecast page', function (): void {
+    $sensor = Sensor::factory()->create();
+    $start = Date::parse('2026-09-23 00:00:00', 'UTC')->getTimestamp();
+
+    foreach (range(0, 143 + 36) as $slot) {
+        measuredAt($sensor, $start + $slot * 600, 1000 + 10 * $slot);
+    }
+
+    // Six hours on the forecast misses by 0.9 °C, the model by 1.8.
+    foreach (range(0, 143) as $slot) {
+        $truth = 10.0 + 0.1 * ($slot + 36);
+        Forecast::factory()->for($sensor)->create([
+            'issued_at' => $start + $slot * 600,
+            'data' => [scoredHorizon(6, $truth - 1.9, $truth - 0.9, $truth + 0.1, nwp: $truth + 1.8)],
+        ]);
+    }
+
+    Livewire::test(Overview::class)->assertSeeInOrder([
+        'Naive guess, mean miss', '3,60 °C',
+        'Weather model, mean miss', '1,80 °C', 'forecast 0,90 °C on the same 144 hours, skill +50 %',
+    ]);
+
+    $this->get(route('forecast'))
+        ->assertOk()
+        ->assertSee('on the 144 forecast hours it was recorded for: forecast off by 0,90 °C, model 1,80 °C, skill +50 %');
+});
 
 it('keeps the score until the next forecast arrives', function (): void {
     $sensor = Sensor::factory()->create();

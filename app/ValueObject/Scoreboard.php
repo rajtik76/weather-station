@@ -13,7 +13,7 @@ use App\Queries\ForecastAccuracy;
  *
  * @phpstan-import-type Score from ForecastAccuracy
  *
- * @phpstan-type Row array{hours: int, count: int, skill: ?float, skillBar: float, inRange: float, inRangeBar: float, width: float, baseWidth: ?float, referenceSkill: ?float}
+ * @phpstan-type Row array{hours: int, count: int, skill: ?float, skillBar: float, inRange: float, inRangeBar: float, width: float, baseWidth: ?float, referenceSkill: ?float, nwpSkill: ?float, versusNwp: ?float}
  */
 final readonly class Scoreboard
 {
@@ -38,6 +38,8 @@ final readonly class Scoreboard
                 'width' => $base === null ? $shown['width'] : $score['corrected']['width'],
                 'baseWidth' => $base['width'] ?? null,
                 'referenceSkill' => $reference[$score['hours']] ?? null,
+                'nwpSkill' => $score['nwp']['skill'] ?? null,
+                'versusNwp' => $score['nwp']['versus'] ?? null,
             ];
         }, $scores);
     }

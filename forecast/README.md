@@ -48,7 +48,7 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 
 - Laravel sends the station's last 60 days after every upload (`App\Jobs\ForecastWeather`), with `since` from `FORECAST_HISTORY_SINCE` if set (shield went up 16 September 2026, production learns from the 17th); the answer is stored in `forecasts`
 - Page shows temperature and rain; humidity and pressure stay in the row
-- Last 30 days of forecasts are scored as shown and before the correction, on the same hours, against persistence
+- Last 30 days of forecasts are scored as shown and before the correction, on the same hours, against persistence and against a numerical weather model stored by Laravel ([`docs/scoring.md`](../docs/scoring.md#weather-model))
 
 ## Results
 

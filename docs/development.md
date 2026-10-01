@@ -61,6 +61,7 @@ PostgreSQL everywhere (same image as production); the charts average buckets in 
 | `SENSOR_HEARTBEAT_URL`   | Optional; requested after each stored batch (push monitor)                                                                                                  |
 | `FORECAST_URL`           | Optional; forecast service address, locally `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`; unset, no forecasts                             |
 | `FORECAST_HISTORY_SINCE` | Local date such as `2026-09-17`; earlier readings stay out of the station correction (base models still get 60 days); invalid value is reported and ignored |
+| `FORECAST_NWP_URL`       | Numerical weather model fetched with every forecast, default Open-Meteo `https://api.open-meteo.com/v1/forecast`; empty disables it (the tests do)          |
 
 ### Sample data
 

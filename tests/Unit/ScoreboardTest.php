@@ -16,9 +16,10 @@ function boardFigures(?float $skill, float $inRange, float $width, int $count = 
  * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}  $shown
  * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null  $corrected
  * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null  $base
- * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
+ * @param  array{count: int, skill: ?float, versus: ?float, error: float, shownError: float, naive: float}|null  $nwp
+ * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int, 13: ?float}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, nwp: array{count: int, skill: ?float, versus: ?float, error: float, shownError: float, naive: float}|null, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
  */
-function boardScore(int $hours, array $shown, ?array $corrected = null, ?array $base = null): array
+function boardScore(int $hours, array $shown, ?array $corrected = null, ?array $base = null, ?array $nwp = null): array
 {
     return [
         'hours' => $hours,
@@ -26,6 +27,7 @@ function boardScore(int $hours, array $shown, ?array $corrected = null, ?array $
         'corrected' => $corrected ?? $shown,
         'base' => $base,
         'shown' => $shown,
+        'nwp' => $nwp,
         'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
         'byHour' => [],
     ];
@@ -37,6 +39,7 @@ it('reads the skill and the share in range off the forecast shown', function ():
     expect($row)->toBe([
         'hours' => 3, 'count' => 144, 'skill' => 26.0, 'skillBar' => 26.0,
         'inRange' => 78.0, 'inRangeBar' => 78.0, 'width' => 2.7, 'baseWidth' => null, 'referenceSkill' => null,
+        'nwpSkill' => null, 'versusNwp' => null,
     ]);
 });
 
@@ -73,4 +76,15 @@ it('sets the reference station\'s skill beside the horizon it scored', function 
 
     expect($one['referenceSkill'])->toBe(12.0)
         ->and($two['referenceSkill'])->toBeNull();
+});
+
+it('sets the weather model\'s skill and the forecast\'s skill against it beside the horizon', function (): void {
+    [$row] = Scoreboard::of([boardScore(
+        6,
+        boardFigures(38.0, 77.0, 3.9),
+        nwp: ['count' => 10, 'skill' => 55.0, 'versus' => -20.0, 'error' => 1.2, 'shownError' => 1.44, 'naive' => 2.7],
+    )]);
+
+    expect($row['nwpSkill'])->toBe(55.0)
+        ->and($row['versusNwp'])->toBe(-20.0);
 });

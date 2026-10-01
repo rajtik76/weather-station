@@ -5,9 +5,7 @@ declare(strict_types=1);
 use App\ValueObject\Verdict;
 
 /**
- * A scored horizon, with the forecast as shown the only figures that matter to the verdict.
- *
- * @return array{hours: int, days: list<array{string, int, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, string|null, int|null}>, corrected: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, base: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}|null, shown: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: float|null, chanceWhenDry: float|null}, byHour: list<array{float|null, int, float|null, float|null, float|null}>}
+ * @return array{hours: int, days: list<array{string, int, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, string|null, int|null, float|null}>, corrected: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, base: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}|null, shown: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, nwp: array{count: int, skill: ?float, versus: ?float, error: float, shownError: float, naive: float}|null, rain: array{count: int, cases: int, chanceWhenRain: float|null, chanceWhenDry: float|null}, byHour: list<array{float|null, int, float|null, float|null, float|null}>}
  */
 function verdictScore(int $hours, ?float $skill, int $count = 200): array
 {
@@ -19,6 +17,7 @@ function verdictScore(int $hours, ?float $skill, int $count = 200): array
         'corrected' => $figures,
         'base' => null,
         'shown' => $figures,
+        'nwp' => null,
         'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
         'byHour' => [],
     ];
@@ -60,4 +59,11 @@ it('is ready from a day of forecasts on', function (int $count, bool $ready): vo
 
 it('is not ready without a skill, however many forecasts were scored', function (): void {
     expect(Verdict::of([verdictScore(6, null, 500)]))->toHaveKey('ready', false);
+});
+
+it('carries the weather model\'s figures for the headline horizon', function (): void {
+    $nwp = ['count' => 150, 'skill' => 55.0, 'versus' => -10.0, 'error' => 0.9, 'shownError' => 0.99, 'naive' => 2.0];
+    $headline = [...verdictScore(6, 40.0), 'nwp' => $nwp];
+
+    expect(Verdict::of([verdictScore(1, 10.0), $headline]))->toHaveKey('nwp', $nwp);
 });

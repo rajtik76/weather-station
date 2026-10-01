@@ -26,4 +26,11 @@ return [
         // One JSON file per station and UTC day; about a month back.
         'url' => 'https://opendata.chmi.cz/meteorology/climate/recent/data/10min',
     ],
+
+    // Numerical weather model fetched with every forecast as the second baseline. Empty URL: none.
+    'nwp' => [
+        'url' => env('FORECAST_NWP_URL', 'https://api.open-meteo.com/v1/forecast'),
+        // DWD ICON: D2 (2 km) for the first two days, then EU and global.
+        'model' => 'icon_seamless',
+    ],
 ];

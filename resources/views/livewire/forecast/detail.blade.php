@@ -4,12 +4,16 @@
     @php($rain = $score['rain'])
     @php($referenceDays = $this->referenceSkillByDay)
     @php($hasReference = array_filter($referenceDays, fn (?float $skill): bool => $skill !== null) !== [])
+    @php($hasNwp = $score['nwp'] !== null)
     @php($base = '<svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ref)" stroke-width="2" stroke-dasharray="3 3" /></svg>')
     <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="detail-h">
         <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
             <div class="max-w-[60ch]">
                 <h2 id="detail-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Day by day</h2>
                 <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">One horizon at a time. "Shown" is the forecast on the page, "base" the model before this station's correction; the gap between them is what the correction has learnt.</p>
+                @if ($hasNwp)
+                    <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">"Weather model" is DWD ICON via Open-Meteo, fetched when each forecast was made and scored against the same naive guess.</p>
+                @endif
                 @if ($hasReference)
                     <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">"Mikulka" is the same model run every night on the day before at the ČHMÚ station Plzeň-Mikulka, 3,5 km away. When both lines drop, the weather was hard to forecast; when only the balcony's does, it was the balcony.</p>
                 @endif
@@ -32,6 +36,9 @@
                     <p class="m-0 flex items-center gap-4 font-mono text-[13px] text-ink-3">
                         <span class="flex items-center gap-2"><span class="swatch bg-ch1"></span>shown</span>
                         <span class="flex items-center gap-2">{!! $base !!}base</span>
+                        @if ($hasNwp)
+                            <span class="flex items-center gap-2"><svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ink)" stroke-width="2" /></svg>weather model</span>
+                        @endif
                         @if ($hasReference)
                             <span class="flex items-center gap-2"><svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ink-2)" stroke-width="2" stroke-dasharray="1 3" stroke-linecap="round" /></svg>Mikulka</span>
                         @endif

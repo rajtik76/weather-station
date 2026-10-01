@@ -16,12 +16,8 @@ use Illuminate\Support\Facades\Cache;
  */
 final readonly class CachedForecastAccuracy
 {
-    /**
-     * Stored with the scores: bump it when Score changes shape, so a deploy
-     * never reads the old one. In the value, not the key - a key per shape
-     * would leave the old row behind for good.
-     */
-    private const int SHAPE = 7;
+    /** Bump when Score changes shape so a deploy never reads the old one. */
+    private const int SHAPE = 8;
 
     private const int TTL_MINUTES = 15;
 

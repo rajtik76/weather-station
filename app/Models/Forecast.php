@@ -11,18 +11,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One run of the forecast service, issued from a station's latest reading.
- * Values are in °C, % and hPa as the service returns them; T, H and P come
- * as a 10-90 % range around the median. `base` is the same forecast before
- * the station correction, for the two variables it corrects; a forecast
- * stored before the service returned it has none until
- * `forecast:backfill-base` fills it in. Its `rain_probability` is the rain
- * classifier's own answer before the service capped the first hour by the
- * second (forecast/forecast.py nest_rain()); forecasts from before v4.0.6
- * have none and stored that answer as the chance itself.
+ * One forecast service run; T, H and P are 10-90 % ranges around the median (°C, %, hPa).
+ * `base` is the forecast before station correction, absent until
+ * `forecast:backfill-base`. Its `rain_probability` is the classifier's answer
+ * before nest_rain() capping (forecast/forecast.py); forecasts before v4.0.6 have none.
+ * `nwp` is the numerical weather model's temperature (°C) for the same window, fetched at issue time.
  *
  * @phpstan-type Band array{low: float, mid: float, high: float}
- * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}}
+ * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}, nwp?: array{temperature: float}}
  *
  * @property int $sensor_id
  * @property int $issued_at

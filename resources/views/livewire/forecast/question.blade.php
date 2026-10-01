@@ -3,7 +3,7 @@
     <div class="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-end lg:gap-16">
         <div class="max-w-[60ch]">
             <h1 id="question-h" class="m-0 font-display text-[30px] leading-[1.15] font-semibold tracking-[-0.015em] sm:text-[38px]">Can it beat “nothing changes”?</h1>
-            <p class="m-0 mt-4 text-[18px] leading-[1.65] text-ink-2">A model trained on professional ČHMÚ stations forecasts the next six hours from this station's own readings. Each forecast is then scored against the naive guess that the temperature stays where it is.</p>
+            <p class="m-0 mt-4 text-[18px] leading-[1.65] text-ink-2">A model trained on professional ČHMÚ stations forecasts the next six hours from this station's own readings. Each forecast is then scored against the naive guess that the temperature stays where it is, and against a numerical weather model.</p>
         </div>
         @if ($verdict === null || ! $verdict['ready'])
             <p class="m-0 rounded-[10px] border border-line bg-screen p-5 text-[16px] text-ink-2">Too early to tell. The verdict needs a day of forecasts that have come true.</p>
@@ -26,6 +26,10 @@
             </dl>
         @endif
     </div>
+    @if ($verdict !== null && $verdict['ready'] && $verdict['nwp'] !== null)
+        @php($nwp = $verdict['nwp'])
+        <p class="m-0 mt-3 text-[16px] text-ink-2">Against the weather model (DWD ICON via Open-Meteo), on the {{ $nwp['count'] }} forecast hours it was recorded for: forecast off by {{ \App\ValueObject\Figure::format($nwp['shownError'], 2) }} °C, model {{ \App\ValueObject\Figure::format($nwp['error'], 2) }} °C, skill {{ $nwp['versus'] === null ? 'n/a' : \App\ValueObject\Figure::signed($nwp['versus'], 0).' %' }}.</p>
+    @endif
     @if ($verdict !== null && $verdict['ready'])
         <p class="m-0 mt-3 text-right font-mono text-[13px] text-ink-3">{{ $verdict['hours'] }} h ahead · last {{ $this::ACCURACY_DAYS }} days</p>
     @endif

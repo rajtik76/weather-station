@@ -6,7 +6,7 @@ use App\ValueObject\ReferenceSkill;
 
 /**
  * @param  list<array{0: string, 1: ?float}>  $days
- * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
+ * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int, 13: ?float}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, nwp: array{count: int, skill: ?float, versus: ?float, error: float, shownError: float, naive: float}|null, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
  */
 function referenceScore(int $hours, ?float $skill, array $days = []): array
 {
@@ -14,10 +14,11 @@ function referenceScore(int $hours, ?float $skill, array $days = []): array
 
     return [
         'hours' => $hours,
-        'days' => array_map(fn (array $day): array => [$day[0], 10, $day[1], 1.0, 2.0, 80.0, 2.0, null, null, null, null, null, null], $days),
+        'days' => array_map(fn (array $day): array => [$day[0], 10, $day[1], 1.0, 2.0, 80.0, 2.0, null, null, null, null, null, null, null], $days),
         'corrected' => $figures,
         'base' => null,
         'shown' => $figures,
+        'nwp' => null,
         'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
         'byHour' => [],
     ];
