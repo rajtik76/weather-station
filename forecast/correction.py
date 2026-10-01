@@ -1,4 +1,4 @@
-"""Station-specific correction of the base forecast, refitted from the station's own history on every run.
+"""Station-specific correction of the base forecast, fitted from the station's own history and returned as plain numbers.
 
 Per variable and horizon: ridge regression of the base model's error on solar-time bins and recent
 errors, then the 10-90 % range is widened/narrowed to hold 80 % of readings (conformalized).
@@ -18,7 +18,7 @@ RIDGE_ALPHA = 10.0
 RANGE_COVERAGE = 0.8
 
 # Bump when the correction logic changes; stored forecasts record it.
-CORRECTION_VERSION = 2
+CORRECTION_VERSION = 3
 
 # Solar-hour bin edges: 20-minute bins in the morning (fast sun warming), hourly elsewhere.
 MORNING = (5, 12)
@@ -31,11 +31,18 @@ SOLAR_BIN_EDGES = [
 # Pressure is left uncorrected (correcting it scored worse).
 CORRECTED_VARIABLES = ("T", "H")
 
+SOLAR_INPUTS = tuple(f"solar_{b}" for b in range(len(SOLAR_BIN_EDGES) + 1))
+INPUTS = (*SOLAR_INPUTS, "error_same", "error_1h")
+
 
 @dataclass
 class Correction:
-    shift: Ridge
+    intercept: float
+    coefficients: dict[str, float]
     widen: float
+
+    def shift(self, x: pd.DataFrame) -> np.ndarray:
+        return x[list(self.coefficients)].to_numpy() @ np.array(list(self.coefficients.values())) + self.intercept
 
 
 def errors(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int) -> pd.Series:
@@ -50,7 +57,7 @@ def inputs(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int,
     bins = np.digitize(solar, SOLAR_BIN_EDGES)
     frame = pd.DataFrame(
         {
-            **{f"solar_{b}": (bins == b).astype(float) for b in range(len(SOLAR_BIN_EDGES) + 1)},
+            **{name: (bins == b).astype(float) for b, name in enumerate(SOLAR_INPUTS)},
             # Issued n h ago, verified at t, so known at t.
             "error_same": errors(forecast, current, variable, n).shift(n * STEPS_PER_HOUR),
             "error_1h": errors(forecast, current, variable, 1).shift(STEPS_PER_HOUR),
@@ -80,16 +87,20 @@ def fit(
             if not known.any():
                 continue
             x = inputs(forecast, current, variable, n, longitude)[known]
-            shift = Ridge(alpha=RIDGE_ALPHA).fit(x, target[known])
+            ridge = Ridge(alpha=RIDGE_ALPHA).fit(x, target[known])
 
             truth = current[variable].shift(-n * STEPS_PER_HOUR)[known]
-            moved = shift.predict(x)
+            moved = ridge.predict(x)
             low = forecast.loc[known, f"{variable}_{n}h_low"] + moved
             high = forecast.loc[known, f"{variable}_{n}h_high"] + moved
             # Distance outside the range (negative: inside).
             outside = np.maximum(low - truth, truth - high)
             level = min(1.0, RANGE_COVERAGE * (1 + 1 / len(outside)))
-            corrections[f"{variable}_{n}h"] = Correction(shift, float(np.quantile(outside, level)))
+            corrections[f"{variable}_{n}h"] = Correction(
+                intercept=float(ridge.intercept_),
+                coefficients={name: float(value) for name, value in zip(x.columns, ridge.coef_, strict=True)},
+                widen=float(np.quantile(outside, level)),
+            )
     return corrections
 
 
@@ -102,7 +113,7 @@ def apply(
             correction = corrections.get(f"{variable}_{n}h")
             if correction is None:
                 continue
-            moved = correction.shift.predict(inputs(forecast, current, variable, n, longitude))
+            moved = correction.shift(inputs(forecast, current, variable, n, longitude))
             names = [f"{variable}_{n}h_{name}" for name in ("low", "mid", "high")]
             corrected[names[1]] = forecast[names[1]] + moved
             corrected[names[0]] = forecast[names[0]] + moved - correction.widen

@@ -5,6 +5,14 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Correction 3 - 2026-10-01
+
+Model 2026-09-24T08:40:43Z · Server v4.4.0
+
+- Same regression and bins as correction 2, fitted once a day by `POST /correction` instead of on every forecast; Laravel caches the coefficients and sends them with each forecast
+- Forecasts once an hour from the last 56 hours instead of every ten minutes from 60 days
+- Up to a day behind the newest verified misses; the `error_same` and `error_1h` inputs are still read at issue time
+
 ## Correction 2 - 2026-09-26
 
 Model 2026-09-24T08:40:43Z · Server v3.10.0

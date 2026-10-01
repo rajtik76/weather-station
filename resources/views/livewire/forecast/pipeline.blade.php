@@ -5,7 +5,7 @@
         @foreach ([
             ['ČHMÚ data', '10-minute records from 32 professional stations below 700 m, 2018-2024. About 1,7 million hourly examples.'],
             ['Training', 'Gradient boosting per horizon, 1 to 6 h. Quantiles at 10, 50 and 90 % give a range meant to hold 8 readings in 10. Rain is a classifier: the chance of at least 0,1 mm.'],
-            ['Station correction', 'A ridge regression learns this balcony\'s own error by solar time and from recent verified misses, refitted every run. It widens or narrows the range until it holds 80 % of the readings.'],
+            ['Station correction', 'A ridge regression learns this balcony\'s own error by solar time and from recent verified misses, refitted once a day. It widens or narrows the range until it holds 80 % of the readings.'],
             ['Score', 'Once its hour has passed, every forecast is compared with the reading and with the naive guess. "Base" is the model alone, "shown" is after the correction.'],
         ] as [$step, $text])
             <li class="relative border-l border-line-2 pl-5 lg:border-l-0 lg:pt-6 lg:pl-0">

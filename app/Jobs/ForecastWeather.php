@@ -9,26 +9,22 @@ use App\Models\Sensor;
 use App\Queries\ForecastService;
 use App\Queries\OpenMeteoForecast;
 use App\Queries\ServiceReadings;
+use App\Queries\StationCorrection;
 use App\ValueObject\ChartWindow;
-use App\ValueObject\LocalTime;
-use DateTimeImmutable;
-use DateTimeZone;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
-use InvalidArgumentException;
 
 /**
- * Asks the forecast service (forecast/serve.py) for the next six hours and stores the answer with the NWP temperature beside it.
+ * Once an hour, asks the forecast service (forecast/serve.py) for the next six hours with the station correction and stores the answer with the NWP temperature beside it.
  *
  * @phpstan-import-type Horizon from Forecast
+ * @phpstan-import-type Issued from ForecastService
+ * @phpstan-import-type Fitted from ForecastService
  */
 class ForecastWeather
 {
     use Dispatchable;
-
-    /** Tolerated clock lead; a row stamped further ahead is a clock fault and would pin every forecast to a future issued_at. */
-    private const int AHEAD_SECONDS = 3 * ChartWindow::STEP_SECONDS;
 
     /** Older forecasts get no NWP: a model run fetched now would know more than the forecast did. */
     private const int NWP_LAG_SECONDS = 2 * ChartWindow::STEP_SECONDS;
@@ -37,23 +33,18 @@ class ForecastWeather
 
     public function handle(): void
     {
-        $readings = new ServiceReadings($this->sensor->id)->between(
-            now()->subDays((int) config('forecast.history_days'))->getTimestamp(),
-            now()->getTimestamp() + self::AHEAD_SECONDS,
-        );
+        $readings = new ServiceReadings($this->sensor->id)->recent((int) config('forecast.lookback_hours') * 3600);
 
-        if ($readings === []) {
+        if ($readings === [] || $this->isIssuedInHourOf($readings[array_key_last($readings)]['timestamp'])) {
             return;
         }
 
+        $service = ForecastService::fromConfig();
+
         try {
-            $forecast = ForecastService::fromConfig()->forecast(array_filter([
-                'longitude' => config('forecast.longitude'),
-                'readings' => $readings,
-                'since' => $this->correctionSince(),
-            ], fn (mixed $value): bool => $value !== null));
+            $forecast = $this->issue($service, $readings, new StationCorrection($this->sensor->id, $service));
         } catch (ConnectionException|RequestException $exception) {
-            // A missed forecast is replaced ten minutes later; the upload must not fail.
+            // The next upload in the hour retries; the upload must not fail.
             report($exception);
 
             return;
@@ -68,6 +59,50 @@ class ForecastWeather
                 'data' => $this->withNwp($forecast['issued_at'], $forecast['horizons']),
             ],
         );
+    }
+
+    private function isIssuedInHourOf(int $timestamp): bool
+    {
+        return Forecast::query()
+            ->where('sensor_id', $this->sensor->id)
+            ->where('issued_at', '>=', intdiv($timestamp, Forecast::INTERVAL_SECONDS) * Forecast::INTERVAL_SECONDS)
+            ->exists();
+    }
+
+    /**
+     * A correction fitted for another model or correction version is refitted once.
+     *
+     * @param  list<array{timestamp: int, temperature: float, humidity: float, pressure: float}>  $readings
+     * @return Issued
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    private function issue(ForecastService $service, array $readings, StationCorrection $correction): array
+    {
+        try {
+            return $this->forecast($service, $readings, $correction->current());
+        } catch (RequestException $exception) {
+            if (! $exception->response->conflict()) {
+                throw $exception;
+            }
+
+            return $this->forecast($service, $readings, $correction->refit());
+        }
+    }
+
+    /**
+     * @param  list<array{timestamp: int, temperature: float, humidity: float, pressure: float}>  $readings
+     * @param  Fitted  $correction
+     * @return Issued
+     */
+    private function forecast(ForecastService $service, array $readings, array $correction): array
+    {
+        return $service->forecast([
+            'longitude' => config('forecast.longitude'),
+            'readings' => $readings,
+            'correction' => $correction,
+        ]);
     }
 
     /**
@@ -97,26 +132,5 @@ class ForecastWeather
                 : $horizon,
             $horizons,
         );
-    }
-
-    /** Local midnight of history_since, from which the station correction learns; an unparsable date is reported and ignored. */
-    private function correctionSince(): ?int
-    {
-        $since = config('forecast.history_since');
-
-        if (! is_string($since) || $since === '') {
-            return null;
-        }
-
-        $midnight = DateTimeImmutable::createFromFormat('!Y-m-d', $since, new DateTimeZone(LocalTime::TIMEZONE));
-
-        // createFromFormat() rolls 2026-17-09 over into 2027; require a round trip.
-        if ($midnight === false || $midnight->format('Y-m-d') !== $since) {
-            report(new InvalidArgumentException("FORECAST_HISTORY_SINCE is not a Y-m-d date: {$since}"));
-
-            return null;
-        }
-
-        return $midnight->getTimestamp();
     }
 }

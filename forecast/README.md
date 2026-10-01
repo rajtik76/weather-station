@@ -33,7 +33,7 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 
 ### Station correction
 
-`correction.py`, refitted on every run, nothing stored.
+`correction.py`; `POST /correction` fits it, Laravel caches the answer for a day and sends it back with every forecast.
 
 - The service forecasts the station's recent history and compares it with what was measured
 - Per variable and horizon, a ridge regression of the error on solar time and on the errors just verified
@@ -46,7 +46,8 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 
 `serve.py`: stateless, no database.
 
-- Laravel sends the station's last 60 days after every upload (`App\Jobs\ForecastWeather`), with `since` from `FORECAST_HISTORY_SINCE` if set (shield went up 16 September 2026, production learns from the 17th); the answer is stored in `forecasts`
+- Once an hour, from the first upload of the hour (`App\Jobs\ForecastWeather`), Laravel sends the last 56 hours and the cached correction; the answer is stored in `forecasts`
+- Once a day Laravel sends the last 60 days to `POST /correction`, with `since` from `FORECAST_HISTORY_SINCE` if set (shield went up 16 September 2026, production learns from the 17th); a `409` for a stale correction refits it at once
 - Page shows temperature and rain; humidity and pressure stay in the row
 - Last 30 days of forecasts are scored as shown and before the correction, on the same hours, against persistence and against a numerical weather model stored by Laravel ([`docs/scoring.md`](../docs/scoring.md#weather-model))
 
@@ -107,19 +108,38 @@ uv run serve.py                 # the service on :8000
 ### The service's contract
 
 ```
-POST /forecast
+POST /correction
 {"longitude": 13.40, "since": 1789596000,
  "readings": [{"timestamp": 1790000000, "temperature": 9.7,
                "humidity": 76.0, "pressure": 976.6, "rain": null}, ...]}
 ```
 
-- Up to 60 days of readings: °C, %, station pressure in hPa, rain in mm per ten minutes (null or absent without a source)
-- `since` optional: the station correction learns only from readings from then on; base models still read all (they need 48 h behind every forecast, as do the errors the correction takes as inputs)
-- Malformed requests get 422 with the reason
+- Up to a year of readings: °C, %, station pressure in hPa, rain in mm per ten minutes (null or absent without a source)
+- `since` optional: the correction learns only from readings from then on; base models still read all (they need 48 h behind every forecast, as do the errors the correction takes as inputs)
+
+```
+{"model": "2026-09-24T08:40:43.136429+00:00", "correction": 3,
+ "targets": {"T_1h": {"intercept": 0.41,
+                      "coefficients": {"solar_0": -0.12, ..., "error_same": 0.3, "error_1h": 0.25},
+                      "widen": 0.08}, ...}}
+```
+
+- One target per corrected variable and horizon; fewer, or none, while the history is short (3 days) or never verified
+- Plain numbers: the ridge regression's intercept and weights by input name, and how far the range is widened (negative: narrowed)
+
+```
+POST /forecast
+{"longitude": 13.40, "correction": {...},
+ "readings": [{"timestamp": 1790000000, ...}, ...]}
+```
+
+- Readings as above; 54 h before the latest suffice (48 h behind the forecast issued 6 h earlier, whose verified error the correction reads), Laravel sends 56
+- `correction` optional: the `POST /correction` answer as received; without it the forecast is the base models'
+- A correction fitted for another model or correction version gets 409; malformed requests get 422 with the reason
 
 ```
 {"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00",
- "corrected": true, "correction": 2,
+ "corrected": true, "correction": 3,
  "horizons": [{"hours": 1,
                "temperature": {"low": 12.4, "mid": 13.84, "high": 15.56},
                "humidity": {...}, "pressure": {...},
@@ -130,11 +150,11 @@ POST /forecast
 
 - `issued_at`: the latest reading's ten-minute window
 - `model`: the bundle's `trained_at`
-- `corrected`: whether there was enough history (3 days) for the station correction
+- `corrected`: whether the correction sent covered every corrected target
 - `correction`: version of the correction logic (`CORRECTION_VERSION` in `correction.py`, raised with every change, logged in the changelog)
 - `base`: forecast before the correction, for the two corrected variables; pressure is not corrected, so its forecast is the one above
 - `base.rain_probability`: the classifier's value before `nest_rain()` capped the first hour; a capped run shows as `data->0->'base'->>'rain_probability'` above `data->0->>'rain_probability'`
-- `GET /health` answers `{"status": "ok", "model": ..., "correction": 2}`
+- `GET /health` answers `{"status": "ok", "model": ..., "correction": 3}`
 
 ```
 POST /base

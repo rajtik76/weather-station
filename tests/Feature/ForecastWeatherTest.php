@@ -53,21 +53,53 @@ function forecastReading(Sensor $sensor, int $timestamp, int $temperature, int $
     ]);
 }
 
-it('sends the last sixty days of the sensor in service units and stores the forecast, its base included', function (): void {
+/**
+ * @return array<string, mixed>
+ */
+function fittedCorrection(string $model = '2026-09-24T08:40:43.136429+00:00'): array
+{
+    return [
+        'model' => $model,
+        'correction' => 3,
+        'targets' => ['T_1h' => ['intercept' => 0.4, 'coefficients' => ['error_1h' => 0.25], 'widen' => 0.1]],
+    ];
+}
+
+it('fits the correction on the last sixty days and forecasts from the last 56 hours with it, base included', function (): void {
     freezeTime();
     $sensor = Sensor::factory()->create();
     $recent = now()->subMinutes(10)->getTimestamp();
+    $twoDaysAgo = now()->subHours(55)->getTimestamp();
     forecastReading($sensor, now()->subDays(61)->getTimestamp(), 500, 5000, 98000);
+    forecastReading($sensor, now()->subDays(59)->getTimestamp(), 512, 5034, 98012);
+    forecastReading($sensor, $twoDaysAgo, 1050, 8012, 97634);
     forecastReading($sensor, $recent, 1181, 8327, 97655);
     forecastReading(Sensor::factory()->create(), $recent, 2000, 4000, 99000);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($recent))]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    Http::assertSent(fn (Request $request): bool => $request->data() === [
-        'longitude' => StationSite::LONGITUDE,
-        'readings' => [['timestamp' => $recent, 'temperature' => 11.81, 'humidity' => 83.27, 'pressure' => 976.55]],
-    ]);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/correction'
+        && $request->data() === [
+            'longitude' => StationSite::LONGITUDE,
+            'readings' => [
+                ['timestamp' => now()->subDays(59)->getTimestamp(), 'temperature' => 5.12, 'humidity' => 50.34, 'pressure' => 980.12],
+                ['timestamp' => $twoDaysAgo, 'temperature' => 10.5, 'humidity' => 80.12, 'pressure' => 976.34],
+                ['timestamp' => $recent, 'temperature' => 11.81, 'humidity' => 83.27, 'pressure' => 976.55],
+            ],
+        ]);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/forecast'
+        && $request->data() === [
+            'longitude' => StationSite::LONGITUDE,
+            'readings' => [
+                ['timestamp' => $twoDaysAgo, 'temperature' => 10.5, 'humidity' => 80.12, 'pressure' => 976.34],
+                ['timestamp' => $recent, 'temperature' => 11.81, 'humidity' => 83.27, 'pressure' => 976.55],
+            ],
+            'correction' => fittedCorrection(),
+        ]);
     $forecast = Forecast::query()->sole();
     expect($forecast->sensor_id)->toBe($sensor->id)
         ->and($forecast->issued_at)->toBe($recent)
@@ -78,21 +110,22 @@ it('sends the last sixty days of the sensor in service units and stores the fore
         ->and($forecast->data)->toEqual(serviceForecast($recent)['horizons']);
 });
 
-it('sends the whole sixty days and the local midnight of FORECAST_HISTORY_SINCE for the correction to learn from', function (): void {
+it('fits the correction from the local midnight of FORECAST_HISTORY_SINCE', function (): void {
     $this->travelTo(Date::parse('2026-09-26 12:00:00', 'UTC'));
     config()->set('forecast.history_since', '2026-09-17');
     $sensor = Sensor::factory()->create();
-    // 16.9. 23:50 in Prague: before the cut, but the base models still read it.
-    $before = Date::parse('2026-09-16 21:50:00', 'UTC')->getTimestamp();
     $recent = now()->subMinutes(10)->getTimestamp();
-    forecastReading($sensor, $before, 1181, 8327, 97655);
     forecastReading($sensor, $recent, 1181, 8327, 97655);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($recent))]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    Http::assertSent(fn (Request $request): bool => array_column($request['readings'], 'timestamp') === [$before, $recent]
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/correction'
         && $request['since'] === Date::parse('2026-09-16 22:00:00', 'UTC')->getTimestamp());
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/forecast' && ! isset($request['since']));
 });
 
 it('sends a reading stamped a little ahead of the server but not one stamped hours ahead', function (): void {
@@ -103,50 +136,102 @@ it('sends a reading stamped a little ahead of the server but not one stamped hou
     forecastReading($sensor, $recent, 1181, 8327, 97655);
     forecastReading($sensor, $ahead, 1181, 8327, 97655);
     forecastReading($sensor, now()->addHours(2)->getTimestamp(), 1181, 8327, 97655);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($ahead))]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($ahead)),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    Http::assertSent(fn (Request $request): bool => array_column($request['readings'], 'timestamp') === [$recent, $ahead]);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/correction'
+        && array_column($request['readings'], 'timestamp') === [$recent, $ahead]);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/forecast'
+        && array_column($request['readings'], 'timestamp') === [$recent, $ahead]);
 });
 
-it('reports a FORECAST_HISTORY_SINCE that is not a date and forecasts without it', function (string $since): void {
+it('reports a FORECAST_HISTORY_SINCE that is not a date and fits the correction without it', function (string $since): void {
     freezeTime();
     Exceptions::fake();
     config()->set('forecast.history_since', $since);
     $sensor = Sensor::factory()->create();
     $recent = now()->subMinutes(10)->getTimestamp();
     forecastReading($sensor, $recent, 1181, 8327, 97655);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($recent))]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
     Exceptions::assertReported(InvalidArgumentException::class);
-    Http::assertSent(fn (Request $request): bool => ! isset($request['since']));
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/correction' && ! isset($request['since']));
     expect(Forecast::query()->count())->toBe(1);
 })->with([
     'day and month swapped' => '2026-17-09',
     'not a date at all' => 'shield',
 ]);
 
-it('replaces the forecast issued from the same reading', function (): void {
+it('issues one forecast an hour, from the first reading of the hour', function (string $issuedBefore, int $expected): void {
+    $this->travelTo(Date::parse('2026-10-01 10:25:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $recent = Date::parse('2026-10-01 10:20:00', 'UTC')->getTimestamp();
+    forecastReading($sensor, $recent, 1181, 8327, 97655);
+    Forecast::factory()->for($sensor)->create(['issued_at' => Date::parse($issuedBefore, 'UTC')->getTimestamp()]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    expect(Forecast::query()->count())->toBe($expected);
+})->with([
+    'already issued this hour' => ['2026-10-01 10:00:00', 1],
+    'last issued the hour before' => ['2026-10-01 09:50:00', 2],
+]);
+
+it('fits the correction once a day', function (): void {
+    $sensor = Sensor::factory()->create();
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
+        'http://forecast.test/forecast' => fn (Request $request) => Http::response(serviceForecast(intdiv(now()->getTimestamp(), 600) * 600)),
+    ]);
+
+    foreach (['2026-10-01 10:05:00', '2026-10-01 11:05:00', '2026-10-02 10:05:00'] as $at) {
+        $this->travelTo(Date::parse($at, 'UTC'));
+        forecastReading($sensor, now()->getTimestamp(), 1181, 8327, 97655);
+        dispatch_sync(new ForecastWeather($sensor));
+    }
+
+    Http::assertSentCount(5);
+    expect(collect(Http::recorded())->filter(fn (array $pair): bool => $pair[0]->url() === 'http://forecast.test/correction'))->toHaveCount(2)
+        ->and(Forecast::query()->count())->toBe(3);
+});
+
+it('refits a correction the service calls stale and forecasts with the new one', function (): void {
     freezeTime();
     $sensor = Sensor::factory()->create();
     $recent = now()->subMinutes(10)->getTimestamp();
     forecastReading($sensor, $recent, 1181, 8327, 97655);
-    Forecast::factory()->for($sensor)->create(['issued_at' => $recent]);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast($recent))]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::sequence()
+            ->push(fittedCorrection('2026-01-01T00:00:00+00:00'))
+            ->push(fittedCorrection()),
+        'http://forecast.test/forecast' => fn (Request $request) => $request['correction']['model'] === '2026-01-01T00:00:00+00:00'
+            ? Http::response(['error' => 'correction was fitted for another model or correction version'], 409)
+            : Http::response(serviceForecast($recent)),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(serviceForecast($recent)['horizons']);
+    expect(Forecast::query()->sole()->issued_at)->toBe($recent);
 });
 
-it('asks nothing when the sensor has no recent readings', function (): void {
+it('asks nothing when the sensor has no reading in the last 56 hours', function (): void {
     freezeTime();
     $sensor = Sensor::factory()->create();
-    forecastReading($sensor, now()->subDays(61)->getTimestamp(), 1181, 8327, 97655);
-    Http::fake(['http://forecast.test/forecast' => Http::response(serviceForecast(0))]);
+    forecastReading($sensor, now()->subHours(57)->getTimestamp(), 1181, 8327, 97655);
+    Http::fake();
 
     dispatch_sync(new ForecastWeather($sensor));
 
@@ -154,18 +239,21 @@ it('asks nothing when the sensor has no recent readings', function (): void {
     assertDatabaseCount(Forecast::class, 0);
 });
 
-it('reports a failing service and stores nothing', function (): void {
+it('reports a failing service and stores nothing', function (string $failing): void {
     freezeTime();
     Exceptions::fake();
     $sensor = Sensor::factory()->create();
     forecastReading($sensor, now()->subMinutes(10)->getTimestamp(), 1181, 8327, 97655);
-    Http::fake(['http://forecast.test/forecast' => Http::response(['error' => 'boom'], 500)]);
+    Http::fake([
+        "http://forecast.test/{$failing}" => Http::response(['error' => 'boom'], 500),
+        'http://forecast.test/*' => Http::response(fittedCorrection()),
+    ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
     Exceptions::assertReported(RequestException::class);
     assertDatabaseCount(Forecast::class, 0);
-});
+})->with(['correction', 'forecast']);
 
 /**
  * @return array{hourly: array{time: list<int>, temperature_2m: list<float>}}
@@ -187,6 +275,7 @@ it('stores the weather model\'s temperature beside each horizon', function (): v
     $recent = now()->subMinutes(10)->getTimestamp();
     forecastReading($sensor, $recent, 1181, 8327, 97655);
     Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
         'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
         'https://nwp.test/*' => Http::response(nwpAnswer(14.2)),
     ]);
@@ -204,6 +293,7 @@ it('stores the forecast without the weather model when the model fails', functio
     $recent = now()->subMinutes(10)->getTimestamp();
     forecastReading($sensor, $recent, 1181, 8327, 97655);
     Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
         'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
         'https://nwp.test/*' => Http::response(['reason' => 'boom'], 500),
     ]);
@@ -221,6 +311,7 @@ it('asks the weather model nothing for a forecast issued from a late batch', fun
     $late = now()->subMinutes(40)->getTimestamp();
     forecastReading($sensor, $late, 1181, 8327, 97655);
     Http::fake([
+        'http://forecast.test/correction' => Http::response(fittedCorrection()),
         'http://forecast.test/forecast' => Http::response(serviceForecast($late)),
         'https://nwp.test/*' => Http::response(nwpAnswer(14.2)),
     ]);

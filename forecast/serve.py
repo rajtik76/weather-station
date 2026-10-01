@@ -1,15 +1,20 @@
 """Forecast service (internal network, no auth, stateless): uv run serve.py ($HOST:$PORT, model from $MODEL_PATH).
 
 Readings: {"timestamp": unix s, "temperature": °C, "humidity": %, "pressure": hPa (station level),
-"rain": mm per 10 min or null}. Bands: {"low", "mid", "high"}. Request keys: "longitude", "readings",
-"since" (optional, unix s UTC; the station correction learns only from readings from then on).
+"rain": mm per 10 min or null}. Bands: {"low", "mid", "high"}.
 
-POST /forecast  {"longitude", "readings", "since"?}
+POST /correction  {"longitude", "readings", "since"?}
+  -> {"model": trained_at, "correction": CORRECTION_VERSION,
+      "targets": {"T_1h": {"intercept", "coefficients": {input: weight}, "widen"}, ...}}
+  "since" (unix s UTC): only readings from then on teach it. Short history: fewer or no targets.
+POST /forecast  {"longitude", "readings", "correction"?}
   -> {"issued_at": unix s of the latest 10-min window, "model": trained_at, "corrected": bool,
       "correction": CORRECTION_VERSION,
       "horizons": [{"hours": n, "temperature": band, "humidity": band, "pressure": band,
                     "rain_probability",
                     "base": {"temperature": band, "humidity": band, "rain_probability": raw, pre nest_rain()}}]}
+  readings: 54 h before the latest suffice (48 h of features behind the forecast issued 6 h earlier,
+  whose verified error the correction reads). "correction": a /correction answer; another model or version -> 409.
 POST /base  {"longitude", "since" (required), "readings", "full"?: bool}
   -> {"model", "forecasts": [{"issued_at", "horizons": [{"hours", "temperature", "humidity",
       "rain_probability"}]}]}  - uncorrected, per reading from since on; readings should start 48 h earlier.
@@ -19,13 +24,14 @@ GET /health -> {"status": "ok", "model", "correction"}
 import json
 import math
 import os
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import joblib
 import pandas as pd
 
-from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, apply, fit
+from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, INPUTS, Correction, apply, fit
 from features import build_features, to_grid
 from forecast import QUANTILES, predict
 
@@ -61,6 +67,10 @@ model = Model(MODEL_PATH)
 
 
 class InvalidRequest(ValueError):
+    pass
+
+
+class StaleCorrection(ValueError):
     pass
 
 
@@ -128,19 +138,31 @@ def station_history(payload: dict) -> tuple[float, pd.DataFrame]:
     return longitude, current
 
 
+def make_correction(payload: dict) -> dict:
+    longitude, current = station_history(payload)
+    since = timestamp(payload.get("since"), "since", required=False)
+
+    bundle = model.get()
+    forecast = predict(bundle, build_features(current, longitude), current)
+    corrections = fit(forecast, current, bundle["horizons"], longitude, since)
+
+    return {
+        "model": bundle["trained_at"],
+        "correction": CORRECTION_VERSION,
+        "targets": {target: asdict(correction) for target, correction in corrections.items()},
+    }
+
+
 def make_forecast(payload: dict) -> dict:
     longitude, current = station_history(payload)
     if current[["T", "H", "P"]].iloc[-1].isna().any():
         raise InvalidRequest("the latest reading needs temperature, humidity and pressure")
 
-    since = timestamp(payload.get("since"), "since", required=False)
-
     bundle = model.get()
     horizons = bundle["horizons"]
+    corrections = station_correction(payload.get("correction"), bundle)
     features = build_features(current, longitude)
     forecast = predict(bundle, features, current)
-    # Latest row is forecast; earlier rows teach the correction.
-    corrections = fit(forecast.iloc[:-1], current.iloc[:-1], horizons, longitude, since)
     latest = apply(corrections, forecast, current, horizons, longitude).iloc[-1]
 
     return {
@@ -154,6 +176,42 @@ def make_forecast(payload: dict) -> dict:
             for n in horizons
         ],
     }
+
+
+def station_correction(value: object, bundle: dict) -> dict[str, Correction]:
+    """A /correction answer back as Corrections; none without one."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or not isinstance(value.get("targets"), dict):
+        raise InvalidRequest("correction must be an answer of /correction")
+    if value.get("model") != bundle["trained_at"] or value.get("correction") != CORRECTION_VERSION:
+        raise StaleCorrection("correction was fitted for another model or correction version")
+    known = {f"{variable}_{n}h" for n in bundle["horizons"] for variable in CORRECTED_VARIABLES}
+    return {target: correction_of(target, fitted, known) for target, fitted in value["targets"].items()}
+
+
+def correction_of(target: str, fitted: object, known: set[str]) -> Correction:
+    if target not in known:
+        raise InvalidRequest(f"correction target {target} is unknown")
+    if not isinstance(fitted, dict) or not isinstance(fitted.get("coefficients"), dict):
+        raise InvalidRequest(f"correction target {target} needs intercept, coefficients and widen")
+    if not set(fitted["coefficients"]) <= set(INPUTS):
+        raise InvalidRequest(f"correction target {target} has unknown inputs")
+    return Correction(
+        intercept=finite(fitted.get("intercept"), f"{target} intercept"),
+        coefficients={name: finite(weight, f"{target} {name}") for name, weight in fitted["coefficients"].items()},
+        widen=finite(fitted.get("widen"), f"{target} widen"),
+    )
+
+
+def finite(value: object, name: str) -> float:
+    if not isinstance(value, bool) and isinstance(value, (int, float)):
+        try:
+            if math.isfinite(result := float(value)):
+                return result
+        except OverflowError:
+            pass
+    raise InvalidRequest(f"{name} must be a finite number")
 
 
 def make_base(payload: dict) -> dict:
@@ -207,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, {"status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION})
 
     def do_POST(self) -> None:
-        endpoints = {"/forecast": make_forecast, "/base": make_base}
+        endpoints = {"/correction": make_correction, "/forecast": make_forecast, "/base": make_base}
         if self.path not in endpoints:
             return self.reply(404, {"error": "not found"})
         try:
@@ -216,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise InvalidRequest("body must be a JSON object")
             self.reply(200, endpoints[self.path](payload))
+        except StaleCorrection as error:
+            self.reply(409, {"error": str(error)})
         except (json.JSONDecodeError, InvalidRequest) as error:
             self.reply(422, {"error": str(error)})
 

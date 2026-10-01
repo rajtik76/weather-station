@@ -11,7 +11,7 @@ use App\ValueObject\ChartWindow;
 /** One sensor's newest forecast, hidden once stale (it would read as today's) or empty. */
 final readonly class LatestForecast
 {
-    private const int FRESH_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+    private const int FRESH_SECONDS = Forecast::INTERVAL_SECONDS + 3 * ChartWindow::STEP_SECONDS;
 
     /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}

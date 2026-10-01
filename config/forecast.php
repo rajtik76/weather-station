@@ -8,11 +8,14 @@ return [
     // Forecast service, e.g. http://weather-forecast:8000. Unset: no forecasts.
     'url' => env('FORECAST_URL'),
 
-    // Days of history sent per request; the station correction learns from it.
+    // Days of history the station correction is fitted on, once a day.
     'history_days' => 60,
 
+    // Hours of readings sent with each forecast; the service needs 54.
+    'lookback_hours' => 56,
+
     // Local date, e.g. 2026-09-17: the station correction learns only from then on
-    // (the radiation shield went up on 16.9.). Base models still get all history_days.
+    // (the radiation shield went up on 16.9.).
     'history_since' => env('FORECAST_HISTORY_SINCE'),
 
     // Models use local solar time: longitude only.

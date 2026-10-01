@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.linear_model import Ridge
 
 from conftest import grid_frame, weather_frame
 from correction import (
@@ -244,9 +243,9 @@ def test_a_negative_widening_never_narrows_the_range_past_the_median() -> None:
     current = weather_frame(200)
     forecast = base_forecast(current, 0.0, spread=1.0)
     x = inputs(forecast, current, "T", 1, LONGITUDE)
-    shift = Ridge().fit(x, np.zeros(len(x)))
+    no_shift = {name: 0.0 for name in x.columns}
 
-    corrected = apply({"T_1h": Correction(shift, widen=-5.0)}, forecast, current, [1], LONGITUDE)
+    corrected = apply({"T_1h": Correction(intercept=0.0, coefficients=no_shift, widen=-5.0)}, forecast, current, [1], LONGITUDE)
 
     assert (corrected["T_1h_low"] <= corrected["T_1h_mid"]).all()
     assert (corrected["T_1h_high"] >= corrected["T_1h_mid"]).all()

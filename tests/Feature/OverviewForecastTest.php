@@ -35,10 +35,20 @@ it('shows the forecast issued from the newest reading', function (): void {
         ->assertDontSee('76 %');
 });
 
+it('keeps the forecast issued at the top of the hour until the next one is due', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(89)->getTimestamp()]);
+
+    $this->get(route('overview'))
+        ->assertOk()
+        ->assertDontSee('No forecast from the current readings yet');
+});
+
 it('hides a forecast that no longer starts from the current record', function (): void {
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(31)->getTimestamp()]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->subMinutes(91)->getTimestamp()]);
 
     $this->get(route('overview'))
         ->assertOk()

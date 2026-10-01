@@ -52,8 +52,8 @@ it('lists every horizon beside the headline, the six included', function (): voi
 it('is ready from a day of forecasts on', function (int $count, bool $ready): void {
     expect(Verdict::of([verdictScore(6, 40.0, $count)]))->toHaveKey('ready', $ready);
 })->with([
-    'one short of a day' => [143, false],
-    'a day' => [144, true],
+    'one short of a day' => [23, false],
+    'a day' => [24, true],
     'more than a day' => [500, true],
 ]);
 

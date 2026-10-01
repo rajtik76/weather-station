@@ -30,6 +30,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['sensor_id', 'issued_at', 'model', 'corrected', 'correction', 'data'])]
 class Forecast extends Model
 {
+    /** One forecast per sensor and hour. */
+    public const int INTERVAL_SECONDS = 3600;
+
     /** @use HasFactory<ForecastFactory> */
     use HasFactory;
 

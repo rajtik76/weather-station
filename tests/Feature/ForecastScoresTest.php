@@ -70,7 +70,8 @@ it('shows the scores without a current forecast to sit beside', function (): voi
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     scoresReading($sensor, $issued, 1200);
     scoresReading($sensor, $issued + 3600, 1300);
-    // An hour older than the newest reading: the forecast is gone.
+    scoresReading($sensor, $issued + 7200, 1350);
+    // Two hours older than the newest reading: the forecast is gone.
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoresHorizon(1, 12.0, 12.8, 13.5)]]);
 
     $this->get(route('forecast'))

@@ -46,7 +46,7 @@ INMP441  --I2S--+                       |    |
 - SHT4x (temperature, humidity) and VEML7700 (light) outside in a passive radiation shield, BMP280 (pressure) indoors, INMP441 microphone in the shield
 - Readings every 30 s, folded into ten-minute windows and uploaded to the API
 - Rain is detected from the microphone spectrum
-- A Python service forecasts after every upload from the station's last 60 days
+- A Python service forecasts once an hour from the station's last 56 hours, with a station correction fitted daily on the last 60 days
 
 ## Known limitations
 

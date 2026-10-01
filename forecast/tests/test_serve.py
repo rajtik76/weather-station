@@ -15,8 +15,8 @@ import pytest
 
 import serve
 from conftest import START, Constant, weather_frame
-from correction import CORRECTION_VERSION
-from serve import InvalidRequest, make_base, make_forecast
+from correction import CORRECTION_VERSION, INPUTS
+from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast
 
 LONGITUDE = 13.4
 BAND = {"low", "mid", "high"}
@@ -35,6 +35,12 @@ def readings(hours: float, rain: bool = False, offset: int = 37) -> list[dict]:
         }
         for time, row in frame.iterrows()
     ]
+
+
+def corrected_forecast(payload: list[dict], **correction_keys: object) -> dict:
+    """What ForecastWeather does: fit the correction on the history, forecast with it."""
+    correction = make_correction({"longitude": LONGITUDE, "readings": payload, **correction_keys})
+    return make_forecast({"longitude": LONGITUDE, "readings": payload, "correction": correction})
 
 
 @pytest.fixture
@@ -67,7 +73,7 @@ def request(server: tuple[str, int], method: str, path: str, body: object = None
 
 
 def test_a_forecast_has_the_shape_laravel_stores(service: dict) -> None:
-    answer = make_forecast({"longitude": LONGITUDE, "readings": readings(96)})
+    answer = corrected_forecast(readings(96))
 
     assert set(answer) == {"issued_at", "model", "corrected", "correction", "horizons"}
     assert isinstance(answer["issued_at"], int)
@@ -95,15 +101,74 @@ def test_values_are_rounded_for_storage(service: dict) -> None:
         assert round(horizon["rain_probability"], 3) == horizon["rain_probability"]
 
 
-def test_a_forecast_with_any_target_left_uncorrected_is_not_called_corrected(
-    service: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    real_fit = serve.fit
-    monkeypatch.setattr(serve, "fit", lambda *args: {key: c for key, c in real_fit(*args).items() if key != "H_1h"})
+def test_a_forecast_with_any_target_left_uncorrected_is_not_called_corrected(service: dict) -> None:
+    payload = readings(96)
+    correction = make_correction({"longitude": LONGITUDE, "readings": payload})
+    del correction["targets"]["H_1h"]
 
+    answer = make_forecast({"longitude": LONGITUDE, "readings": payload, "correction": correction})
+
+    assert answer["corrected"] is False
+
+
+def test_a_forecast_without_a_correction_is_the_base(service: dict) -> None:
     answer = make_forecast({"longitude": LONGITUDE, "readings": readings(96)})
 
     assert answer["corrected"] is False
+    for horizon in answer["horizons"]:
+        assert horizon["temperature"] == horizon["base"]["temperature"]
+        assert horizon["humidity"] == horizon["base"]["humidity"]
+
+
+def test_a_correction_answers_every_corrected_target_with_plain_numbers(service: dict) -> None:
+    correction = make_correction({"longitude": LONGITUDE, "readings": readings(96)})
+
+    assert correction["model"] == service["trained_at"]
+    assert correction["correction"] == CORRECTION_VERSION
+    assert set(correction["targets"]) == {f"{variable}_{n}h" for n in range(1, 7) for variable in ("T", "H")}
+    for fitted in correction["targets"].values():
+        assert set(fitted) == {"intercept", "coefficients", "widen"}
+        assert set(fitted["coefficients"]) == set(INPUTS)
+    assert json.loads(json.dumps(correction)) == correction
+
+
+def test_the_last_54_hours_forecast_what_the_whole_history_does(service: dict) -> None:
+    payload = readings(96)
+    correction = make_correction({"longitude": LONGITUDE, "readings": payload})
+    lookback = payload[-(54 * 6 + 1) :]
+
+    recent = make_forecast({"longitude": LONGITUDE, "readings": lookback, "correction": correction})
+    whole = make_forecast({"longitude": LONGITUDE, "readings": payload, "correction": correction})
+
+    assert recent["corrected"] is True
+    assert recent == whole
+
+
+def test_a_correction_for_another_model_or_version_is_stale(service: dict) -> None:
+    payload = readings(24)
+    correction = make_correction({"longitude": LONGITUDE, "readings": payload})
+
+    for stale in ({**correction, "model": "2025-01-01T00:00:00+00:00"}, {**correction, "correction": CORRECTION_VERSION - 1}):
+        with pytest.raises(StaleCorrection):
+            make_forecast({"longitude": LONGITUDE, "readings": payload, "correction": stale})
+
+
+@pytest.mark.parametrize(
+    ("targets", "message"),
+    [
+        ({"P_1h": {"intercept": 0.0, "coefficients": {}, "widen": 0.0}}, "P_1h is unknown"),
+        ({"T_1h": {"intercept": 0.0, "coefficients": {"sunshine": 1.0}, "widen": 0.0}}, "unknown inputs"),
+        ({"T_1h": {"intercept": 0.0, "widen": 0.0}}, "needs intercept, coefficients and widen"),
+        ({"T_1h": {"intercept": "0", "coefficients": {}, "widen": 0.0}}, "T_1h intercept must be a finite number"),
+        ({"T_1h": {"intercept": 0.0, "coefficients": {"error_1h": True}, "widen": 0.0}}, "error_1h must be a finite"),
+        ({"T_1h": {"intercept": 0.0, "coefficients": {}, "widen": 10**400}}, "T_1h widen must be a finite number"),
+    ],
+)
+def test_a_malformed_correction_is_rejected_with_the_reason(service: dict, targets: dict, message: str) -> None:
+    correction = {"model": service["trained_at"], "correction": CORRECTION_VERSION, "targets": targets}
+
+    with pytest.raises(InvalidRequest, match=message):
+        make_forecast({"longitude": LONGITUDE, "readings": readings(2), "correction": correction})
 
 
 def test_issued_at_is_the_ten_minute_window_of_the_latest_reading(service: dict) -> None:
@@ -116,7 +181,9 @@ def test_issued_at_is_the_ten_minute_window_of_the_latest_reading(service: dict)
 
 
 def test_a_short_history_is_forecast_without_the_station_correction(service: dict) -> None:
-    answer = make_forecast({"longitude": LONGITUDE, "readings": readings(24)})
+    assert make_correction({"longitude": LONGITUDE, "readings": readings(24)})["targets"] == {}
+
+    answer = corrected_forecast(readings(24))
 
     assert answer["corrected"] is False
     for horizon in answer["horizons"]:
@@ -128,8 +195,8 @@ def test_since_keeps_the_correction_off_but_not_the_base_models(service: dict) -
     payload = readings(96)
     since = START.timestamp() + 60 * 3600
 
-    with_since = make_forecast({"longitude": LONGITUDE, "readings": payload, "since": int(since)})
-    without = make_forecast({"longitude": LONGITUDE, "readings": payload})
+    with_since = corrected_forecast(payload, since=int(since))
+    without = corrected_forecast(payload)
 
     assert without["corrected"] is True
     # 36 h after since: too little to learn from.
@@ -141,7 +208,7 @@ def test_since_keeps_the_correction_off_but_not_the_base_models(service: dict) -
 def test_a_null_since_is_the_same_as_none(service: dict) -> None:
     payload = readings(96)
 
-    assert make_forecast({"longitude": LONGITUDE, "readings": payload, "since": None}) == make_forecast(
+    assert make_correction({"longitude": LONGITUDE, "readings": payload, "since": None}) == make_correction(
         {"longitude": LONGITUDE, "readings": payload}
     )
 
@@ -235,15 +302,27 @@ def test_the_latest_reading_may_be_missing_its_rain(service: dict) -> None:
             {"longitude": LONGITUDE, "readings": [{"timestamp": 1790000000, "temperature": True}]},
             "numbers or null",
         ),
+    ],
+)
+def test_malformed_payloads_are_rejected_with_the_reason(service: dict, payload: dict, message: str) -> None:
+    with pytest.raises(InvalidRequest, match=message):
+        make_forecast(payload)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"readings": readings(2)}, "longitude is required"),
+        ({"longitude": LONGITUDE}, "readings must be a non-empty list"),
         ({"longitude": LONGITUDE, "readings": readings(2), "since": "1790000000"}, "since must be an integer"),
         ({"longitude": LONGITUDE, "readings": readings(2), "since": 1790000000.5}, "since must be an integer"),
         ({"longitude": LONGITUDE, "readings": readings(2), "since": True}, "since must be an integer"),
         ({"longitude": LONGITUDE, "readings": readings(2), "since": 10**20}, "since is out of range"),
     ],
 )
-def test_malformed_payloads_are_rejected_with_the_reason(service: dict, payload: dict, message: str) -> None:
+def test_a_correction_request_is_validated_like_a_forecast(service: dict, payload: dict, message: str) -> None:
     with pytest.raises(InvalidRequest, match=message):
-        make_forecast(payload)
+        make_correction(payload)
 
 
 def test_more_than_a_year_of_readings_are_refused(service: dict) -> None:
@@ -265,7 +344,7 @@ def test_a_sparse_history_is_forecast_without_the_correction(service: dict) -> N
     newest = readings(1)[-1]
     stray = {**newest, "timestamp": newest["timestamp"] - 4 * 86_400}
 
-    forecast = make_forecast({"longitude": LONGITUDE, "readings": [stray, newest]})
+    forecast = corrected_forecast([stray, newest])
 
     assert forecast["corrected"] is False
     assert forecast["horizons"]
@@ -370,14 +449,26 @@ def test_unknown_paths_are_404(server: tuple[str, int]) -> None:
     assert request(server, "POST", "/elsewhere", {})[0] == 404
 
 
-def test_post_forecast_over_http_with_the_payload_laravel_sends(server: tuple[str, int]) -> None:
-    payload = {"longitude": 13.4, "readings": readings(96), "since": int(START.timestamp())}
+def test_post_correction_then_forecast_over_http_with_the_payloads_laravel_sends(server: tuple[str, int]) -> None:
+    history = readings(96)
 
-    status, answer = request(server, "POST", "/forecast", payload)
+    fitted, correction = request(server, "POST", "/correction", {"longitude": 13.4, "readings": history, "since": int(START.timestamp())})
+    status, answer = request(server, "POST", "/forecast", {"longitude": 13.4, "readings": history[-336:], "correction": correction})
 
+    assert fitted == 200
     assert status == 200
+    assert answer["corrected"] is True
     assert answer["correction"] == CORRECTION_VERSION
     assert len(answer["horizons"]) == 6
+
+
+def test_a_stale_correction_gets_a_409(server: tuple[str, int], service: dict) -> None:
+    stale = {"model": "2025-01-01T00:00:00+00:00", "correction": CORRECTION_VERSION, "targets": {}}
+
+    status, answer = request(server, "POST", "/forecast", {"longitude": 13.4, "readings": readings(2), "correction": stale})
+
+    assert status == 409
+    assert "another model" in answer["error"]
 
 
 def test_post_base_over_http(server: tuple[str, int]) -> None:

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Http;
  * @phpstan-type Issued array{issued_at: int, model: string, corrected: bool, correction?: int, horizons: list<Horizon>}
  * @phpstan-type BaseHorizon array{hours: int, temperature: Band, humidity: Band, rain_probability?: float}
  * @phpstan-type BaseAnswer array{model: string, forecasts: list<array{issued_at: int, horizons: list<BaseHorizon>}>}
+ * @phpstan-type Fitted array{model: string, correction: int, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
  */
 final readonly class ForecastService
 {
@@ -34,6 +35,18 @@ final readonly class ForecastService
     {
         /** @var Issued */
         return Http::timeout($timeout)->post($this->endpoint('forecast'), $payload)->throw()->json();
+    }
+
+    /**
+     * Station correction fitted on the readings, to be sent back with each forecast.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return Fitted
+     */
+    public function correction(array $payload, int $timeout = 120): array
+    {
+        /** @var Fitted */
+        return Http::timeout($timeout)->post($this->endpoint('correction'), $payload)->throw()->json();
     }
 
     /**

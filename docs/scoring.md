@@ -4,7 +4,8 @@ The headline verdict (skill, mean miss, in range over 30 days) is in the [README
 
 ## Stored
 
-- After every upload the server sends the forecast service the station's last 60 days and stores the answer
+- One forecast an hour, issued from the first upload of the hour (a later upload retries a failed one): the server sends the forecast service the last 56 hours with the station correction and stores the answer
+- The correction is fitted on the last 60 days once a day and cached per sensor; a correction the service calls stale (another model or correction version, `409`) is refitted at once
 - Temperature as a range 1 to 6 h ahead, chance of rain, and the same temperature from the base model (before the station correction)
 - `App\Queries\ForecastAccuracy` reads and pairs, `App\ValueObject\ForecastScore` does the arithmetic, `ModelName` names a model
 

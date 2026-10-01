@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
+use App\Models\Forecast;
 use App\Queries\ForecastAccuracy;
 
 /**
@@ -19,8 +20,8 @@ final readonly class Verdict
     /** The verdict falls back to the longest scored horizon until this one has come true. */
     public const int HOURS = 6;
 
-    /** A day of forecasts, one per ten minutes; fewer is "too early". */
-    private const int MIN_FORECASTS = 144;
+    /** A day of forecasts; fewer is "too early". */
+    private const int MIN_FORECASTS = 24 * 3600 / Forecast::INTERVAL_SECONDS;
 
     /**
      * Null until a forecast has come true.
