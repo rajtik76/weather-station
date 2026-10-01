@@ -4,13 +4,8 @@ use App\Jobs\BackfillForecastBase;
 use App\Jobs\ForecastReferenceDay;
 use App\Models\Sensor;
 use Carbon\CarbonImmutable;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-
-Artisan::command('inspire', function (): void {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
 
 Artisan::command('forecast:backfill-base', function (): void {
     foreach (Sensor::query()->stations()->get() as $sensor) {
