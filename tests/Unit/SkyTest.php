@@ -63,28 +63,12 @@ it('draws the rain chance on its thresholds, sun or moon when dry', function (in
     ]],
 ]);
 
-it('picks the scene by the next hour\'s rain chance and the time of day', function (?int $rain, ?string $scene): void {
-    expect(Sky::scene(skyAt('2026-09-24 10:00:00'), false, $rain))->toBe($scene === null ? null : "{$scene}-day")
-        ->and(Sky::scene(skyAt('2026-09-24 22:00:00'), false, $rain))->toBe($scene === null ? null : "{$scene}-night");
+it('pictures the sky now by the rain the microphone hears', function (?bool $rainHeard, ?string $scene): void {
+    expect(Sky::scene(skyAt('2026-09-24 10:00:00'), $rainHeard))->toBe($scene === null ? null : "{$scene}-day")
+        ->and(Sky::scene(skyAt('2026-09-24 22:00:00'), $rainHeard))->toBe($scene === null ? null : "{$scene}-night");
 })->with([
-    'dry' => [0, 'clear'],
-    'just under partly' => [9, 'clear'],
-    'partly' => [10, 'partly'],
-    'just under drizzle' => [29, 'partly'],
-    'drizzle' => [30, 'drizzle'],
-    'just under rain' => [59, 'drizzle'],
-    'rain' => [60, 'rain'],
-    'no forecast' => [null, null],
+    'rain heard' => [true, 'rain'],
+    'dry' => [false, 'clear'],
+    // Nothing heard is no claim of a clear sky.
+    'no microphone' => [null, null],
 ]);
-
-it('puts rain the microphone hears before any forecast, even a missing one', function (?int $rain): void {
-    expect(Sky::scene(skyAt('2026-09-24 10:00:00'), true, $rain))->toBe('rain-day')
-        ->and(Sky::scene(skyAt('2026-09-24 22:00:00'), true, $rain))->toBe('rain-night');
-})->with([
-    'forecast dry' => [0],
-    'no forecast' => [null],
-]);
-
-it('leaves the sky plain when nothing was heard and nothing is forecast', function (): void {
-    expect(Sky::scene(skyAt('2026-09-24 10:00:00'), null, null))->toBeNull();
-});

@@ -5,10 +5,11 @@ generated for this page with OpenAI's image model (September 2026) from the
 prompts below; under OpenAI's terms the output belongs to the person who made
 it, so they carry no third-party licence.
 
-`Dashboard::skyScene()` picks one as `{condition}-{day|night}`: the rain the
-microphone hears now wins, then the next forecast hour's rain chance, day or
-night by the real sunrise. The station knows no cloud cover, so the `overcast`
-pair is here for when it does and is not shown yet.
+`Dashboard::skyScene()` picks one as `{condition}-{day|night}` for the sky
+now: `rain` when the microphone hears rain, `clear` when it hears none, day or
+night by the real sunrise. Never the forecast. The station knows no cloud
+cover, so the `overcast`, `partly` and `drizzle` pairs are here for when it
+does and are not shown yet.
 
 | File              | Width   | Use                        |
 | ----------------- | ------- | -------------------------- |

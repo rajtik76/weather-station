@@ -1984,14 +1984,28 @@ it('says in the sky when the microphone hears rain, and nothing otherwise', func
     'no microphone' => [null, false],
 ]);
 
-it('pictures the sky by the rain heard now, then the next hour\'s rain chance', function (string $measuredUtc, ?float $rain, ?string $scene): void {
+it('pictures the sky now by the rain the microphone hears, never by the forecast', function (string $measuredUtc, ?string $spectrum, ?string $scene): void {
     $this->travelTo(Date::parse($measuredUtc, 'UTC'));
     $sensor = Sensor::factory()->create();
-    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
-
-    if ($rain !== null) {
-        Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, $rain)]]);
-    }
+    $bands = match ($spectrum) {
+        'rain' => rainyBands(),
+        'dry' => array_fill(0, 26, 3000),
+        default => null,
+    };
+    $data = $bands === null
+        ? new MeasurementDataV1(temperature: 2150, humidity: 4800, pressure: 97389)
+        : new MeasurementDataV3(
+            temperature: 2150, humidity: 4800, pressure: 97389,
+            temperatureMin: 2100, temperatureMax: 2200,
+            humidityMin: 4700, humidityMax: 4900,
+            pressureMin: 97380, pressureMax: 97395,
+            samples: 20,
+            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
+        );
+    ($bands === null ? Measurement::factory() : Measurement::factory()->v3())
+        ->for($sensor)->create(['timestamp' => now()->getTimestamp(), 'data' => (string) $data]);
+    // A forecast that disagrees with the microphone: the picture is the sky now, not the next hour.
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, $spectrum === 'rain' ? 0.02 : 0.94)]]);
 
     $html = Livewire::test(Dashboard::class)->html();
 
@@ -2000,34 +2014,13 @@ it('pictures the sky by the rain heard now, then the next hour\'s rain chance', 
         ->and($html)->toContain('Sky image generated with OpenAI');
 })->with([
     // 08:00 UTC is 10:00 in Prague in September, 20:00 UTC after sunset.
-    'dry day' => ['2026-09-24 08:00:00', 0.02, 'clear-day'],
-    'dry night' => ['2026-09-24 20:00:00', 0.02, 'clear-night'],
-    'slight chance' => ['2026-09-24 08:00:00', 0.15, 'partly-day'],
-    'possible' => ['2026-09-24 20:00:00', 0.3, 'drizzle-night'],
-    'likely' => ['2026-09-24 08:00:00', 0.6, 'rain-day'],
-    // Without a forecast there is nothing to picture: no claim of a clear sky.
-    'no forecast' => ['2026-09-24 08:00:00', null, null],
+    'dry day' => ['2026-09-24 08:00:00', 'dry', 'clear-day'],
+    'dry night' => ['2026-09-24 20:00:00', 'dry', 'clear-night'],
+    'rain day' => ['2026-09-24 08:00:00', 'rain', 'rain-day'],
+    'rain night' => ['2026-09-24 20:00:00', 'rain', 'rain-night'],
+    // Without a microphone there is nothing to picture: no claim of a clear sky.
+    'no microphone' => ['2026-09-24 08:00:00', null, null],
 ]);
-
-it('pictures rain the microphone hears over a dry forecast', function (): void {
-    $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
-    $sensor = Sensor::factory()->create();
-    $bands = rainyBands();
-    Measurement::factory()->v3()->for($sensor)->create([
-        'timestamp' => now()->getTimestamp(),
-        'data' => (string) new MeasurementDataV3(
-            temperature: 2150, humidity: 4800, pressure: 97389,
-            temperatureMin: 2100, temperatureMax: 2200,
-            humidityMin: 4700, humidityMax: 4900,
-            pressureMin: 97380, pressureMax: 97395,
-            samples: 20,
-            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
-        ),
-    ]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
-
-    expect(Livewire::test(Dashboard::class)->html())->toContain('data-sky-scene="rain-day"');
-});
 
 it('keeps quiet about rain and the sky once the station has gone silent', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));

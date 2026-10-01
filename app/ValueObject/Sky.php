@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * The sky over the station as the page draws it. The models forecast rain,
- * not cloud, so the pictures follow the rain chance alone; sun or moon by
- * the real sunrise over the station.
+ * The sky over the station as the page draws it: the forecast hours by
+ * their rain chance, the sky now by the rain the microphone hears; sun or
+ * moon by the real sunrise over the station.
  */
 final readonly class Sky
 {
@@ -39,28 +39,22 @@ final readonly class Sky
 
     /**
      * The photograph behind the sky, `{condition}-{day|night}` as named in
-     * public/images/weather-backgrounds. Rain the microphone hears wins;
-     * otherwise the next hour's rain chance on the thresholds the forecast
-     * icons use. A clear picture only means a dry hour ahead and the overcast
-     * pictures wait for a cloud reading. Null with neither: the plain sky
-     * gradient stays rather than claim a weather it knows nothing about.
-     *
-     * @param  int|null  $rain  the next hour's rain chance in %
+     * public/images/weather-backgrounds. It shows the sky now, so only what
+     * the microphone hears decides it: rain, or a clear sky when it hears
+     * none. Never the forecast - one run thrown off by the morning sun on
+     * the sensor put rain over a sunny morning. The station knows no cloud
+     * cover, so the overcast pictures wait for a cloud reading. Null when
+     * nothing was heard: the plain sky gradient stays rather than claim a
+     * weather it knows nothing about.
      */
-    public static function scene(int $timestamp, ?bool $rainHeard, ?int $rain): ?string
+    public static function scene(int $timestamp, ?bool $rainHeard): ?string
     {
         $time = self::isDaylight($timestamp) ? 'day' : 'night';
 
-        if ($rainHeard === true) {
-            return "rain-{$time}";
-        }
-
-        return match (true) {
-            $rain === null => null,
-            $rain >= 60 => "rain-{$time}",
-            $rain >= 30 => "drizzle-{$time}",
-            $rain >= 10 => "partly-{$time}",
-            default => "clear-{$time}",
+        return match ($rainHeard) {
+            true => "rain-{$time}",
+            false => "clear-{$time}",
+            null => null,
         };
     }
 }

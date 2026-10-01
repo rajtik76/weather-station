@@ -373,23 +373,15 @@ class Dashboard extends Component
 
     /**
      * The photograph behind the sky, `{condition}-{day|night}` as named in
-     * public/images/weather-backgrounds. Rain the microphone hears wins;
-     * otherwise the next hour's rain chance on the thresholds the forecast
-     * icons use, day or night by the real sunrise. The models forecast rain,
-     * not cloud, so a clear picture only means a dry hour ahead and the
-     * overcast pictures wait for a cloud reading. Null with neither: the
-     * plain sky gradient stays rather than claim a weather it knows nothing
-     * about, and so it does while the station is silent.
+     * public/images/weather-backgrounds: the sky now, by the rain the
+     * microphone hears in the newest window (Sky::scene()), day or night by
+     * the real sunrise. Null when it hears nothing, and so while the station
+     * is silent.
      */
     #[Computed]
     public function skyScene(): ?string
     {
-        // A silent station says nothing about the sky now, and its last forecast even less.
-        if ($this->isSilent) {
-            return null;
-        }
-
-        return Sky::scene(now()->getTimestamp(), $this->rainHeard, $this->forecast['horizons'][0]['rain'] ?? null);
+        return Sky::scene(now()->getTimestamp(), $this->rainHeard);
     }
 
     /**
