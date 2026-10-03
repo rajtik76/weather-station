@@ -42,6 +42,14 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 - Applies to temperature and humidity; correcting pressure scored worse
 - The answer also carries the forecast before the correction (`base`)
 
+### Light experiment
+
+`light_correction.py`; `POST /light-correction` fits it, `POST /light-forecast` issues it. Scored beside the shown forecast, never shown as the forecast ([`docs/scoring.md`](../docs/scoring.md#light-experiment)).
+
+- Temperature correction like the station correction, its solar inputs scaled by how lit the shield is against the same half hour of the 14 days before (0-1; below 100 lx expected, 1)
+- Solar inputs halved from 4 h ahead
+- A reading counts for a past moment only once it had arrived (`received_at`), so a buffered upload cannot teach the past
+
 ### Service
 
 `serve.py`: stateless, no database.
@@ -173,9 +181,41 @@ Base forecast for every reading from `since` on, for forecasts stored before the
 - Base models look 48 h back only, so the answer equals what the service gave at the time if readings start that far before `since`; the correction is not recomputed
 - `php artisan forecast:backfill-base` asks a week at a time, with three days of readings before it, and fills in only forecasts made by the model now running
 
+```
+POST /light-correction
+{"longitude": 13.40, "since": 1789596000,
+ "readings": [{"timestamp": 1790000000, "temperature": 9.7, "humidity": 76.0, "pressure": 976.6,
+               "illuminance": 1830.5, "received_at": 1790000031}, ...]}
+```
+
+- Readings as for `/correction` plus `illuminance` (lx, null without) and `received_at` (when the server stored it; default `timestamp`)
+
+```
+{"model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v1",
+ "profile": {"day": "2026-10-03", "values": [null, ..., 1830.5, ...]},
+ "targets": {"T_1h": {"intercept": ..., "coefficients": {...}, "widen": ...}, ...}}
+```
+
+- `profile`: the newest reading's local day and its 48 half-hour references in lx
+
+```
+POST /light-forecast
+{"longitude": 13.40, "experiment": {...}, "readings": [...]}
+```
+
+- `experiment`: the `/light-correction` answer as received; another model or version, or a profile for another local day than the newest reading's, gets 409
+
+```
+{"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v1",
+ "horizons": [{"hours": 1, "temperature": {"low": 12.4, "mid": 13.6, "high": 15.1}}, ...]}
+```
+
+- Only fitted horizons
+- `php artisan forecast:backfill-light <Y-m-d>` replays both calls for forecasts stored without the experiment, each from the readings the server held at the time
+
 ## Deploying
 
-- `Dockerfile` builds from this directory: dependencies into a virtualenv with uv, then Python, the virtualenv and the four service files; about 550 MB
+- `Dockerfile` builds from this directory: dependencies into a virtualenv with uv, then Python, the virtualenv and the five service files; about 550 MB
 - The model is not in the image: mounted at `/models`
 - No domain or published port; Laravel reaches it on the internal Docker network
 - New model: train, check `evaluate_balcony.py`, copy `forecast.joblib` over the mounted one, add a changelog entry

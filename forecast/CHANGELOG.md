@@ -5,6 +5,15 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v1 - 2026-10-03
+
+Model 2026-09-24T08:40:43Z · Server v4.6.0
+
+- `light_correction.py`, beside correction 3, temperature only; does not change the shown forecast
+- Solar inputs scaled by a light gain: smoothed lux over the 90th percentile of the same half hour in the 14 days before (only readings that had arrived by then), capped at 1; solar inputs halved from 4 h ahead
+- Walked forward on the balcony, fitted at local midnight, 1 to 3 October 2026, temperature vs shown: 1 h 0.72 °C (0.82), 3 h 1.36 °C (1.47), 6 h 1.48 °C (1.72); without the light gain 1 to 3 h equal shown, so that gain is the lux; part of 4 to 6 h is the halving alone
+- 1 October no gain (half a day of light behind its reference); three days only
+
 ## Correction 3 - 2026-10-01
 
 Model 2026-09-24T08:40:43Z · Server v4.4.0

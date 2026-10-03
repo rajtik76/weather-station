@@ -16,7 +16,7 @@ FROM python:3.14-slim-trixie AS run
 WORKDIR /app
 
 COPY --from=venv /app/.venv ./.venv
-COPY features.py forecast.py correction.py serve.py ./
+COPY features.py forecast.py correction.py light_correction.py serve.py ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

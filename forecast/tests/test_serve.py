@@ -16,7 +16,7 @@ import pytest
 import serve
 from conftest import START, Constant, weather_frame
 from correction import CORRECTION_VERSION, INPUTS
-from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast
+from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast, make_light_correction, make_light_forecast
 
 LONGITUDE = 13.4
 BAND = {"low", "mid", "high"}
@@ -492,3 +492,70 @@ def test_base_keeps_the_rain_chance_before_the_first_hour_was_capped(
     assert first["rain_probability"] == 0.01
     assert first["base"]["rain_probability"] == 0.94
     assert second["rain_probability"] == second["base"]["rain_probability"] == 0.01
+
+
+def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(server: tuple[str, int]) -> None:
+    history = [{**reading, "illuminance": 1000.0 if i < 432 else 200.0} for i, reading in enumerate(readings(120))]
+    before = corrected_forecast(history)
+    status, fitted = request(server, "POST", "/light-correction", {"longitude": LONGITUDE, "readings": history})
+    issued, experiment = request(server, "POST", "/light-forecast", {
+        "longitude": LONGITUDE, "readings": history[-336:], "experiment": fitted,
+    })
+
+    assert status == issued == 200
+    assert experiment["version"] == "light-v1"
+    assert experiment["issued_at"] == before["issued_at"]
+    assert experiment["model"] == before["model"]
+    assert [h["hours"] for h in experiment["horizons"]] == [1, 2, 3, 4, 5, 6]
+    for horizon in experiment["horizons"]:
+        assert set(horizon) == {"hours", "temperature"}
+        assert horizon["temperature"]["low"] <= horizon["temperature"]["mid"] <= horizon["temperature"]["high"]
+    assert corrected_forecast(history) == before
+    assert make_forecast({"longitude": LONGITUDE, "readings": history}) == make_forecast({"longitude": LONGITUDE, "readings": readings(120)})
+
+
+def test_light_experiment_agrees_for_recent_and_whole_history(service: dict) -> None:
+    history = [{**reading, "illuminance": 200.0} for reading in readings(120)]
+    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+    payload = {"longitude": LONGITUDE, "experiment": fitted}
+
+    assert make_light_forecast({**payload, "readings": history}) == make_light_forecast({**payload, "readings": history[-336:]})
+
+
+def test_light_experiment_omits_unfitted_horizons(service: dict) -> None:
+    history = readings(24)
+    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+
+    assert fitted["targets"] == {}
+    assert make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": fitted})["horizons"] == []
+
+
+@pytest.mark.parametrize("change", [{"version": "light-v0"}, {"model": "old"}, {"profile": {"day": "2020-01-01", "values": [None] * 48}}])
+def test_stale_light_calibration_gets_409(server: tuple[str, int], change: dict) -> None:
+    history = readings(24)
+    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+
+    status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": {**fitted, **change}})
+
+    assert status == 409
+
+
+@pytest.mark.parametrize("values", [[None] * 47, [-1] * 48, [True] * 48, [float("inf")] * 48])
+def test_invalid_light_profiles_get_422(server: tuple[str, int], values: list) -> None:
+    history = readings(24)
+    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+    fitted["profile"]["values"] = values
+
+    status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": fitted})
+
+    assert status == 422
+
+
+@pytest.mark.parametrize("invalid", [{"illuminance": -1}, {"illuminance": True}, {"illuminance": "100"}, {"received_at": True}, {"received_at": 10**400}])
+def test_invalid_light_readings_get_422(server: tuple[str, int], invalid: dict) -> None:
+    history = readings(24)
+    history[-1].update(invalid)
+
+    status, _ = request(server, "POST", "/light-correction", {"longitude": LONGITUDE, "readings": history})
+
+    assert status == 422
