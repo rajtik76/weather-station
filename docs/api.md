@@ -166,7 +166,7 @@ Firmware is tagged `fw/v<version>` ([`firmware/CHANGELOG.md`](../firmware/CHANGE
 
 - Validation is all or nothing: one invalid entry rejects the batch, nothing is stored
 - After storing, once the response has gone out: `SENSOR_HEARTBEAT_URL` is requested if set
-- Same for `FORECAST_URL`: the first upload of each hour asks the forecast service for a forecast ([scoring](scoring.md#stored)); a failure is logged and ignored, the next upload in the hour retries
+- Same for `FORECAST_URL`: every upload asks the forecast service for a forecast ([scoring](scoring.md#stored)); a failure is logged and ignored, the next upload retries
 
 ## Storage
 

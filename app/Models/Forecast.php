@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\ValueObject\ChartWindow;
 use Database\Factories\ForecastFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -30,8 +31,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['sensor_id', 'issued_at', 'model', 'corrected', 'correction', 'data'])]
 class Forecast extends Model
 {
-    /** One forecast per sensor and hour. */
-    public const int INTERVAL_SECONDS = 3600;
+    /** One forecast per sensor and upload window. */
+    public const int INTERVAL_SECONDS = ChartWindow::STEP_SECONDS;
 
     /** @use HasFactory<ForecastFactory> */
     use HasFactory;

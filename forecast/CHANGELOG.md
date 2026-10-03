@@ -12,6 +12,7 @@ Model 2026-09-24T08:40:43Z · Server v4.4.0
 - Same regression and bins as correction 2, fitted once a day by `POST /correction` instead of on every forecast; Laravel caches the coefficients and sends them with each forecast
 - Forecasts once an hour from the last 56 hours instead of every ten minutes from 60 days
 - Up to a day behind the newest verified misses; the `error_same` and `error_1h` inputs are still read at issue time
+- Server v4.5.0: forecasts after every upload again, still from 56 hours; version stays 3
 
 ## Correction 2 - 2026-09-26
 

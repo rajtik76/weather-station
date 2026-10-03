@@ -46,7 +46,7 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 
 `serve.py`: stateless, no database.
 
-- Once an hour, from the first upload of the hour (`App\Jobs\ForecastWeather`), Laravel sends the last 56 hours and the cached correction; the answer is stored in `forecasts`
+- After every upload (`App\Jobs\ForecastWeather`), Laravel sends the last 56 hours and the cached correction; the answer is stored in `forecasts`
 - Once a day Laravel sends the last 60 days to `POST /correction`, with `since` from `FORECAST_HISTORY_SINCE` if set (shield went up 16 September 2026, production learns from the 17th); a `409` for a stale correction refits it at once
 - Page shows temperature and rain; humidity and pressure stay in the row
 - Last 30 days of forecasts are scored as shown and before the correction, on the same hours, against persistence ([`docs/scoring.md`](../docs/scoring.md))

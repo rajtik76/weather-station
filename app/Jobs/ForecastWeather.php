@@ -21,7 +21,7 @@ use Illuminate\Http\Client\RequestException;
 use InvalidArgumentException;
 
 /**
- * Once an hour, asks the forecast service (forecast/serve.py) for the next six hours with the station correction and stores the answer with the NWP temperature beside it.
+ * After every upload, asks the forecast service (forecast/serve.py) for the next six hours with the station correction and stores the answer with the NWP temperature beside it.
  *
  * @phpstan-import-type Horizon from Forecast
  * @phpstan-import-type Issued from ForecastService
@@ -40,7 +40,7 @@ class ForecastWeather
     {
         $readings = new ServiceReadings($this->sensor->id)->recent((int) config('forecast.lookback_hours') * 3600);
 
-        if ($readings === [] || $this->isIssuedInHourOf($readings[array_key_last($readings)]['timestamp'])) {
+        if ($readings === [] || $this->isIssuedInWindowOf($readings[array_key_last($readings)]['timestamp'])) {
             return;
         }
 
@@ -59,7 +59,7 @@ class ForecastWeather
                 ], fn (mixed $value): bool => $value !== null)),
             );
         } catch (ConnectionException|RequestException $exception) {
-            // The next upload in the hour retries; the upload must not fail.
+            // Retried by the next upload; the upload must not fail.
             report($exception);
 
             return;
@@ -76,7 +76,7 @@ class ForecastWeather
         );
     }
 
-    private function isIssuedInHourOf(int $timestamp): bool
+    private function isIssuedInWindowOf(int $timestamp): bool
     {
         return Forecast::query()
             ->where('sensor_id', $this->sensor->id)

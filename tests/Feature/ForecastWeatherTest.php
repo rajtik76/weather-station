@@ -171,24 +171,39 @@ it('reports a FORECAST_HISTORY_SINCE that is not a date and fits the correction 
     'not a date at all' => 'shield',
 ]);
 
-it('issues one forecast an hour, from the first reading of the hour', function (string $issuedBefore, int $expected): void {
-    $this->travelTo(Date::parse('2026-10-01 10:25:00', 'UTC'));
+it('issues a forecast after every upload, within the hour too', function (): void {
     $sensor = Sensor::factory()->create();
-    $recent = Date::parse('2026-10-01 10:20:00', 'UTC')->getTimestamp();
-    forecastReading($sensor, $recent, 1181, 8327, 97655);
-    Forecast::factory()->for($sensor)->create(['issued_at' => Date::parse($issuedBefore, 'UTC')->getTimestamp()]);
     Http::fake([
         'http://forecast.test/correction' => Http::response(fittedCorrection()),
-        'http://forecast.test/forecast' => Http::response(serviceForecast($recent)),
+        'http://forecast.test/forecast' => fn (Request $request) => Http::response(serviceForecast(intdiv(now()->getTimestamp(), 600) * 600)),
     ]);
+
+    foreach (['2026-10-01 10:05:00', '2026-10-01 10:15:00', '2026-10-01 10:25:00'] as $at) {
+        $this->travelTo(Date::parse($at, 'UTC'));
+        forecastReading($sensor, now()->getTimestamp(), 1181, 8327, 97655);
+        dispatch_sync(new ForecastWeather($sensor));
+    }
+
+    expect(Forecast::query()->pluck('issued_at')->all())->toBe([
+        Date::parse('2026-10-01 10:00:00', 'UTC')->getTimestamp(),
+        Date::parse('2026-10-01 10:10:00', 'UTC')->getTimestamp(),
+        Date::parse('2026-10-01 10:20:00', 'UTC')->getTimestamp(),
+    ])
+        ->and(collect(Http::recorded())->filter(fn (array $pair): bool => $pair[0]->url() === 'http://forecast.test/correction'))->toHaveCount(1);
+});
+
+it('keeps the forecast already issued for the newest window when an upload brings nothing newer', function (): void {
+    $this->travelTo(Date::parse('2026-10-01 10:45:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    forecastReading($sensor, Date::parse('2026-10-01 10:20:00', 'UTC')->getTimestamp(), 1181, 8327, 97655);
+    $issued = Forecast::factory()->for($sensor)->create(['issued_at' => Date::parse('2026-10-01 10:20:00', 'UTC')->getTimestamp()]);
+    Http::fake();
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->count())->toBe($expected);
-})->with([
-    'already issued this hour' => ['2026-10-01 10:00:00', 1],
-    'last issued the hour before' => ['2026-10-01 09:50:00', 2],
-]);
+    Http::assertNothingSent();
+    expect(Forecast::query()->sole()->data)->toEqual($issued->data);
+});
 
 it('fits the correction once a day', function (): void {
     $sensor = Sensor::factory()->create();
