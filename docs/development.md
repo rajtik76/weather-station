@@ -23,20 +23,20 @@ Rain is detected by `App\ValueObject\RainDetector` per ten-minute window: ring a
 
 ## Layout
 
-| Path                | Contents                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`         | Arduino sketches; [`README`](../firmware/README.md), [`CHANGELOG`](../firmware/CHANGELOG.md)                                                                        |
-| `forecast/`         | ČHMÚ fetching, training, scoring, the service; [`README`](../forecast/README.md), [`CHANGELOG`](../forecast/CHANGELOG.md)                                           |
-| `app/Http/`         | Ingest endpoint, form request, bearer token middleware                                                                                                              |
-| `app/Enums/`        | `ProtocolVersion` (payload version to decoder), bucket widths per span                                                                                              |
-| `app/ValueObject/`  | Per-version payload decoding; calculations for the pages: sea-level pressure, dew point, rain, forecast scores, number format                                       |
-| `app/Models/`       | Sensors, measurements, station reports, forecasts, events                                                                                                           |
-| `app/Queries/`      | Everything pages and jobs read: chart buckets, scoring, newest forecast and report, the one client of the forecast service, the station correction cached for a day |
-| `app/Jobs/`         | `ForecastWeather` (asks the service after every upload, stores the answer); `BackfillForecastBase` (`php artisan forecast:backfill-base`)                           |
-| `app/Livewire/`     | The three pages; views and partials in `resources/views/livewire/`                                                                                                  |
-| `database/seeders/` | A month of two stations (first: last three days with noise and two showers, last day with light), two weeks of forecasts each                                       |
-| `docs/`             | [API contract](api.md); KiCad projects in `docs/hardware/kicad/`                                                                                                    |
-| `docker/`           | nginx, PHP-FPM, supervisord config for the production image; init script for the local test database                                                                |
+| Path                | Contents                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`         | Arduino sketches; [`README`](../firmware/README.md), [`CHANGELOG`](../firmware/CHANGELOG.md)                                                                                                                                          |
+| `forecast/`         | ČHMÚ fetching, training, scoring, the service; [`README`](../forecast/README.md), [`CHANGELOG`](../forecast/CHANGELOG.md)                                                                                                             |
+| `app/Http/`         | Ingest endpoint, form request, bearer token middleware                                                                                                                                                                                |
+| `app/Enums/`        | `ProtocolVersion` (payload version to decoder), bucket widths per span                                                                                                                                                                |
+| `app/ValueObject/`  | Per-version payload decoding; calculations for the pages: sea-level pressure, dew point, rain, forecast scores, number format                                                                                                         |
+| `app/Models/`       | Sensors, measurements, station reports, forecasts, events                                                                                                                                                                             |
+| `app/Queries/`      | Everything pages and jobs read: chart buckets, scoring, newest forecast and report, the one client of the forecast service, the station correction cached for a day                                                                   |
+| `app/Jobs/`         | `ForecastWeather` (asks the service after every upload, stores the answer and the light experiment); `BackfillForecastBase` (`php artisan forecast:backfill-base`), `BackfillLightExperiment` (`php artisan forecast:backfill-light`) |
+| `app/Livewire/`     | The three pages; views and partials in `resources/views/livewire/`                                                                                                                                                                    |
+| `database/seeders/` | A month of two stations (first: last three days with noise and two showers, last day with light), two weeks of forecasts each                                                                                                         |
+| `docs/`             | [API contract](api.md); KiCad projects in `docs/hardware/kicad/`                                                                                                                                                                      |
+| `docker/`           | nginx, PHP-FPM, supervisord config for the production image; init script for the local test database                                                                                                                                  |
 
 ## Running it
 
@@ -67,6 +67,7 @@ PostgreSQL everywhere (same image as production); the charts average buckets in 
 
 - `MeasurementSeeder`: a month of two stations at the reporting interval; first station has noise for its last three days (two showers) and light for the last one, the second has neither
 - `ForecastSeeder`: a forecast on every ten-minute slot of each station's last two weeks; synthetic, shaped like the service's answer (improving correction, a new model taking over five days back)
+- `LightForecastSeeder` (local and testing only): a synthetic light experiment on forecasts issued while the station had light
 - The forecast and accuracy panel show without the service running
 
 ## Deploying
