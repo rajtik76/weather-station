@@ -66,7 +66,7 @@ PostgreSQL everywhere (same image as production); the charts average buckets in 
 ### Sample data
 
 - `MeasurementSeeder`: a month of two stations at the reporting interval; first station has noise for its last three days (two showers) and light for the last one, the second has neither
-- `ForecastSeeder`: a forecast from each station's newest reading and one on every hour of the two weeks before; synthetic, shaped like the service's answer (improving correction, a new model taking over five days back)
+- `ForecastSeeder`: a forecast on every ten-minute slot of each station's last two weeks; synthetic, shaped like the service's answer (improving correction, a new model taking over five days back)
 - The forecast and accuracy panel show without the service running
 
 ## Deploying

@@ -54,10 +54,7 @@ class ForecastSeeder extends Seeder
             $retrainedAt = $newest - self::RETRAINED_HOURS_AGO * 3600;
             // Trained the hour before it took over.
             $model = Date::createFromTimestamp($retrainedAt - 3600, 'UTC')->toIso8601String();
-            $issues = $readings->keys()
-                ->filter(fn (int $slot): bool => $slot >= $since && $slot % 3600 === 0)
-                ->push($newest)
-                ->unique();
+            $issues = $readings->keys()->filter(fn (int $slot): bool => $slot >= $since);
 
             foreach ($issues as $issuedAt) {
                 $now = $readings->get($issuedAt);

@@ -21,7 +21,7 @@ it('seeds a forecast every seeded station shows on the overview', function (stri
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
-    // The record ends on the 11:50 slot: hourly forecasts from 12:00 two weeks back to 11:00, and 11:50's.
+    // The record ends on the 11:50 slot: a forecast on every slot from 11:50 two weeks back.
     $this->travelTo(Date::parse('2026-09-24 12:05:00', 'UTC'));
     seed([MeasurementSeeder::class, ForecastSeeder::class]);
 
@@ -44,7 +44,7 @@ it('seeds six hours in the shape the forecast service answers with', function ()
         }
     });
 
-    expect(Forecast::query()->count())->toBe(2 * (14 * 24 + 1));
+    expect(Forecast::query()->count())->toBe(2 * (14 * 24 * 6 + 1));
 });
 
 it('seeds forecasts old enough for the accuracy panel to score', function (): void {
