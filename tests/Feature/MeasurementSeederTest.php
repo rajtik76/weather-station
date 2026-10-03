@@ -6,6 +6,7 @@ use App\Enums\ProtocolVersion;
 use App\Livewire\Charts;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\Queries\ServiceReadings;
 use App\ValueObject\CarriesNoise;
 use App\ValueObject\LightWindow;
 use App\ValueObject\MeasurementDataV4;
@@ -78,4 +79,14 @@ it('seeds showers the waterfall marks, only where there is a microphone', functi
 
     expect(Livewire::test(Charts::class)->get('rainSlots'))->not->toBeEmpty()
         ->and(Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->get('rainSlots'))->toBeEmpty();
+});
+
+it('seeds each window as arrived when it was stamped', function (): void {
+    seed(MeasurementSeeder::class);
+
+    $sensor = Sensor::query()->where('name', 'sensor-001')->sole();
+    $readings = new ServiceReadings($sensor->id)->recent(7 * 86400, withLight: true);
+
+    expect($readings)->not->toBeEmpty()
+        ->and(array_column($readings, 'received_at'))->toBe(array_map(fn (int $timestamp): int => min($timestamp, now()->getTimestamp()), array_column($readings, 'timestamp')));
 });

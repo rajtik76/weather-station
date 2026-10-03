@@ -16,6 +16,7 @@ use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Date;
 
 class MeasurementSeeder extends Seeder
 {
@@ -127,12 +128,14 @@ class MeasurementSeeder extends Seeder
                     default => ProtocolVersion::V1,
                 };
                 $window = fn (): MeasurementDataV2 => $this->window($t, $h, $p, $station['sunSpikes'] && $this->inAfternoonSun($slot));
+                // Stamped by the last reading, 30 s short of the slot's end.
+                $timestamp = $version === ProtocolVersion::V1 ? $slot : $slot + self::STEP_SECONDS - 30;
+                $arrived = Date::createFromTimestamp(min($timestamp, now()->getTimestamp()));
 
                 $rows[] = [
                     'sensor_id' => $sensor->id,
                     'protocol_version' => $version->value,
-                    // Stamped by the last reading, 30 s short of the slot's end.
-                    'timestamp' => $version === ProtocolVersion::V1 ? $slot : $slot + self::STEP_SECONDS - 30,
+                    'timestamp' => $timestamp,
                     'data' => (string) match ($version) {
                         ProtocolVersion::V1 => new MeasurementDataV1(temperature: $t, humidity: $h, pressure: $p),
                         ProtocolVersion::V2 => $window(),
@@ -142,8 +145,8 @@ class MeasurementSeeder extends Seeder
                             $this->light($slot, $this->isShowering($slot, $end)),
                         ),
                     },
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'created_at' => $arrived,
+                    'updated_at' => $arrived,
                 ];
             }
 
