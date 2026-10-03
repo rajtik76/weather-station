@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `nwp` is the numerical weather model's temperature (°C) for the same window, fetched at issue time.
  *
  * @phpstan-type Band array{low: float, mid: float, high: float}
- * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}, nwp?: array{temperature: float}}
+ * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}, nwp?: array{temperature: float}, experiment?: array{version: string, temperature: Band, synthetic?: bool}}
  *
  * @property int $sensor_id
  * @property int $issued_at

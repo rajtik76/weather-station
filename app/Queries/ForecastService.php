@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Http;
  * @phpstan-type BaseHorizon array{hours: int, temperature: Band, humidity: Band, rain_probability?: float}
  * @phpstan-type BaseAnswer array{model: string, forecasts: list<array{issued_at: int, horizons: list<BaseHorizon>}>}
  * @phpstan-type Fitted array{model: string, correction: int, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
+ * @phpstan-type LightFitted array{model: string, version: string, profile: array{day: string, values: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
+ * @phpstan-type LightIssued array{issued_at: int, model: string, version: string, horizons: list<array{hours: int, temperature: Band}>}
  */
 final readonly class ForecastService
 {
@@ -68,6 +70,26 @@ final readonly class ForecastService
     {
         /** @var array{model: string} */
         return Http::timeout($timeout)->get($this->endpoint('health'))->throw()->json();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return LightFitted
+     */
+    public function lightCorrection(array $payload, int $timeout = 120): array
+    {
+        /** @var LightFitted */
+        return Http::timeout($timeout)->post($this->endpoint('light-correction'), $payload)->throw()->json();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return LightIssued
+     */
+    public function lightForecast(array $payload, int $timeout = 30): array
+    {
+        /** @var LightIssued */
+        return Http::timeout($timeout)->post($this->endpoint('light-forecast'), $payload)->throw()->json();
     }
 
     private function endpoint(string $path): string

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 use Carbon\CarbonInterface;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Support\Facades\Date;
 
 /**
@@ -27,6 +29,19 @@ final readonly class LocalTime
         return new self($timestamp);
     }
 
+    /** Local midnight of a Y-m-d date; null for anything else, 2026-17-09 included. */
+    public static function midnightOf(string $date): ?self
+    {
+        $midnight = DateTimeImmutable::createFromFormat('!Y-m-d', $date, new DateTimeZone(self::TIMEZONE));
+
+        return $midnight === false || $midnight->format('Y-m-d') !== $date ? null : new self($midnight->getTimestamp());
+    }
+
+    public function midnight(): self
+    {
+        return new self($this->moment()->startOfDay()->getTimestamp());
+    }
+
     /** Mirrored by `formatStamp()` in station-charts.js. */
     public function stamp(): string
     {
@@ -41,6 +56,12 @@ final readonly class LocalTime
     public function date(): string
     {
         return $this->moment()->format(self::DATE_FORMAT);
+    }
+
+    /** Y-m-d, as the forecast service names a local day. */
+    public function isoDate(): string
+    {
+        return $this->moment()->format('Y-m-d');
     }
 
     /**
