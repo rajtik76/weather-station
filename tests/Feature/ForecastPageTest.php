@@ -96,6 +96,70 @@ it('keeps the stored weather model off the page', function (): void {
         ->assertDontSee('Open-Meteo');
 });
 
+it('shows the sensor prototype only in the comparison graphs', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    pageReading($sensor, $issued, 1200);
+    pageReading($sensor, $issued + 3600, 1300);
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => $issued,
+        'data' => [[
+            ...pageHorizon(1, 12.0, 12.8, 13.5),
+            'base' => ['temperature' => ['low' => 12.0, 'mid' => 12.4, 'high' => 12.9], 'humidity' => ['low' => 68.0, 'mid' => 75.0, 'high' => 82.0]],
+            'experiment' => ['version' => 'light-v1', 'temperature' => ['low' => 12.5, 'mid' => 12.9, 'high' => 13.5]],
+        ]],
+    ]);
+
+    $html = $this->get(route('forecast'))
+        ->assertSee('VEML prototype (light-v1)')
+        ->assertSee('changes nothing on it')
+        ->assertSee('shown · VEML prototype')
+        ->getContent();
+
+    preg_match('/data-accuracy-chart="days"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);
+    $days = json_decode(html_entity_decode($matches[1] ?? '[]'), true, flags: JSON_THROW_ON_ERROR);
+    expect($days[0][13])->toEqual(90.0);
+    expect($days[0][14])->toEqual(0.1);
+    expect($days[0][15])->toEqual(100.0);
+});
+
+it('keeps the shown and base history when the prototype starts later', function (): void {
+    $sensor = Sensor::factory()->create();
+    $older = Date::parse('2026-09-10 08:00:00', 'UTC')->getTimestamp();
+    $recent = Date::parse('2026-09-24 09:00:00', 'UTC')->getTimestamp();
+    foreach ([$older, $recent] as $issued) {
+        pageReading($sensor, $issued, 1200);
+        pageReading($sensor, $issued + 3600, 1300);
+        $horizon = [
+            ...pageHorizon(1, 12.0, 12.8, 13.5),
+            'base' => ['temperature' => ['low' => 12.0, 'mid' => 12.4, 'high' => 12.9], 'humidity' => ['low' => 68.0, 'mid' => 75.0, 'high' => 82.0]],
+        ];
+        if ($issued === $recent) {
+            $horizon['experiment'] = ['version' => 'light-v1', 'temperature' => ['low' => 12.5, 'mid' => 12.9, 'high' => 13.5]];
+        }
+        Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [$horizon]]);
+    }
+
+    $html = $this->get(route('forecast'))->assertSee('VEML prototype')->getContent();
+    preg_match_all('/data-accuracy-chart="([^"]+)"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches, PREG_SET_ORDER);
+    $charts = [];
+    foreach ($matches as $match) {
+        $charts[$match[1]] = json_decode(html_entity_decode($match[2]), true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    foreach (['days', 'widths'] as $key) {
+        expect($charts[$key])->toHaveCount(15);
+        expect($charts[$key][0])->toEqual([
+            '10.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null,
+            null, null, null, null, 0,
+        ]);
+        expect($charts[$key][14][0])->toBe('24.9.2026');
+        expect(array_slice($charts[$key][14], 13))->toEqual([90.0, 0.1, 100.0, 1.0, 1]);
+    }
+    expect($charts['hours'][11])->toEqual([100.0, 1, 0.2, 0.2, 0.2, null, 0, null, null, null]);
+    expect($charts['hours'][12])->toEqual([100.0, 1, 0.2, 0.2, 0.2, 100.0, 1, 0.1, 0.1, 0.1]);
+});
+
 it('charts the verdict\'s horizon in detail, the longest scored until it has come true', function (): void {
     scoredStation();
 

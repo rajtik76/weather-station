@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\ExperimentalForecastScore;
 use App\ValueObject\ForecastScore;
 use App\ValueObject\LocalTime;
 use App\ValueObject\ModelName;
@@ -28,6 +29,9 @@ use Illuminate\Support\Facades\DB;
  * listen through are left out of the rain figures only. Days carry the model name
  * or correction version that took over that day; a null correction is skipped.
  * `byHour` buckets the shown forecast by the local hour it was for.
+ * With an experiment (ExperimentalForecastScore), a ComparedDay appends the prototype's
+ * skill, miss, percent in range, width and hours scored to the Day, and a
+ * ComparedHour appends the prototype's Hour to the shown one.
  *
  * A Day is `[date, forecast hours scored, skill in %, mean miss and mean naive
  * miss in °C, percent in range, mean range width in °C, base: skill, miss,
@@ -39,13 +43,15 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type Hour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}
  * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}
  * @phpstan-type Figures array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
+ * @phpstan-type ComparedDay array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int, 13: ?float, 14: ?float, 15: ?float, 16: ?float, 17: int}
+ * @phpstan-type ComparedHour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: int, 7: ?float, 8: ?float, 9: ?float}
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
- * @phpstan-type Score array{hours: int, days: list<Day>, corrected: Figures, base: ?Figures, shown: Figures, rain: Rain, byHour: list<Hour>}
+ * @phpstan-type Score array{hours: int, days: list<Day|ComparedDay>, corrected: Figures, base: ?Figures, shown: Figures, rain: Rain, byHour: list<Hour|ComparedHour>, experiment?: array{version: string, synthetic: bool}}
  * @phpstan-type Miss array{inRange: bool, difference: float, width: float}
  *
  * @phpstan-import-type Band from Forecast
  *
- * @phpstan-type Scored array{issuedAt: int, date: string, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss}
+ * @phpstan-type Scored array{issuedAt: int, date: string, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss, experiment?: array{version: string, synthetic: bool, miss: Miss}}
  */
 final readonly class ForecastAccuracy
 {
@@ -118,6 +124,11 @@ final readonly class ForecastAccuracy
                     'chance' => $horizon['rain_probability'],
                     'corrected' => ForecastScore::miss($truth, $horizon['temperature']),
                     'base' => isset($horizon['base']) ? ForecastScore::miss($truth, $horizon['base']['temperature']) : null,
+                    ...(isset($horizon['experiment']) ? ['experiment' => [
+                        'version' => $horizon['experiment']['version'],
+                        'synthetic' => $horizon['experiment']['synthetic'] ?? false,
+                        'miss' => ForecastScore::miss($truth, $horizon['experiment']['temperature']),
+                    ]] : []),
                 ];
             }
         }
@@ -126,7 +137,8 @@ final readonly class ForecastAccuracy
         $scores = [];
 
         foreach ($tally as $hours => $scored) {
-            $scores[] = ForecastScore::of($hours, $scored, $tookOver, $forecasts->last()->issued_at);
+            $lastIssued = $forecasts->last()->issued_at;
+            $scores[] = ExperimentalForecastScore::onto(ForecastScore::of($hours, $scored, $tookOver, $lastIssued), $scored, $tookOver, $lastIssued);
         }
 
         return $scores;

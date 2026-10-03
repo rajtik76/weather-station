@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Cache;
 final readonly class CachedForecastAccuracy
 {
     /** Bump when Score changes shape so a deploy never reads the old one. */
-    private const int SHAPE = 9;
+    private const int SHAPE = 12;
 
     private const int TTL_MINUTES = 15;
 
@@ -37,16 +37,26 @@ final readonly class CachedForecastAccuracy
             return [];
         }
 
-        $key = "forecast-accuracy:{$this->sensorId}";
-        $cached = Cache::get($key);
+        $cached = Cache::get($this->key());
 
         if (is_array($cached) && ($cached['shape'] ?? null) === self::SHAPE && ($cached['issuedAt'] ?? null) === $newest && ($cached['days'] ?? null) === $days) {
             return $cached['scores'];
         }
 
         $scores = new ForecastAccuracy($this->sensorId)->since(now()->subDays($days)->getTimestamp());
-        Cache::put($key, ['shape' => self::SHAPE, 'issuedAt' => $newest, 'days' => $days, 'scores' => $scores], now()->addMinutes(self::TTL_MINUTES));
+        Cache::put($this->key(), ['shape' => self::SHAPE, 'issuedAt' => $newest, 'days' => $days, 'scores' => $scores], now()->addMinutes(self::TTL_MINUTES));
 
         return $scores;
+    }
+
+    /** For a change to stored forecasts that leaves the newest one as it was. */
+    public function forget(): void
+    {
+        Cache::forget($this->key());
+    }
+
+    private function key(): string
+    {
+        return "forecast-accuracy:{$this->sensorId}";
     }
 }

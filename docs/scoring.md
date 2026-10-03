@@ -26,3 +26,14 @@ Stored for later use, neither scored nor shown: it forecasts air temperature, th
 - Range width
 - Mean rain chance given when it rained and when it did not
 - Chart by hour of the day of how much warmer or colder the station read than forecast (morning sun on the shield reads warmer)
+
+## Light experiment
+
+A second temperature correction that reads the VEML7700 in the shield. It runs beside the shown forecast and changes nothing on it.
+
+- After the shown forecast is stored, `ForecastWeather` asks `POST /light-forecast` and stores the answer as `experiment` (`version`, `temperature`) under each horizon it covers
+- Fitted by `POST /light-correction` once per local day of the newest reading, from the last 60 days, and cached per sensor
+- A failure is reported and pauses the experiment for an hour; the forecast is already stored
+- The forecast page adds it as one more line to skill by day, range width and bias by hour, scored on its own forecasts; shown and base stay exactly as without it, tooltips give each line's count
+- `php artisan forecast:backfill-light <Y-m-d>` replays it on forecasts stored without it, from the readings the server held when each was issued (`created_at`); unlike the weather model, nothing later leaks in
+- Sample data: `LightForecastSeeder` adds a synthetic `demo-light-v1` curve, flagged `synthetic`; the page labels it a preview

@@ -59,7 +59,7 @@ final readonly class ForecastScore
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver
      * @return list<Day>
      */
-    private static function byDay(array $scored, array $tookOver, int $lastIssued): array
+    public static function byDay(array $scored, array $tookOver, int $lastIssued): array
     {
         $grouped = [];
 
@@ -103,7 +103,7 @@ final readonly class ForecastScore
      * @param  list<Scored>  $scored
      * @return list<Hour>
      */
-    private static function byHour(array $scored): array
+    public static function byHour(array $scored): array
     {
         $grouped = [];
 

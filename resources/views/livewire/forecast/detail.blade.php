@@ -1,6 +1,7 @@
 {{-- ECharts watches data-accuracy-rows (forecast-accuracy.js); Livewire never touches the canvases. --}}
 @php($score = $this->score)
 @if ($score !== null)
+    @php($experiment = $score['experiment'] ?? null)
     @php($rain = $score['rain'])
     @php($base = '<svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ref)" stroke-width="2" stroke-dasharray="3 3" /></svg>')
     <section class="page-wrap mt-20 sm:mt-24" aria-labelledby="detail-h">
@@ -8,6 +9,13 @@
             <div class="max-w-[60ch]">
                 <h2 id="detail-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Day by day</h2>
                 <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">One horizon at a time. "Shown" is the forecast on the page, "base" the model before this station's correction; the gap between them is what the correction has learnt.</p>
+                @if ($experiment !== null)
+                    @if ($experiment['synthetic'])
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">Synthetic preview: VEML prototype ({{ $experiment['version'] }}). These graphs compare demonstration forecasts, not measured prototype performance.</p>
+                    @else
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">VEML prototype ({{ $experiment['version'] }}) runs alongside the shown forecast and changes nothing on it. Its line starts with its first scored forecast; tooltips show how many hours each line was scored on.</p>
+                    @endif
+                @endif
             </div>
             <div class="seg" role="group" aria-label="Hours ahead">
                 @foreach ($this->forecastAccuracy as $scored)
@@ -24,9 +32,12 @@
             <div class="min-w-0">
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
                     <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]">Skill by day</h3>
-                    <p class="m-0 flex items-center gap-4 font-mono text-[13px] text-ink-3">
+                    <p class="m-0 flex flex-wrap items-center gap-4 font-mono text-[13px] text-ink-3">
                         <span class="flex items-center gap-2"><span class="swatch bg-ch1"></span>shown</span>
                         <span class="flex items-center gap-2">{!! $base !!}base</span>
+                        @if ($experiment !== null)
+                            <span class="flex items-center gap-2"><span class="swatch bg-aux"></span>VEML prototype</span>
+                        @endif
                         <span>{{ $score['hours'] }} h ahead</span>
                     </p>
                 </div>
@@ -35,7 +46,7 @@
                     data-accuracy-chart="days"
                     data-accuracy-rows="{{ json_encode($score['days']) }}"
                     role="img"
-                    aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, shown and base"
+                    aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[260px] w-full"></div>
                 </div>
@@ -50,7 +61,7 @@
                     data-accuracy-chart="widths"
                     data-accuracy-rows="{{ json_encode($score['days']) }}"
                     role="img"
-                    aria-label="Width of the {{ $score['hours'] }} h range by day, shown and base"
+                    aria-label="Width of the {{ $score['hours'] }} h range by day, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[260px] w-full"></div>
                 </div>
@@ -84,14 +95,14 @@
             <div class="min-w-0">
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
                     <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]">Bias by hour of day</h3>
-                    <p class="m-0 font-mono text-[13px] text-ink-3">shown, {{ $score['hours'] }} h ahead, °C</p>
+                    <p class="m-0 font-mono text-[13px] text-ink-3">{{ $experiment === null ? 'shown' : 'shown · VEML prototype' }}, {{ $score['hours'] }} h ahead, °C</p>
                 </div>
                 <div
                     class="rounded-[10px] border border-line bg-screen p-3"
                     data-accuracy-chart="hours"
                     data-accuracy-rows="{{ json_encode($score['byHour']) }}"
                     role="img"
-                    aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day"
+                    aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day{{ $experiment === null ? '' : ', shown and VEML prototype' }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[220px] w-full"></div>
                 </div>

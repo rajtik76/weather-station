@@ -81,6 +81,43 @@ function byHour(array $scored): array
     return $hours;
 }
 
+it('appends the latest experiment version to the score and leaves shown and base as scored without it', function (): void {
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    $stations = [];
+    foreach (['with experiment' => true, 'without' => false] as $withExperiment) {
+        $sensor = Sensor::factory()->create();
+        $stations[] = $sensor;
+        foreach ([1200, 1300, 1400, 1500] as $offset => $temperature) {
+            measuredAt($sensor, $issued + $offset * 3600, $temperature);
+        }
+        Forecast::factory()->for($sensor)->create([
+            'issued_at' => $issued,
+            'data' => [scoredHorizon(1, 8.0, 10.0, 12.0, base: [11.0, 12.0, 13.0])],
+        ]);
+        foreach (['light-v0', 'light-v1'] as $offset => $version) {
+            Forecast::factory()->for($sensor)->create([
+                'issued_at' => $issued + ($offset + 1) * 3600,
+                'data' => [[
+                    ...scoredHorizon(1, 12.0, 13.0 + $offset, 16.0, base: [12.0, 12.0 + $offset, 14.0]),
+                    ...($withExperiment ? ['experiment' => ['version' => $version, 'temperature' => ['low' => 14.0, 'mid' => 14.75, 'high' => 15.0]]] : []),
+                ]],
+            ]);
+        }
+    }
+
+    $score = new ForecastAccuracy($stations[0]->id)->since($issued)[0];
+    $plain = new ForecastAccuracy($stations[1]->id)->since($issued)[0];
+
+    expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false]);
+    expect(array_diff_key($score, array_flip(['days', 'byHour', 'experiment'])))->toBe(array_diff_key($plain, array_flip(['days', 'byHour'])));
+    expect(array_map(fn (array $day): array => array_slice($day, 0, 13), $score['days']))->toBe($plain['days']);
+    expect(array_map(fn (array $hour): array => array_slice($hour, 0, 5), $score['byHour']))->toBe($plain['byHour']);
+    expect($score['days'][0][1])->toBe(3);
+    expect(array_slice($score['days'][0], 13))->toBe([75.0, 0.25, 100.0, 1.0, 1]);
+    expect(array_slice($score['byHour'][11], 5))->toBe([null, 0, null, null, null]);
+    expect(array_slice($score['byHour'][13], 5))->toBe([100.0, 1, 0.25, 0.25, 0.25]);
+});
+
 beforeEach(function (): void {
     $this->travelTo(Date::parse('2026-09-24 12:00:00', 'UTC'));
 });

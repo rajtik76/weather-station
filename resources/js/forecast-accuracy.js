@@ -25,6 +25,11 @@ const DAY = {
     baseWidth: 10,
     tookOver: 11,
     correctionTo: 12,
+    prototypeSkill: 13,
+    prototypeError: 14,
+    prototypePercent: 15,
+    prototypeWidth: 16,
+    prototypeCount: 17,
 };
 
 // A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
@@ -32,6 +37,9 @@ const SKILL_FLOOR = -100;
 
 /** Hour row; errors and bias in °C (bias: mean reading minus the forecast's middle). Nulls for an hour with none. */
 const HOUR = { percent: 0, count: 1, error: 2, worst: 3, bias: 4 };
+
+/** First column of the prototype's Hour, appended to the shown one. */
+const PROTOTYPE_HOUR = 5;
 
 const celsius = { format: (value) => formatNumber(value, 1) };
 
@@ -48,7 +56,7 @@ const charts = new Map();
 const painted = new Map();
 
 function palette() {
-    return { ...basePalette(), temperature: token("--ch1") };
+    return { ...basePalette(), temperature: token("--ch1"), prototype: token("--aux") };
 }
 
 const pad = (hour) => String(hour).padStart(2, "0");
@@ -101,6 +109,17 @@ function dayTooltipHtml(row) {
     );
     lines.push(forecastHours(row[DAY.count]));
 
+    if (row[DAY.prototypePercent] !== undefined && row[DAY.prototypePercent] !== null) {
+        lines.push(`VEML prototype ${versus(row[DAY.prototypeSkill])}`);
+        lines.push(
+            `prototype off by ${row[DAY.prototypeError] === null ? "n/a" : celsius.format(row[DAY.prototypeError])} °C`,
+        );
+        lines.push(
+            `${row[DAY.prototypePercent]} % in range, ${celsius.format(row[DAY.prototypeWidth])} °C wide`,
+        );
+        lines.push(`prototype: ${forecastHours(row[DAY.prototypeCount])}`);
+    }
+
     return lines.join("<br>") + tookOver;
 }
 
@@ -122,7 +141,24 @@ function hourTooltipHtml(hour, row) {
         `${span}<br><strong>${side}</strong>` +
         `<br>off by ${celsius.format(row[HOUR.error])} °C on average` +
         `<br>off by ${celsius.format(row[HOUR.worst])} °C at most` +
-        `<br>${row[HOUR.percent]} % in range<br>${forecastHours(row[HOUR.count])}`
+        `<br>${row[HOUR.percent]} % in range<br>${forecastHours(row[HOUR.count])}` +
+        prototypeHourHtml(row)
+    );
+}
+
+function prototypeHourHtml(row) {
+    if (row.length <= PROTOTYPE_HOUR) {
+        return "";
+    }
+
+    if (row[PROTOTYPE_HOUR + HOUR.count] === 0) {
+        return "<br><strong>VEML prototype</strong>: no forecast scored";
+    }
+
+    return (
+        `<br><strong>VEML prototype</strong>: bias ${signedDegrees(row[PROTOTYPE_HOUR + HOUR.bias])}` +
+        `<br>off by ${celsius.format(row[PROTOTYPE_HOUR + HOUR.error])} °C on average` +
+        `<br>${row[PROTOTYPE_HOUR + HOUR.percent]} % in range<br>prototype: ${forecastHours(row[PROTOTYPE_HOUR + HOUR.count])}`
     );
 }
 
@@ -188,6 +224,25 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
+function prototypeLine(rows, firstColumn, column, colours) {
+    if (!rows.some((row) => row.length > firstColumn)) {
+        return [];
+    }
+
+    return [
+        {
+            name: "VEML prototype",
+            type: "line",
+            connectNulls: false,
+            symbol: "circle",
+            symbolSize: 6,
+            lineStyle: { color: colours.prototype, width: 2 },
+            itemStyle: { color: colours.prototype },
+            data: rows.map((row) => row[column] ?? null),
+        },
+    ];
+}
+
 function daysOption(rows, canvas) {
     const colours = palette();
 
@@ -246,6 +301,7 @@ function daysOption(rows, canvas) {
                 ]),
                 data: rows.map((row) => row[DAY.skill]),
             },
+            ...prototypeLine(rows, DAY.prototypeSkill, DAY.prototypeSkill, colours),
         ],
     };
 }
@@ -332,6 +388,7 @@ function hoursOption(rows, canvas) {
                 },
                 data: rows.map((row) => row[HOUR.bias]),
             },
+            ...prototypeLine(rows, PROTOTYPE_HOUR, PROTOTYPE_HOUR + HOUR.bias, colours),
         ],
     };
 }
@@ -392,6 +449,7 @@ function widthsOption(rows, canvas) {
                 markLine: changeMarks(rows, colours),
                 data: rows.map((row) => row[DAY.width]),
             },
+            ...prototypeLine(rows, DAY.prototypeSkill, DAY.prototypeWidth, colours),
         ],
     };
 }
