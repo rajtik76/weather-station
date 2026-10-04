@@ -83,3 +83,7 @@ it('leaves out an hour already measured when the newest forecast is from the pre
 it('has no hours without a forecast', function (): void {
     expect(ForecastHours::of([], [['at' => hoursUtc('2026-09-24 08:20:00'), 't' => 11.0]]))->toBe([]);
 });
+
+it('refuses a forecast without horizons', function (): void {
+    new IssuedForecast(hoursUtc('2026-09-24 08:00:00'), []);
+})->throws(InvalidArgumentException::class);

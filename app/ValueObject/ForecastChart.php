@@ -7,7 +7,6 @@ namespace App\ValueObject;
 /**
  * The overview's forecast chart: the last six hours measured on the left, the forecast median and the hour's range on the right. Coordinates are percentages of a 100 × 100 box, y growing down.
  *
- *
  * @phpstan-type Point array{x: float, y: float}
  * @phpstan-type Tick array{value: float, y: float}
  */
@@ -44,7 +43,7 @@ final readonly class ForecastChart
     public static function of(array $readings, array $horizons): self
     {
         $now = $readings[count($readings) - 1];
-        $values = [...array_column($readings, 't'), ...array_map(fn (ForecastHour $hour): float => $hour->tLow, $horizons), ...array_map(fn (ForecastHour $hour): float => $hour->tHigh, $horizons)];
+        $values = [...array_column($readings, 't'), ...array_column($horizons, 'tLow'), ...array_column($horizons, 'tHigh')];
         $span = max(max($values) - min($values), 1.0);
         $low = min($values) - $span * self::PADDING;
         $high = max($values) + $span * self::PADDING;
