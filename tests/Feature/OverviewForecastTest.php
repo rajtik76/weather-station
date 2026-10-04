@@ -116,3 +116,15 @@ it('shows no forecast for a row without hours', function (): void {
         ->assertSee('No forecast from the current readings yet')
         ->assertDontSee('range this hour');
 });
+
+it('hides the last forecast while the station is silent', function (): void {
+    $sensor = Sensor::factory()->create();
+    $lastHeard = now()->subDays(2)->getTimestamp();
+    Measurement::factory()->for($sensor)->create(['timestamp' => $lastHeard]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $lastHeard]);
+
+    $this->get(route('overview'))
+        ->assertOk()
+        ->assertSee('No forecast from the current readings yet')
+        ->assertDontSee('range this hour');
+});
