@@ -12,10 +12,8 @@ use App\ValueObject\ChartWindow;
 use Illuminate\Foundation\Bus\Dispatchable;
 
 /**
- * Fills `base` (the forecast before station correction) on forecasts stored without it.
- * Only forecasts of the model the service runs now (`/health`) are asked for;
- * a forecast is filled only when the answer covers every horizon it stores.
- * Returns how many were filled.
+ * Fills `base` on forecasts stored without it; returns how many were filled.
+ * Only forecasts of the model `/health` reports, and only when the answer covers every stored horizon.
  */
 class BackfillForecastBase
 {

@@ -159,7 +159,7 @@ it('plots pressure at the sensor\'s own resolution', function (): void {
 
     $html = Livewire::test(Charts::class)->html();
 
-    // Whole pascals are hundredths of a hectopascal; tenths drew a staircase.
+    // Whole pascals are hundredths of a hectopascal; tenths draw a staircase.
     expect(chartRows($html))->toContain('1013.62');
 
     expect($html)->toContain('1 013,6');

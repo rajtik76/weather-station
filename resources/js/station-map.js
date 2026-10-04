@@ -11,7 +11,7 @@ function ink() {
     return token("--ink") || "#18181b";
 }
 
-/** A circle and no marker at the centre: a dot on the exact coordinates would defeat the circle's "somewhere in here". */
+/** A circle and no marker at the centre: a dot would mark the exact coordinates. */
 function createStationMap(el) {
     const lat = Number.parseFloat(el.dataset.lat);
     const lng = Number.parseFloat(el.dataset.lng);

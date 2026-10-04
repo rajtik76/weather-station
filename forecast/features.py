@@ -1,7 +1,7 @@
 """Model inputs and targets, shared by training and serving (train/serve parity).
 
 Input: 10-minute UTC grid with T (°C), H (% RH), P (station pressure, hPa); training adds SRA10M (mm per 10 min).
-Gaps stay NaN. Pressure enters only as changes: its level encodes elevation and does not transfer between stations.
+Gaps stay NaN. Pressure enters only as changes: its level is station-specific.
 """
 
 import numpy as np

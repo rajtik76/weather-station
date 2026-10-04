@@ -11,7 +11,7 @@ const CORRECTION_MIGRATION = 'database/migrations/2026_09_26_154152_add_correcti
 it('dates every forecast stored before the column to the first version of the correction', function (): void {
     Artisan::call('migrate:rollback', ['--path' => CORRECTION_MIGRATION]);
     $forecast = Forecast::factory()->make(['correction' => null]);
-    // Written in the shape the table had then, without the column.
+    // Row without the correction column.
     DB::table('forecasts')->insert([
         'sensor_id' => $forecast->sensor_id,
         'issued_at' => $forecast->issued_at,

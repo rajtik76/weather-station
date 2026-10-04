@@ -766,7 +766,6 @@ void loop() {
         windowOpen = false;
         restartIfStuck();
 
-        // Send at once.
         lastUploadAttemptMs = 0;
       }
 

@@ -19,11 +19,9 @@ use Illuminate\Http\Client\RequestException;
 use UnexpectedValueException;
 
 /**
- * Replays the light experiment on forecasts stored without it, as ForecastWeather would have issued it:
- * fitted once per local day from the readings the server held at the day's first upload,
- * issued from the readings it held at the forecast's own upload.
- * Only forecasts of the model the service runs now (`/health`) and with no experiment on any horizon are replayed;
- * a failed day or forecast is reported and skipped. Returns how many were filled.
+ * Replays the light experiment on forecasts stored without it; returns how many were filled.
+ * Fitted once per local day from the readings held at the day's first upload, issued from those held at the forecast's upload.
+ * Only forecasts of the model `/health` reports with no experiment on any horizon.
  *
  * @phpstan-import-type LightFitted from ForecastService
  */

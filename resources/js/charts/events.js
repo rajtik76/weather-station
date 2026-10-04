@@ -72,7 +72,7 @@ export function eventTooltipHtml(strip, event) {
     return title + `<div style="margin-top:2px">${formatStamp(event.time)}</div>`;
 }
 
-/** Added by the frame to every strip; no strip draws its own. Lines are unlabelled (titles ran into each other), the title is in the tooltip. */
+/** Added by the frame to every strip; no strip draws its own. Lines are unlabelled, the title is in the tooltip. */
 export function eventLayer(strip, colours) {
     return [
         // No data of its own: it only carries the lines.

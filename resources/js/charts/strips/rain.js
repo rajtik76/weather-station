@@ -64,7 +64,7 @@ export function rainSeries(width) {
                     grid.x + grid.width - ICON_HALF,
                 );
 
-                // Placed by the element's own x/y, not the shape's: legacy positions drifted on zoom.
+                // Placed by the element's own x/y, not the shape's.
                 return {
                     type: "path",
                     x: middle - ICON_HALF,

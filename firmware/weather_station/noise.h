@@ -47,7 +47,7 @@ void noisePause();
 void noiseResume();
 
 // Around every I2C read: parks the task and stops SCK/WS, buffers stay. The clocks share the
-// 4 m cable with SDA/SCL and the VEML7700 missed every other transfer. ~0.5 s of noise lost per reading.
+// 4 m cable with SDA/SCL. ~0.5 s of noise lost per reading.
 void noiseHush();
 void noiseUnhush();
 

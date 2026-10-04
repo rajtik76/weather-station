@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * An entry in dashboard units: °C and %, pressure reduced to sea level at the station's height. The stored reading stays as sent.
+ * An entry in dashboard units: °C and %, pressure reduced to sea level at the station's height.
  *
  * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
  */
@@ -40,7 +40,7 @@ final readonly class Readout
     }
 
     /**
-     * Reduced with this entry's temperature, for an extreme (the sample kept none). Two decimals: tenths drew a staircase.
+     * Reduced with this entry's temperature, for an extreme (the sample kept none). Two decimals: tenths draw a staircase.
      */
     public function seaLevel(int $pascals): float
     {

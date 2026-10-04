@@ -1,7 +1,5 @@
-"""Station-specific correction of the base forecast, fitted from the station's own history and returned as plain numbers.
+"""Station correction of the base forecast: ridge on solar-time bins and recent errors, conformal 10-90 % range.
 
-Per variable and horizon: ridge regression of the base model's error on solar-time bins and recent
-errors, then the 10-90 % range is widened/narrowed to hold 80 % of readings (conformalized).
 Frames must be on the regular 10-minute grid (gaps as NaN rows): the error inputs are fixed shifts.
 """
 
@@ -74,7 +72,7 @@ def fit(
     longitude: float,
     since: pd.Timestamp | None = None,
 ) -> dict:
-    """One Correction per 'T_3h'-style target; empty while history is short. Only rows from `since` teach it (station changes)."""
+    """One Correction per 'T_3h'-style target; empty while history is short. Rows before `since` are ignored."""
     learnable = forecast.index >= since if since is not None else np.full(len(forecast), True)
     if int(learnable.sum()) < MIN_HISTORY_ROWS:
         return {}

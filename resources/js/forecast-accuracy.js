@@ -136,7 +136,7 @@ function prototypeHourHtml(experiment) {
 const TOOLTIP_GAP = 12;
 const SCREEN_EDGE = 8;
 
-/** Above the pointer, never past the screen: the chart can be wider than the screen, so ECharts' flip and `confine` left the tooltip half off a phone. */
+/** Above the pointer, never past the screen: ECharts' flip and `confine` use the chart's width, which can exceed the screen. */
 function besidePointer(canvas) {
     return ([x, y], params, dom, rect, { contentSize: [width, height] }) => {
         const box = canvas.getBoundingClientRect();

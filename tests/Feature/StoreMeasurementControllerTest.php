@@ -142,7 +142,7 @@ it('pings the uptime monitor once a batch is stored', function (): void {
         ],
     ])->assertCreated();
 
-    // Dispatched after the response; the test kernel terminates the request for us.
+    // Dispatched after the response; the test kernel terminates the request.
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://status.example.com/api/push/abc');
 });
 

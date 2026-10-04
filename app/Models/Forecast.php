@@ -13,9 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * One forecast service run; T, H and P are 10-90 % ranges around the median (°C, %, hPa).
- * `base` is the forecast before station correction, absent until
- * `forecast:backfill-base`. Its `rain_probability` is the classifier's answer
- * before nest_rain() capping (forecast/forecast.py); forecasts before v4.0.6 have none.
+ * `base` is the forecast before station correction; its `rain_probability` is uncapped by nest_rain(), absent on older rows.
  * `nwp` is the numerical weather model's temperature (°C) for the same window, fetched at issue time.
  *
  * @phpstan-type Band array{low: float, mid: float, high: float}

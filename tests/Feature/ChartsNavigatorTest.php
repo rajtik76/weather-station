@@ -13,7 +13,7 @@ use Livewire\Livewire;
 it('draws the navigator for a record shorter than one thinning bucket', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
-    // Drifting stamps, no row near a six-hour boundary: thinning by epoch phase left the navigator empty.
+    // Drifting stamps, no row near a six-hour boundary.
     $sensor = Sensor::factory()->create();
 
     foreach (range(1, 18) as $slot) {

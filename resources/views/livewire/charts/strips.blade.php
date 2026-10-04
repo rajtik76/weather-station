@@ -23,7 +23,7 @@
 
 <section class="page-wrap mt-8" aria-label="Channels">
     <div class="rounded-[10px] border border-line bg-screen px-3 pt-5 pb-4 sm:px-5">
-        {{-- Above the strips: below them a drag moved a chart that was off screen. --}}
+        {{-- Above the strips: below them a drag moves an off-screen chart. --}}
         <div class="border-b border-line pb-5">
             <p class="label-mono m-0 mb-2">Whole record</p>
             <div
@@ -92,7 +92,7 @@
                 </x-channel-strip>
             @endif
 
-            {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers: the lux are the shield's, read the shape. --}}
+            {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers: lux are relative, read the shape. --}}
             @if ($this->light !== [])
                 <x-channel-strip key="light" label="Light" channel="AUX" height="h-48 sm:h-56">
                     <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx, log scale</span>

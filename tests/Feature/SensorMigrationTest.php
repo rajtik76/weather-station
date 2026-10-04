@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/** The record as before sensors were a table; later migrations are rolled back to write the old shape. */
+/** Schema before the sensors table. */
 function schemaBeforeSensors(): void
 {
     Artisan::call('migrate:reset');

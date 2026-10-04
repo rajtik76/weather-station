@@ -9,9 +9,8 @@ use App\ValueObject\ModelName;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Forecasts whose model or correction version differs from the previous one,
- * newest first; a switch back after a rollback counts. A null correction
- * (stored before versions were kept) neither starts nor ends a change.
+ * Forecasts whose model or correction version differs from the previous one, newest first.
+ * A null correction neither starts nor ends a change.
  *
  * @phpstan-type Change array{at: int, date: string, model: ?string, correction: ?int}
  */

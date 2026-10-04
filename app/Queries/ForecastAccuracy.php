@@ -17,23 +17,12 @@ use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Scores one sensor's stored forecasts against what it then measured, per horizon.
- * Truth for "n hours ahead" is the ten-minute window starting n hours after the
- * forecast's own window (the models' training pairing); a slot stamped twice
- * counts by its first reading.
- *
- * Each horizon is scored as shown and as `base` (before station correction), both
- * on hours that have a base. Skill is how much smaller the miss is than the naive
- * guess (the forecast window's reading carried n hours on): 0 is no better, below
- * 0 worse. Misses are summed before dividing; a forecast whose own window went
- * unmeasured is left out of skill and misses only.
- *
- * Rain truth is the microphone (RainDetector) within the n hours; hours it did not
- * listen through are left out of the rain figures only. Days carry the model name
- * or correction version that took over that day; a null correction is skipped.
- * `byHour` buckets the shown forecast by the local hour it was for.
- * With an experiment (ExperimentalForecastScore), each DayScore and HourOfDayScore
- * carries the prototype's own score beside the shown one.
+ * Scores one sensor's stored forecasts per horizon, shown and `base`, on hours that have a base.
+ * Truth for "n hours ahead" is the ten-minute window starting n hours after the forecast's own window;
+ * a slot stamped twice counts by its first reading.
+ * Skill is the miss relative to the naive guess (the forecast window's reading carried n hours on).
+ * Misses are summed before dividing; a forecast with an unmeasured own window is left out of skill and misses.
+ * Rain truth is RainDetector within the n hours; hours without microphone data are left out of the rain figures.
  *
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
  * @phpstan-type Score array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: Rain, byHour: list<HourOfDayScore>, experiment?: array{version: string, synthetic: bool}}

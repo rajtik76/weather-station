@@ -265,7 +265,7 @@ class MeasurementSeeder extends Seeder
             default => self::HORIZON_LUX + self::SUN_LUX * sin(deg2rad($height)),
         };
 
-        // One cover per hour, off a hash of the hour (not mt_rand(), which would need reseeding); a shower is dark.
+        // One cover per hour from a hash of the hour; a shower is dark.
         $cover = $isShowering ? 0.12 : 0.25 + 0.75 * (crc32((string) intdiv($slot, 3600)) % 1000) / 999;
 
         $isMorningSun = $height > 3.0 && $this->localHour($slot) < self::MORNING_SUN_UNTIL && $cover > 0.7;

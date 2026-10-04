@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * Hears rain in a noise window's third-octave spectrum: drops on the plastic radiation shield are loud at 8 kHz and ring the shield around 1 kHz.
- * Tyres on a wet road are as loud at 8 kHz but do not ring it, so both are needed.
- * Calibrated on the rain of 24 September 2026; thresholds belong to this mounting.
+ * Rain in a noise window's third-octave spectrum: loud at 8 kHz and ringing the shield around 1 kHz.
+ * Wet-road tyres are loud at 8 kHz without the ring, so both bands are needed. Thresholds fit this mounting.
  */
 final readonly class RainDetector
 {

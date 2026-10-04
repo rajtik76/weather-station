@@ -9,8 +9,7 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * ForecastAccuracy cached until the next forecast, 15 minutes at most.
- * One key per sensor with the forecast and span inside the value: the database
- * store only deletes expired rows it reads, so a key per forecast grows the table.
+ * One key per sensor, the forecast and span inside the value: a key per forecast would grow the database store.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  */

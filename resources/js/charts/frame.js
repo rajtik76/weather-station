@@ -33,7 +33,7 @@ export function tooltipFor(strip, colours) {
         trigger: "axis",
         axisPointer: { axis: "x" },
         appendToBody: true,
-        // Unconfined, the flip to the pointer's left pushed a tooltip off a phone's edge.
+        // Keeps the tooltip inside the viewport on a phone.
         confine: true,
         backgroundColor: colours.surface,
         borderColor: colours.border,

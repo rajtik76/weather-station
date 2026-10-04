@@ -35,7 +35,7 @@ final readonly class RecentTransmissions
                     return [
                         'timestamp' => $measurement->timestamp,
                         'packet' => $measurement->data->jsonSerialize(),
-                        // Rows written before the column existed.
+                        // Null created_at falls back to the station's stamp.
                         ...LocalTime::of($measurement->created_at?->getTimestamp() ?? $measurement->timestamp)->forHumans(),
                         't' => $readout->temperature(),
                         'h' => $readout->humidity(),

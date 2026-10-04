@@ -1,4 +1,4 @@
-/* The instrument look: every page's shell. One colour per channel: CH1 temperature, CH2 humidity, CH3 pressure, CH4 noise, AUX light. */
+/* Channel colours: CH1 temperature, CH2 humidity, CH3 pressure, CH4 noise, AUX light. */
 
 @theme inline {
     --color-bg: var(--bg);

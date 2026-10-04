@@ -160,7 +160,7 @@ const COLUMN_MIN_WIDTH = 3;
 
 const columnPlacers = new WeakMap();
 
-/** Crosshair: the slot's whole column, outlined (a line vanished into the ramp, the shadow pointer drew one pixel). Own zlevel so the cells' incremental layer never paints over it. */
+/** Crosshair: the slot's whole column, outlined. Own zlevel so the cells' incremental layer never paints over it. */
 function trackSpectrumColumn(chart) {
     const outline = { fill: "none", lineJoin: "miter" };
     const column = new echarts.graphic.Group({ silent: true, ignore: true });

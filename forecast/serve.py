@@ -21,8 +21,7 @@ POST /base  {"longitude", "since" (required), "readings"}
 POST /light-correction  {"longitude", "readings" (lit), "since"?}
   -> {"model": trained_at, "version": EXPERIMENT_VERSION, "profile": {"day": local Y-m-d, "values": 48 x lx or null},
       "targets": {"T_1h": {"intercept", "coefficients", "widen"}, ...}}
-  Experimental temperature correction gated by light; the profile is the latest local day's reference
-  (90th percentile per half hour over the 14 days before it, only readings that had arrived by then).
+  profile: 90th percentile per half hour over the 14 days before the latest local day, readings that had arrived by then.
 POST /light-forecast  {"longitude", "readings" (lit), "experiment"}
   -> {"issued_at", "model", "version", "horizons": [{"hours": n, "temperature": band}]}
   "experiment": a /light-correction answer; another model or version, or a profile for another
@@ -50,7 +49,7 @@ from forecast import QUANTILES, predict
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", Path(__file__).parent / "models" / "forecast.joblib"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
-# Caps stray timestamps: the history is snapped onto a 10-minute grid, so one decades off would allocate millions of slots.
+# Bounds the 10-minute grid: a stray timestamp would allocate millions of slots.
 MAX_SPAN_DAYS = 366
 MAX_SPAN_SECONDS = MAX_SPAN_DAYS * 86_400
 MAX_READINGS = MAX_SPAN_DAYS * 24 * 6

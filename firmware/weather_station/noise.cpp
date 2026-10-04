@@ -37,8 +37,8 @@
 static I2SClass i2s;
 static TaskHandle_t task = nullptr;
 
-// Heap, ~40 kB with the twiddle table. Freed for every upload: with it held, mbedTLS
-// failed to allocate (largest free block 36 kB) or hung until the watchdog fired.
+// Heap, ~40 kB with the twiddle table; freed around every upload, mbedTLS fails to allocate
+// with a 36 kB largest free block.
 static int32_t* raw;          // one I2S read
 static float* history;        // the last NOISE_FFT_SIZE samples, full scale = 1
 static float* spectrum;       // interleaved re/im for esp-dsp

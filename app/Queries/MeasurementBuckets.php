@@ -55,9 +55,8 @@ final readonly class MeasurementBuckets
     }
 
     /**
-     * Levels are hundredths of a dB: power is 10^(v / 1000). They average as energy, weighted by
-     * seconds heard (50 and 60 dB make 57.4, not 55). LA10 and LA90 cannot combine across windows,
-     * so wider buckets carry their time-weighted mean in dB, exact only at ten minutes.
+     * Levels are hundredths of a dB, averaged as energy (power 10^(v / 1000)) weighted by seconds heard.
+     * LA10 and LA90 carry a time-weighted mean in dB, exact only at ten minutes.
      * Bands are averaged per bucket and band, `WITH ORDINALITY` keeping their order.
      *
      * @return Collection<int, NoiseBucket>

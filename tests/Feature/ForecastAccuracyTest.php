@@ -485,7 +485,7 @@ it('keeps one score per sensor in the cache, however many forecasts come', funct
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
     Livewire::test(Overview::class);
 
-    // The database store deletes an expired row only when it reads it; a key per forecast was never read again.
+    // The database store deletes an expired row only when it reads it.
     expect(DB::table('cache')->count())->toBe(1);
 })->with([fn () => config(['cache.default' => 'database'])]);
 
@@ -497,7 +497,7 @@ it('scores afresh over a cached score of an older shape', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600]);
 
-    // What an earlier deploy left under the same key, for the same forecast.
+    // Stale cache entry under the same key and issue time, shape 0.
     Cache::put("forecast-accuracy:{$sensor->id}", ['shape' => 0, 'issuedAt' => $issued + 3600, 'scores' => [['inRange' => 100.0]]], 900);
 
     expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0])->toHaveKey('corrected');
