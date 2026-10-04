@@ -128,3 +128,17 @@ it('hides the last forecast while the station is silent', function (): void {
         ->assertSee('No forecast from the current readings yet')
         ->assertDontSee('range this hour');
 });
+
+it('shows six whole hours ahead of an off-hour forecast', function (): void {
+    // 09:49 UTC is 11:49 in Prague; the newest window is 11:40 and the model reaches 17:40.
+    $this->travelTo(Date::parse('2026-09-24 09:49:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $window = Date::parse('2026-09-24 09:40:00', 'UTC')->getTimestamp();
+    Measurement::factory()->for($sensor)->create(['timestamp' => $window + 60]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $window]);
+
+    $overview = Livewire::test(Overview::class);
+
+    expect(array_column($overview->get('forecast')['horizons'], 'clock'))->toBe(['12:00', '13:00', '14:00', '15:00', '16:00', '17:00']);
+    $overview->assertSeeInOrder(['12:00', '13:00', '14:00', '15:00', '16:00', '17:00'])->assertDontSee('18:00');
+});
