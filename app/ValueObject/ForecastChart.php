@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * The overview's forecast chart: the last six hours measured on the left, the forecast median and 10-90 % range on the right. Coordinates are percentages of a 100 × 100 box, y growing down.
+ * The overview's forecast chart: the last six hours measured on the left, the forecast median and the hour's range on the right. Coordinates are percentages of a 100 × 100 box, y growing down.
  *
  * @phpstan-import-type Hour from ForecastHours
  *

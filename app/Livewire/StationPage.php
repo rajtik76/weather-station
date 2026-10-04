@@ -10,6 +10,7 @@ use App\Models\Sensor;
 use App\Models\StationReport;
 use App\Queries\CachedForecastAccuracy;
 use App\Queries\ForecastAccuracy;
+use App\Queries\HourForecasts;
 use App\Queries\LatestForecast;
 use App\Queries\LatestStationReport;
 use App\Queries\StationRecord;
@@ -40,6 +41,7 @@ use Livewire\Component;
  * @property-read bool $isSilent
  * @property-read ?string $measuredAt
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
+ * @property-read list<array{at: int, t: float}> $recentTemperatures
  * @property-read ?ForecastChart $forecastChart
  * @property-read list<Score> $forecastAccuracy
  * @property-read Answer|null $verdict
@@ -141,8 +143,21 @@ abstract class StationPage extends Component
         return [
             ...LocalTime::of($forecast->created_at?->getTimestamp() ?? $forecast->issued_at)->forHumans(),
             'corrected' => $forecast->corrected,
-            'horizons' => ForecastHours::of($forecast),
+            'horizons' => ForecastHours::of(new HourForecasts($this->selectedSensor?->id)->upTo($forecast), $this->recentTemperatures),
         ];
+    }
+
+    /**
+     * The chart's history, which also holds the readings the hour's forecasts were issued from.
+     *
+     * @return list<array{at: int, t: float}>
+     */
+    #[Computed]
+    public function recentTemperatures(): array
+    {
+        $newest = $this->newestMeasurement;
+
+        return $newest === null ? [] : $this->record()->temperaturesSince($newest->timestamp - ForecastChart::HISTORY_SECONDS);
     }
 
     #[Computed]
@@ -155,7 +170,7 @@ abstract class StationPage extends Component
             return null;
         }
 
-        $readings = $this->record()->temperaturesSince($newest->timestamp - ForecastChart::HISTORY_SECONDS);
+        $readings = $this->recentTemperatures;
 
         return $readings === [] ? null : ForecastChart::of($readings, $horizons);
     }

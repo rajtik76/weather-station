@@ -188,8 +188,8 @@ it('draws the current forecast while it starts from the newest reading', functio
 
     $this->get(route('forecast'))
         ->assertOk()
-        // 10:05 UTC is 12:05 in Prague in September.
-        ->assertSeeInOrder(['Current forecast', 'made 24.9.2026 12:05', '13:05', '13,8', '12,3-15,3'])
+        // 10:05 UTC is 12:05 in Prague in September; 13:00 is 55 of the 60 minutes from the reading to the first horizon.
+        ->assertSeeInOrder(['Current forecast', 'made 24.9.2026 12:05', 'range this hour', '13:00', '13,7', '12,4-15,1'])
         ->assertDontSee('No forecast from the current readings yet');
 });
 

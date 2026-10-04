@@ -6,6 +6,7 @@ use App\Livewire\Overview;
 use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\ValueObject\MeasurementDataV1;
 use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
@@ -53,7 +54,7 @@ it('hides a forecast that no longer starts from the current record', function ()
     $this->get(route('overview'))
         ->assertOk()
         ->assertSee('No forecast from the current readings yet')
-        ->assertDontSee('8 in 10');
+        ->assertDontSee('range this hour');
 });
 
 it('shows the selected sensor\'s forecast, not another station\'s', function (): void {
@@ -66,21 +67,43 @@ it('shows the selected sensor\'s forecast, not another station\'s', function ():
     $this->get(route('overview', ['sensor' => 'north']))
         ->assertOk()
         ->assertSee('No forecast from the current readings yet')
-        ->assertDontSee('8 in 10');
+        ->assertDontSee('range this hour');
 });
 
-it('picks up a newer forecast on the next poll', function (): void {
+it('picks up a newer forecast on the next poll, on the same whole hours', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
     Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
-    $overview = Livewire::test(Overview::class)->assertSee('11:00')->assertDontSee('11:10');
+    $overview = Livewire::test(Overview::class)->assertSee('11:00')->assertDontSee('90 %');
 
     $this->travel(10)->minutes();
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
-    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.02)]]);
+    Forecast::factory()->for($sensor)->create(['issued_at' => now()->getTimestamp(), 'data' => [forecastHorizon(1, 12.0, 80.0, 0.9)]]);
 
-    $overview->call('$refresh')->assertSee('11:10');
+    $overview->call('$refresh')->assertSeeInOrder(['11:00', '90 %'])->assertDontSee('11:10');
+});
+
+it('spans the range of every forecast in the hour, not the hour before or another station', function (): void {
+    $this->travelTo(Date::parse('2026-09-24 08:10:00', 'UTC'));
+    $sensor = Sensor::factory()->create(['name' => 'north']);
+    $other = Sensor::factory()->create(['name' => 'south']);
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => now()->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: 1200, humidity: 5000, pressure: 97000),
+    ]);
+    $issued = fn (string $utc, float $low, float $mid, float $high): array => [
+        'issued_at' => Date::parse($utc, 'UTC')->getTimestamp(),
+        'data' => [[...forecastHorizon(1, $mid, 80.0, 0.1), 'temperature' => ['low' => $low, 'mid' => $mid, 'high' => $high]]],
+    ];
+    Forecast::factory()->for($sensor)->create($issued('2026-09-24 07:50:00', 0.0, 12.0, 30.0));
+    Forecast::factory()->for($other)->create($issued('2026-09-24 08:05:00', 5.0, 12.0, 20.0));
+    Forecast::factory()->for($sensor)->create($issued('2026-09-24 08:00:00', 10.0, 13.0, 15.0));
+    Forecast::factory()->for($sensor)->create($issued('2026-09-24 08:10:00', 11.5, 12.0, 12.5));
+
+    $this->get(route('overview', ['sensor' => 'north']))
+        ->assertOk()
+        ->assertSeeInOrder(['11:00', '12,0', '10,0-15,0']);
 });
 
 it('shows no forecast for a row without hours', function (): void {
@@ -91,5 +114,5 @@ it('shows no forecast for a row without hours', function (): void {
     $this->get(route('overview'))
         ->assertOk()
         ->assertSee('No forecast from the current readings yet')
-        ->assertDontSee('8 in 10');
+        ->assertDontSee('range this hour');
 });

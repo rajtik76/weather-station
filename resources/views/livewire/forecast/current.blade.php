@@ -5,9 +5,7 @@
         @if ($chart !== null)
             <p class="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[13px] text-ink-3">
                 <span>made {{ $this->forecast['at'] }} · {{ $this->forecast['corrected'] ? 'fitted to this station' : 'not yet fitted to this station' }}</span>
-                <span class="flex items-center gap-2"><span class="swatch bg-ch1"></span>measured</span>
-                <span class="flex items-center gap-2"><svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ch1)" stroke-width="2" stroke-dasharray="4 3" /></svg>median</span>
-                <span class="flex items-center gap-2"><span class="inline-block h-2.5 w-4 rounded-[2px] bg-ch1/20"></span>10-90 %</span>
+                <x-forecast-legend />
             </p>
         @endif
     </div>

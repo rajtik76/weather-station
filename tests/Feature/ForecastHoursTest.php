@@ -9,11 +9,11 @@ use Illuminate\Support\Facades\Date;
 /**
  * @return array<string, mixed>
  */
-function forecastHoursHorizon(int $hours, float $mid, float $rain = 0.0): array
+function forecastHoursHorizon(int $hours, float $mid, float $rain = 0.0, float $spread = 1.0): array
 {
     return [
         'hours' => $hours,
-        'temperature' => ['low' => $mid - 1.0, 'mid' => $mid, 'high' => $mid + 1.0],
+        'temperature' => ['low' => $mid - $spread, 'mid' => $mid, 'high' => $mid + $spread],
         'humidity' => ['low' => 60.0, 'mid' => 70.0, 'high' => 80.0],
         'pressure' => ['low' => 1009.0, 'mid' => 1010.0, 'high' => 1011.0],
         'rain_probability' => $rain,
@@ -32,7 +32,7 @@ it('rounds the temperatures to tenths and the rain chance to a whole percent', f
     $horizon = forecastHoursHorizon(1, 12.36, 0.346);
     $horizon['temperature'] = ['low' => 11.04, 'mid' => 12.36, 'high' => 13.26];
 
-    $hour = ForecastHours::of(forecastIssuedAt('2026-09-24 08:00:00', [$horizon]))[0];
+    $hour = ForecastHours::of([forecastIssuedAt('2026-09-24 08:00:00', [$horizon])], [])[0];
 
     expect($hour)->toMatchArray(['hours' => 1, 't' => 12.4, 'tLow' => 11.0, 'tHigh' => 13.3, 'rain' => 35]);
 });
@@ -40,8 +40,30 @@ it('rounds the temperatures to tenths and the rain chance to a whole percent', f
 it('prints each hour\'s clock in local time, summer and winter', function (string $issued, array $clocks): void {
     $forecast = forecastIssuedAt($issued, [forecastHoursHorizon(1, 12.0), forecastHoursHorizon(3, 12.0)]);
 
-    expect(array_column(ForecastHours::of($forecast), 'clock'))->toBe($clocks);
+    expect(array_column(ForecastHours::of([$forecast], []), 'clock'))->toBe($clocks);
 })->with([
     'summer, UTC+2' => ['2026-09-24 08:00:00', ['11:00', '13:00']],
     'winter, UTC+1' => ['2026-12-21 08:00:00', ['10:00', '12:00']],
 ]);
+
+it('lands an off-hour forecast on whole hours, from its reading towards the first horizon', function (): void {
+    $forecast = forecastIssuedAt('2026-09-24 08:20:00', [forecastHoursHorizon(1, 16.0, 0.3), forecastHoursHorizon(2, 19.0, 0.6)]);
+    $reading = ['at' => Date::parse('2026-09-24 08:21:00', 'UTC')->getTimestamp(), 't' => 10.0];
+
+    $hours = ForecastHours::of([$forecast], [$reading]);
+
+    // 09:00 UTC is 39 of the 59 minutes from the reading to the first horizon, 10:00 two thirds of the way to the second.
+    expect($hours)->sequence(
+        fn ($hour) => $hour->toMatchArray(['hours' => 1, 'clock' => '11:00', 't' => 14.0, 'tLow' => 13.3, 'tHigh' => 14.6, 'rain' => 30]),
+        fn ($hour) => $hour->toMatchArray(['hours' => 2, 'clock' => '12:00', 't' => 18.0, 'tLow' => 17.0, 'tHigh' => 19.0, 'rain' => 50]),
+    );
+});
+
+it('keeps the widest range and rain chance of the hour around the newest median', function (): void {
+    $hours = ForecastHours::of([
+        forecastIssuedAt('2026-09-24 08:00:00', [forecastHoursHorizon(1, 17.0, 0.4, 2.0)]),
+        forecastIssuedAt('2026-09-24 08:10:00', [forecastHoursHorizon(1, 16.5, 0.1, 0.5), forecastHoursHorizon(2, 16.5, 0.1, 0.5)]),
+    ], []);
+
+    expect($hours[0])->toMatchArray(['clock' => '11:00', 't' => 16.5, 'tLow' => 15.0, 'tHigh' => 19.0, 'rain' => 40]);
+});

@@ -1,0 +1,4 @@
+<span class="flex items-center gap-2"><span class="swatch bg-ch1"></span>measured</span>
+<span class="flex items-center gap-2"><svg width="16" height="2" aria-hidden="true"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--ch1)" stroke-width="2" stroke-dasharray="4 3" /></svg>median</span>
+<span class="flex items-center gap-2"><span class="inline-block h-2.5 w-4 rounded-[2px] bg-ch1/20"></span>range this hour</span>
+<span class="flex items-center gap-2"><svg class="shrink-0 text-ch2" width="10" height="13" viewBox="0 0 10 13" aria-hidden="true"><path d="M5 .8C5 .8 1 5.8 1 8.6a4 4 0 0 0 8 0C9 5.8 5 .8 5 .8Z" fill="currentColor" /></svg>rain chance</span>

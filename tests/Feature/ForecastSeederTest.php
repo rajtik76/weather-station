@@ -17,7 +17,7 @@ it('seeds a forecast every seeded station shows on the overview', function (stri
 
     Livewire::withQueryParams(['sensor' => $sensor])
         ->test(Overview::class)
-        ->assertSee('8 in 10');
+        ->assertSee('range this hour');
 })->with(['sensor-001', 'sensor-002']);
 
 it('seeds six hours in the shape the forecast service answers with', function (): void {
