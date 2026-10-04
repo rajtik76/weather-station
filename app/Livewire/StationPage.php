@@ -40,6 +40,7 @@ use Livewire\Component;
  * @property-read ?Measurement $newestMeasurement
  * @property-read bool $isSilent
  * @property-read ?string $measuredAt
+ * @property-read ?string $measuredAgo
  * @property-read array{at: string, ago: string, corrected: bool, horizons: list<ForecastHour>}|null $forecast
  * @property-read list<array{at: int, t: float}> $recentTemperatures
  * @property-read ?ForecastChart $forecastChart
@@ -118,6 +119,12 @@ abstract class StationPage extends Component
     public function measuredAt(): ?string
     {
         return $this->newestMeasurement === null ? null : LocalTime::of($this->newestMeasurement->timestamp)->stamp();
+    }
+
+    #[Computed]
+    public function measuredAgo(): ?string
+    {
+        return $this->newestMeasurement === null ? null : LocalTime::of($this->newestMeasurement->timestamp)->ago();
     }
 
     /**

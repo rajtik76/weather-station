@@ -3,7 +3,16 @@
     <div class="mb-5 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
         <h1 id="now-h" class="m-0 font-display text-[30px] leading-[1.15] font-semibold tracking-[-0.015em] sm:text-[38px]">The balcony, right now</h1>
         @if ($this->measuredAt !== null)
-            <p class="num m-0 font-mono text-[14px] text-ink-3">{{ $this->measuredAt }}</p>
+            <p
+                wire:key="newest-{{ $this->newestMeasurement->timestamp }}"
+                @class(['arrival num m-0 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-full border border-line-2 bg-screen px-3.5 py-1.5 font-mono text-[14px]', 'is-live' => ! $this->isSilent])
+                title="Newest reading from the station"
+            >
+                <span @class(['electron', 'text-ch2' => ! $this->isSilent, 'text-ink-3' => $this->isSilent]) aria-hidden="true"></span>
+                <span class="font-medium text-ink">{{ $this->isSilent ? 'STOP' : 'RUN' }}</span>
+                <span class="text-ink-2">{{ $this->measuredAgo }}</span>
+                <span class="text-ink-3">{{ $this->measuredAt }}</span>
+            </p>
         @endif
     </div>
 

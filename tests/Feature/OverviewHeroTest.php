@@ -195,3 +195,16 @@ it('keeps quiet about rain once the station has gone silent', function (): void 
         ->assertDontSee('Rain heard now.')
         ->assertDontSee('No rain heard.');
 });
+
+it('tells how long ago the station last reported', function (int $minutesAgo, string $state): void {
+    $this->travelTo(Date::parse('2026-10-04 12:00:00', 'UTC'));
+    Measurement::factory()->for(Sensor::factory())->create([
+        'timestamp' => now()->subMinutes($minutesAgo)->getTimestamp(),
+    ]);
+
+    Livewire::test(Overview::class)
+        ->assertSeeInOrder(['The balcony, right now', $state, "{$minutesAgo} minutes ago", '4.10.2026']);
+})->with([
+    'live' => [7, 'RUN'],
+    'silent' => [45, 'STOP'],
+]);

@@ -151,6 +151,20 @@
     }
 }
 
+.instrument .arrival.is-live {
+    animation: arrival-flash 1.8s ease-out;
+}
+@keyframes arrival-flash {
+    0% {
+        border-color: var(--ch2);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--ch2) 30%, transparent);
+    }
+    100% {
+        border-color: var(--line-2);
+        box-shadow: 0 0 0 4px transparent;
+    }
+}
+
 .instrument .graticule line {
     vector-effect: non-scaling-stroke;
 }
@@ -480,7 +494,8 @@
         animation: none !important;
         opacity: 0;
     }
-    .instrument .electron {
+    .instrument .electron,
+    .instrument .arrival {
         animation: none !important;
     }
     .instrument .wire-electron {

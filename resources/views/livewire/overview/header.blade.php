@@ -25,10 +25,10 @@
                 </label>
             @endif
             @if ($this->measuredAt !== null)
-                <p class="num m-0 hidden items-center gap-2 font-mono text-[13px] text-ink-3 md:flex" title="Newest reading from the station">
+                <p class="num m-0 flex items-center gap-2 font-mono text-[13px] text-ink-3" title="Newest reading from the station">
                     <span @class(['electron', 'text-ink' => ! $this->isSilent, 'text-ink-3' => $this->isSilent]) aria-hidden="true"></span>
                     <span>{{ $this->isSilent ? 'STOP' : 'RUN' }}</span>
-                    <span class="text-ink-2">{{ $this->measuredAt }}</span>
+                    <span class="hidden text-ink-2 md:inline">{{ $this->measuredAt }}</span>
                 </p>
             @endif
             <button
