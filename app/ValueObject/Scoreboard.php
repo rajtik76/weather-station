@@ -29,13 +29,13 @@ final readonly class Scoreboard
 
             return [
                 'hours' => $score['hours'],
-                'count' => $shown['count'],
-                'skill' => $shown['skill'],
-                'skillBar' => (float) max(0, min(100, $shown['skill'] ?? 0)),
-                'inRange' => $shown['inRange'],
-                'inRangeBar' => (float) max(0, min(100, $shown['inRange'])),
-                'width' => $base === null ? $shown['width'] : $score['corrected']['width'],
-                'baseWidth' => $base['width'] ?? null,
+                'count' => $shown->count,
+                'skill' => $shown->skill,
+                'skillBar' => (float) max(0, min(100, $shown->skill ?? 0)),
+                'inRange' => $shown->inRange,
+                'inRangeBar' => (float) max(0, min(100, $shown->inRange)),
+                'width' => $base === null ? $shown->width : $score['corrected']->width,
+                'baseWidth' => $base?->width,
             ];
         }, $scores);
     }

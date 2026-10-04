@@ -6,7 +6,9 @@ use App\Livewire\Forecast as ForecastPage;
 use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
+use App\ValueObject\DayScore;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Facades\Date;
 use Livewire\Livewire;
 
@@ -118,9 +120,7 @@ it('shows the sensor prototype only in the comparison graphs', function (): void
 
     preg_match('/data-accuracy-chart="days"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);
     $days = json_decode(html_entity_decode($matches[1] ?? '[]'), true, flags: JSON_THROW_ON_ERROR);
-    expect($days[0][13])->toEqual(90.0);
-    expect($days[0][14])->toEqual(0.1);
-    expect($days[0][15])->toEqual(100.0);
+    expect($days[0]['experiment'])->toMatchArray(['skill' => 90.0, 'error' => 0.1, 'inRange' => 100.0]);
 });
 
 it('keeps the shown and base history when the prototype starts later', function (): void {
@@ -150,14 +150,19 @@ it('keeps the shown and base history when the prototype starts later', function 
     foreach (['days', 'widths'] as $key) {
         expect($charts[$key])->toHaveCount(15);
         expect($charts[$key][0])->toEqual([
-            '10.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null,
-            null, null, null, null, 0,
+            'date' => '10.9.2026',
+            'shown' => ['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5],
+            'base' => ['count' => 1, 'skill' => 40.0, 'error' => 0.6, 'naive' => 1.0, 'inRange' => 0.0, 'width' => 0.9],
+            'modelTookOver' => null,
+            'correctionTookOver' => null,
+            'experiment' => null,
         ]);
-        expect($charts[$key][14][0])->toBe('24.9.2026');
-        expect(array_slice($charts[$key][14], 13))->toEqual([90.0, 0.1, 100.0, 1.0, 1]);
+        expect($charts[$key][14]['date'])->toBe('24.9.2026');
+        expect($charts[$key][14]['experiment'])->toEqual(['count' => 1, 'skill' => 90.0, 'error' => 0.1, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.0]);
     }
-    expect($charts['hours'][11])->toEqual([100.0, 1, 0.2, 0.2, 0.2, null, 0, null, null, null]);
-    expect($charts['hours'][12])->toEqual([100.0, 1, 0.2, 0.2, 0.2, 100.0, 1, 0.1, 0.1, 0.1]);
+    $noPrototype = ['count' => 0, 'inRange' => null, 'error' => null, 'worst' => null, 'bias' => null, 'experiment' => null];
+    expect($charts['hours'][11])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.2, 'worst' => 0.2, 'bias' => 0.2, 'experiment' => $noPrototype]);
+    expect($charts['hours'][12]['experiment'])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.1, 'worst' => 0.1, 'bias' => 0.1, 'experiment' => null]);
 });
 
 it('charts the verdict\'s horizon in detail, the longest scored until it has come true', function (): void {
@@ -170,7 +175,7 @@ it('charts the verdict\'s horizon in detail, the longest scored until it has com
         ->toContain('data-accuracy-chart="widths"')
         ->toContain('data-accuracy-chart="hours"')
         ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/')
-        ->toContain('data-accuracy-rows="'.e(json_encode([['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null]], JSON_THROW_ON_ERROR)).'"');
+        ->toContain('data-accuracy-rows="'.e(json_encode([new DayScore('24.9.2026', new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5))], JSON_THROW_ON_ERROR)).'"');
 
     $page->set('horizon', 1)->assertSet('horizon', 1)->assertSee('1 h ahead');
     expect($page->get('score')['hours'])->toBe(1);

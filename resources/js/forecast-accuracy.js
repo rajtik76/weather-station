@@ -10,36 +10,12 @@ echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, Canv
 
 /** Forecast page accuracy charts (`data-accuracy-chart`: days, hours, widths). Not strips: no time axis, zoom or crosshair. */
 
-/** Day row; skill in %, misses and widths in °C. Nulls but the date and the changes for a day with nothing scored. */
-const DAY = {
-    date: 0,
-    count: 1,
-    skill: 2,
-    error: 3,
-    naive: 4,
-    percent: 5,
-    width: 6,
-    baseSkill: 7,
-    baseError: 8,
-    basePercent: 9,
-    baseWidth: 10,
-    tookOver: 11,
-    correctionTo: 12,
-    prototypeSkill: 13,
-    prototypeError: 14,
-    prototypePercent: 15,
-    prototypeWidth: 16,
-    prototypeCount: 17,
-};
+/** Day row: `shown`, `base` and `experiment` figures (skill in %, misses and widths in °C) or null, `modelTookOver`, `correctionTookOver`. */
 
 // A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
 const SKILL_FLOOR = -100;
 
-/** Hour row; errors and bias in °C (bias: mean reading minus the forecast's middle). Nulls for an hour with none. */
-const HOUR = { percent: 0, count: 1, error: 2, worst: 3, bias: 4 };
-
-/** First column of the prototype's Hour, appended to the shown one. */
-const PROTOTYPE_HOUR = 5;
+/** Hour row: `count`, `inRange`, `error`, `worst`, `bias` in °C (null with none scored), `experiment` the prototype's hour or null. */
 
 const celsius = { format: (value) => formatNumber(value, 1) };
 
@@ -75,49 +51,45 @@ function versus(skill) {
 
 /** Short lines, one fact each: a phone is 320 px wide. */
 function dayTooltipHtml(row) {
+    const { shown, base, experiment } = row;
     const tookOver =
-        (row[DAY.tookOver] === null ? "" : `<br>model trained ${row[DAY.tookOver]} took over`) +
-        (row[DAY.correctionTo] === null ? "" : `<br>correction ${row[DAY.correctionTo]} took over`);
+        (row.modelTookOver === null ? "" : `<br>model trained ${row.modelTookOver} took over`) +
+        (row.correctionTookOver === null
+            ? ""
+            : `<br>correction ${row.correctionTookOver} took over`);
 
-    if (row[DAY.count] === 0) {
-        return `${row[DAY.date]}<br>no forecast scored${tookOver}`;
+    if (shown === null) {
+        return `${row.date}<br>no forecast scored${tookOver}`;
     }
 
-    // In range is set whenever the base was scored; skill and miss need a naive guess too.
-    const hasBase = row[DAY.basePercent] !== null;
-    const lines = [row[DAY.date], `<strong>with correction ${versus(row[DAY.skill])}</strong>`];
+    const lines = [row.date, `<strong>with correction ${versus(shown.skill)}</strong>`];
 
-    if (hasBase) {
-        lines.push(`base model ${versus(row[DAY.baseSkill])}`);
+    if (base !== null) {
+        lines.push(`base model ${versus(base.skill)}`);
     }
 
-    if (row[DAY.error] !== null) {
-        const base =
-            hasBase && row[DAY.baseError] !== null
-                ? `, base ${celsius.format(row[DAY.baseError])}`
-                : "";
+    // Skill and miss need a naive guess.
+    if (shown.error !== null) {
+        const baseError =
+            base !== null && base.error !== null ? `, base ${celsius.format(base.error)}` : "";
         lines.push(
-            `off by ${celsius.format(row[DAY.error])}${base}, guess ${celsius.format(row[DAY.naive])} °C`,
+            `off by ${celsius.format(shown.error)}${baseError}, guess ${celsius.format(shown.naive)} °C`,
         );
     }
 
+    lines.push(`${shown.inRange} % in range${base !== null ? `, base ${base.inRange} %` : ""}`);
     lines.push(
-        `${row[DAY.percent]} % in range${hasBase ? `, base ${row[DAY.basePercent]} %` : ""}`,
+        `${celsius.format(shown.width)}${base !== null ? `, base ${celsius.format(base.width)}` : ""} °C wide`,
     );
-    lines.push(
-        `${celsius.format(row[DAY.width])}${hasBase ? `, base ${celsius.format(row[DAY.baseWidth])}` : ""} °C wide`,
-    );
-    lines.push(forecastHours(row[DAY.count]));
+    lines.push(forecastHours(shown.count));
 
-    if (row[DAY.prototypePercent] !== undefined && row[DAY.prototypePercent] !== null) {
-        lines.push(`VEML prototype ${versus(row[DAY.prototypeSkill])}`);
+    if (experiment !== null) {
+        lines.push(`VEML prototype ${versus(experiment.skill)}`);
         lines.push(
-            `prototype off by ${row[DAY.prototypeError] === null ? "n/a" : celsius.format(row[DAY.prototypeError])} °C`,
+            `prototype off by ${experiment.error === null ? "n/a" : celsius.format(experiment.error)} °C`,
         );
-        lines.push(
-            `${row[DAY.prototypePercent]} % in range, ${celsius.format(row[DAY.prototypeWidth])} °C wide`,
-        );
-        lines.push(`prototype: ${forecastHours(row[DAY.prototypeCount])}`);
+        lines.push(`${experiment.inRange} % in range, ${celsius.format(experiment.width)} °C wide`);
+        lines.push(`prototype: ${forecastHours(experiment.count)}`);
     }
 
     return lines.join("<br>") + tookOver;
@@ -126,39 +98,38 @@ function dayTooltipHtml(row) {
 function hourTooltipHtml(hour, row) {
     const span = `${pad(hour)}:00-${pad((hour + 1) % 24)}:00`;
 
-    if (row[HOUR.percent] === null) {
+    if (row.inRange === null) {
         return `${span}<br>no forecast scored`;
     }
 
-    const bias = row[HOUR.bias];
     // Judged as printed: 0.04 would read "0,0 °C warmer".
     const side =
-        Math.round(bias * 10) === 0
+        Math.round(row.bias * 10) === 0
             ? "as forecast on average"
-            : `${celsius.format(Math.abs(bias))} °C ${bias > 0 ? "warmer" : "colder"} on average`;
+            : `${celsius.format(Math.abs(row.bias))} °C ${row.bias > 0 ? "warmer" : "colder"} on average`;
 
     return (
         `${span}<br><strong>${side}</strong>` +
-        `<br>off by ${celsius.format(row[HOUR.error])} °C on average` +
-        `<br>off by ${celsius.format(row[HOUR.worst])} °C at most` +
-        `<br>${row[HOUR.percent]} % in range<br>${forecastHours(row[HOUR.count])}` +
-        prototypeHourHtml(row)
+        `<br>off by ${celsius.format(row.error)} °C on average` +
+        `<br>off by ${celsius.format(row.worst)} °C at most` +
+        `<br>${row.inRange} % in range<br>${forecastHours(row.count)}` +
+        prototypeHourHtml(row.experiment)
     );
 }
 
-function prototypeHourHtml(row) {
-    if (row.length <= PROTOTYPE_HOUR) {
+function prototypeHourHtml(experiment) {
+    if (experiment === null) {
         return "";
     }
 
-    if (row[PROTOTYPE_HOUR + HOUR.count] === 0) {
+    if (experiment.count === 0) {
         return "<br><strong>VEML prototype</strong>: no forecast scored";
     }
 
     return (
-        `<br><strong>VEML prototype</strong>: bias ${signedDegrees(row[PROTOTYPE_HOUR + HOUR.bias])}` +
-        `<br>off by ${celsius.format(row[PROTOTYPE_HOUR + HOUR.error])} °C on average` +
-        `<br>${row[PROTOTYPE_HOUR + HOUR.percent]} % in range<br>prototype: ${forecastHours(row[PROTOTYPE_HOUR + HOUR.count])}`
+        `<br><strong>VEML prototype</strong>: bias ${signedDegrees(experiment.bias)}` +
+        `<br>off by ${celsius.format(experiment.error)} °C on average` +
+        `<br>${experiment.inRange} % in range<br>prototype: ${forecastHours(experiment.count)}`
     );
 }
 
@@ -224,8 +195,8 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
-function prototypeLine(rows, firstColumn, column, colours) {
-    if (!rows.some((row) => row.length > firstColumn)) {
+function prototypeLine(rows, value, colours) {
+    if (rows.every((row) => row.experiment === null)) {
         return [];
     }
 
@@ -238,7 +209,7 @@ function prototypeLine(rows, firstColumn, column, colours) {
             symbolSize: 6,
             lineStyle: { color: colours.prototype, width: 2 },
             itemStyle: { color: colours.prototype },
-            data: rows.map((row) => row[column] ?? null),
+            data: rows.map((row) => (row.experiment === null ? null : value(row.experiment))),
         },
     ];
 }
@@ -251,7 +222,7 @@ function daysOption(rows, canvas) {
         grid: { left: 44, right: 8, top: 20, bottom: 22 },
         xAxis: {
             type: "category",
-            data: rows.map((row) => row[DAY.date]),
+            data: rows.map((row) => row.date),
             boundaryGap: false,
             axisLine: { onZero: false, lineStyle: { color: colours.axis } },
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
@@ -286,7 +257,7 @@ function daysOption(rows, canvas) {
                 symbolSize: 6,
                 lineStyle: { color: colours.label, width: 1.5, type: "dashed" },
                 itemStyle: { color: colours.label },
-                data: rows.map((row) => row[DAY.baseSkill]),
+                data: rows.map((row) => row.base?.skill ?? null),
             },
             {
                 name: "corrected",
@@ -299,9 +270,9 @@ function daysOption(rows, canvas) {
                 markLine: changeMarks(rows, colours, [
                     { ...zeroLine(colours), label: { show: false } },
                 ]),
-                data: rows.map((row) => row[DAY.skill]),
+                data: rows.map((row) => row.shown?.skill ?? null),
             },
-            ...prototypeLine(rows, DAY.prototypeSkill, DAY.prototypeSkill, colours),
+            ...prototypeLine(rows, (figures) => figures.skill, colours),
         ],
     };
 }
@@ -321,7 +292,7 @@ function changeMarks(rows, colours, extra = []) {
             ...rows
                 .filter((row) => changeLabel(row) !== "")
                 .map((row) => ({
-                    xAxis: row[DAY.date],
+                    xAxis: row.date,
                     label: { formatter: changeLabel(row) },
                     lineStyle: { color: colours.label, type: "dashed", width: 1 },
                 })),
@@ -331,8 +302,8 @@ function changeMarks(rows, colours, extra = []) {
 
 function changeLabel(row) {
     return [
-        row[DAY.tookOver] === null ? null : "retrained",
-        row[DAY.correctionTo] === null ? null : `correction ${row[DAY.correctionTo]}`,
+        row.modelTookOver === null ? null : "retrained",
+        row.correctionTookOver === null ? null : `correction ${row.correctionTookOver}`,
     ]
         .filter(Boolean)
         .join(", ");
@@ -386,9 +357,9 @@ function hoursOption(rows, canvas) {
                     label: { show: false },
                     data: [zeroLine(colours)],
                 },
-                data: rows.map((row) => row[HOUR.bias]),
+                data: rows.map((row) => row.bias),
             },
-            ...prototypeLine(rows, PROTOTYPE_HOUR, PROTOTYPE_HOUR + HOUR.bias, colours),
+            ...prototypeLine(rows, (hour) => hour.bias, colours),
         ],
     };
 }
@@ -401,7 +372,7 @@ function widthsOption(rows, canvas) {
         grid: { left: 44, right: 8, top: 20, bottom: 22 },
         xAxis: {
             type: "category",
-            data: rows.map((row) => row[DAY.date]),
+            data: rows.map((row) => row.date),
             boundaryGap: false,
             axisLine: { lineStyle: { color: colours.axis } },
             axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
@@ -436,7 +407,7 @@ function widthsOption(rows, canvas) {
                 symbolSize: 6,
                 lineStyle: { color: colours.label, width: 1.5, type: "dashed" },
                 itemStyle: { color: colours.label },
-                data: rows.map((row) => row[DAY.baseWidth]),
+                data: rows.map((row) => row.base?.width ?? null),
             },
             {
                 name: "corrected",
@@ -447,9 +418,9 @@ function widthsOption(rows, canvas) {
                 lineStyle: { color: colours.temperature, width: 2 },
                 itemStyle: { color: colours.temperature },
                 markLine: changeMarks(rows, colours),
-                data: rows.map((row) => row[DAY.width]),
+                data: rows.map((row) => row.shown?.width ?? null),
             },
-            ...prototypeLine(rows, DAY.prototypeSkill, DAY.prototypeWidth, colours),
+            ...prototypeLine(rows, (figures) => figures.width, colours),
         ],
     };
 }

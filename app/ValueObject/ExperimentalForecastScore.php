@@ -44,20 +44,17 @@ final readonly class ExperimentalForecastScore
             return $score;
         }
 
-        $prototypeDays = array_column(ForecastScore::byDay($prototype, $tookOver, $lastIssued), null, 0);
+        $prototypeDays = [];
+
+        foreach (ForecastScore::byDay($prototype, $tookOver, $lastIssued) as $day) {
+            $prototypeDays[$day->date] = $day->shown;
+        }
 
         return [
             ...$score,
-            'days' => array_map(fn (array $day): array => [
-                ...$day,
-                $prototypeDays[$day[0]][2] ?? null,
-                $prototypeDays[$day[0]][3] ?? null,
-                $prototypeDays[$day[0]][5] ?? null,
-                $prototypeDays[$day[0]][6] ?? null,
-                $prototypeDays[$day[0]][1] ?? 0,
-            ], $score['days']),
+            'days' => array_map(fn (DayScore $day): DayScore => $day->withExperiment($prototypeDays[$day->date] ?? null), $score['days']),
             'byHour' => array_map(
-                fn (array $shown, array $prototypeHour): array => [...$shown, ...$prototypeHour],
+                fn (HourOfDayScore $shown, HourOfDayScore $prototypeHour): HourOfDayScore => $shown->withExperiment($prototypeHour),
                 $score['byHour'],
                 ForecastScore::byHour($prototype),
             ),

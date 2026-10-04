@@ -7,9 +7,12 @@ use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Queries\ForecastAccuracy;
+use App\ValueObject\DayScore;
+use App\ValueObject\HourOfDayScore;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
+use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -65,17 +68,17 @@ function listenedAt(Sensor $sensor, int $timestamp, bool $raining): void
 }
 
 /**
- * All 24 local hours, empty but for the given `[percent, count, mean error, largest error, mean signed error]`.
+ * All 24 local hours, empty but for the given ones.
  *
- * @param  array<int, array{0: float, 1: int, 2: float, 3: float, 4: float}>  $scored
- * @return list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>
+ * @param  array<int, HourOfDayScore>  $scored
+ * @return list<HourOfDayScore>
  */
 function byHour(array $scored): array
 {
     $hours = [];
 
     for ($hour = 0; $hour < 24; $hour++) {
-        $hours[] = $scored[$hour] ?? [null, 0, null, null, null];
+        $hours[] = $scored[$hour] ?? new HourOfDayScore;
     }
 
     return $hours;
@@ -109,25 +112,22 @@ it('appends the latest experiment version to the score and leaves shown and base
     $plain = new ForecastAccuracy($stations[1]->id)->since($issued)[0];
 
     expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false]);
-    expect(array_diff_key($score, array_flip(['days', 'byHour', 'experiment'])))->toBe(array_diff_key($plain, array_flip(['days', 'byHour'])));
-    expect(array_map(fn (array $day): array => array_slice($day, 0, 13), $score['days']))->toBe($plain['days']);
-    expect(array_map(fn (array $hour): array => array_slice($hour, 0, 5), $score['byHour']))->toBe($plain['byHour']);
-    expect($score['days'][0][1])->toBe(3);
-    expect(array_slice($score['days'][0], 13))->toBe([75.0, 0.25, 100.0, 1.0, 1]);
-    expect(array_slice($score['byHour'][11], 5))->toBe([null, 0, null, null, null]);
-    expect(array_slice($score['byHour'][13], 5))->toBe([100.0, 1, 0.25, 0.25, 0.25]);
+    expect(array_diff_key($score, array_flip(['days', 'byHour', 'experiment'])))->toEqual(array_diff_key($plain, array_flip(['days', 'byHour'])));
+    expect(array_map(fn (DayScore $day): DayScore => $day->withExperiment(null), $score['days']))->toEqual($plain['days']);
+    expect(array_map(fn (HourOfDayScore $hour): HourOfDayScore => $hour->withExperiment(null), $score['byHour']))->toEqual($plain['byHour']);
+    expect($score['days'][0]->shown?->count)->toBe(3);
+    expect($score['days'][0]->experiment)->toEqual(new ScoreFigures(1, 75.0, 0.25, 1.0, 100.0, 1.0));
+    expect($score['byHour'][11]->experiment)->toEqual(new HourOfDayScore);
+    expect($score['byHour'][13]->experiment)->toEqual(new HourOfDayScore(count: 1, inRange: 100.0, error: 0.25, worst: 0.25, bias: 0.25));
 });
 
 beforeEach(function (): void {
     $this->travelTo(Date::parse('2026-09-24 12:00:00', 'UTC'));
 });
 
-/**
- * @return list<string|int|null>
- */
-function emptyDay(string $date, ?string $tookOver = null, ?int $correction = null): array
+function emptyDay(string $date, ?string $tookOver = null): DayScore
 {
-    return [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver, $correction];
+    return new DayScore($date, modelTookOver: $tookOver);
 }
 
 it('scores each horizon against the window that came n hours later, overall, by day and by local hour', function (): void {
@@ -150,21 +150,21 @@ it('scores each horizon against the window that came n hours later, overall, by 
     expect(new ForecastAccuracy($sensor->id)->since($issued))->toEqual([
         [
             'hours' => 1,
-            'days' => [['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null]],
-            'corrected' => ['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5],
+            'days' => [new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5))],
+            'corrected' => new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5),
             'base' => null,
-            'shown' => ['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5],
+            'shown' => new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5),
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
-            'byHour' => byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]]),
+            'byHour' => byHour([11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)]),
         ],
         [
             'hours' => 2,
-            'days' => [['24.9.2026', 1, 33.0, 2.0, 3.0, 0.0, 1.5, null, null, null, null, null, null]],
-            'corrected' => ['count' => 1, 'skill' => 33.0, 'error' => 2.0, 'naive' => 3.0, 'inRange' => 0.0, 'width' => 1.5],
+            'days' => [new DayScore('24.9.2026', new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5))],
+            'corrected' => new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5),
             'base' => null,
-            'shown' => ['count' => 1, 'skill' => 33.0, 'error' => 2.0, 'naive' => 3.0, 'inRange' => 0.0, 'width' => 1.5],
+            'shown' => new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5),
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
-            'byHour' => byHour([12 => [0.0, 1, 2.0, 2.0, 2.0]]),
+            'byHour' => byHour([12 => new HourOfDayScore(count: 1, inRange: 0.0, error: 2.0, worst: 2.0, bias: 2.0)]),
         ],
     ]);
 });
@@ -179,10 +179,10 @@ it('scores the base model on the same hours, beside the forecast shown', functio
 
     expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
         fn ($score) => $score
-            ->corrected->toBe(['count' => 1, 'skill' => 80.0, 'error' => 0.2, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.5])
-            ->base->toBe(['count' => 1, 'skill' => 40.0, 'error' => 0.6, 'naive' => 1.0, 'inRange' => 0.0, 'width' => 0.9])
-            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null]])
-            ->byHour->toBe(byHour([11 => [100.0, 1, 0.2, 0.2, 0.2]])),
+            ->corrected->toEqual(new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5))
+            ->base->toEqual(new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))
+            ->days->toEqual([new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5), new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))])
+            ->byHour->toEqual(byHour([11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)])),
     );
 });
 
@@ -200,12 +200,12 @@ it('compares the two on the hours that have a base, not the shown forecast on mo
 
     expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
         fn ($score) => $score
-            ->corrected->toMatchArray(['count' => 1, 'skill' => 80.0, 'error' => 0.2])
-            ->base->toMatchArray(['count' => 1, 'skill' => 40.0, 'error' => 0.6])
+            ->corrected->toMatchObject(['count' => 1, 'skill' => 80.0, 'error' => 0.2])
+            ->base->toMatchObject(['count' => 1, 'skill' => 40.0, 'error' => 0.6])
             // The headline is no comparison: every forecast shown, off by 2.2 against the guess's 3.
-            ->shown->toMatchArray(['count' => 2, 'skill' => 27.0, 'error' => 1.1])
-            ->days->toBe([['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, 40.0, 0.6, 0.0, 0.9, null, null]])
-            ->byHour->{11}->toBe([50.0, 2, 1.1, 2.0, 1.1]),
+            ->shown->toMatchObject(['count' => 2, 'skill' => 27.0, 'error' => 1.1])
+            ->days->toEqual([new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5), new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))])
+            ->byHour->{11}->toEqual(new HourOfDayScore(count: 2, inRange: 50.0, error: 1.1, worst: 2.0, bias: 1.1)),
     );
 });
 
@@ -218,8 +218,8 @@ it('marks a model that took over before any of its forecasts came true', functio
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'model' => '2026-09-20T08:00:00+00:00', 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toBe([
-        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toEqual([
+        new DayScore('23.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5)),
         emptyDay('24.9.2026', '24.9.2026 10:40'),
     ]);
 });
@@ -236,7 +236,7 @@ it('sums the misses before it compares them, so a calm hour weighs less than a f
     }
 
     expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))
-        ->toBe([['24.9.2026', 2, 25.0, 1.5, 2.0, 50.0, 3.0, null, null, null, null, null, null]]);
+        ->toEqual([new DayScore('24.9.2026', new ScoreFigures(2, 25.0, 1.5, 2.0, 50.0, 3.0))]);
 });
 
 it('marks the day a new model took over, even when its first forecast was not scored, and leaves a day without forecasts empty', function (): void {
@@ -255,11 +255,11 @@ it('marks the day a new model took over, even when its first forecast was not sc
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'data' => [scoredHorizon(1, 11.0, 12.0, 13.0)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $after, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($before), '0.days'))->toBe([
-        ['21.9.2026', 1, 0.0, 1.0, 1.0, 100.0, 2.0, null, null, null, null, null, null],
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($before), '0.days'))->toEqual([
+        new DayScore('21.9.2026', new ScoreFigures(1, 0.0, 1.0, 1.0, 100.0, 2.0)),
         emptyDay('22.9.2026', '24.9.2026 10:40'),
         emptyDay('23.9.2026'),
-        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
+        new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5)),
     ]);
 });
 
@@ -278,9 +278,9 @@ it('marks the day a new version of the correction took over, and skips forecasts
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 600, 'correction' => null, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $switched, 'correction' => 2, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toBe([
-        ['23.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, null],
-        ['24.9.2026', 1, 80.0, 0.2, 1.0, 100.0, 1.5, null, null, null, null, null, 2],
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days'))->toEqual([
+        new DayScore('23.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5)),
+        new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5), correctionTookOver: 2),
     ]);
 });
 
@@ -292,7 +292,7 @@ it('names a model that is not stamped with its training time as it came', functi
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 600, 'model' => 'v3.4.0', 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days.0.11'))->toBe('v3.4.0');
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.days.0.modelTookOver'))->toBe('v3.4.0');
 });
 
 it('gives each local hour its mean and largest miss, and which way it went', function (): void {
@@ -306,7 +306,7 @@ it('gives each local hour its mean and largest miss, and which way it went', fun
         Forecast::factory()->for($sensor)->create(['issued_at' => $at, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     }
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toBe([50.0, 2, 0.7, 1.2, -0.5]);
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toEqual(new HourOfDayScore(count: 2, inRange: 50.0, error: 0.7, worst: 1.2, bias: -0.5));
 });
 
 it('scores rain by what the microphone heard within the hours ahead', function (): void {
@@ -398,7 +398,7 @@ it('scores a horizon however far ahead the service forecasts', function (): void
 
     // 05:00 UTC on the next day, 07:00 in Prague.
     expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
-        fn ($score) => $score->toMatchArray(['hours' => 9, 'byHour' => byHour([7 => [100.0, 1, 0.5, 0.5, -0.5]])]),
+        fn ($score) => $score->hours->toBe(9)->byHour->toEqual(byHour([7 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.5, worst: 0.5, bias: -0.5)])),
     );
 });
 
@@ -463,14 +463,14 @@ it('keeps the score until the next forecast arrives', function (): void {
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
 
-    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']->count)->toBe(1);
 
     // A reading alone completes the second forecast's hour, but the score waits for the next forecast.
     measuredAt($sensor, $issued + 7200, 1300);
-    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(1);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']->count)->toBe(1);
 
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
-    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']['count'])->toBe(2);
+    expect(Livewire::test(Overview::class)->get('forecastAccuracy')[0]['corrected']->count)->toBe(2);
 });
 
 it('keeps one score per sensor in the cache, however many forecasts come', function (): void {

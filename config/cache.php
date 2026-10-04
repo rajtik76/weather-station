@@ -1,5 +1,8 @@
 <?php
 
+use App\ValueObject\DayScore;
+use App\ValueObject\HourOfDayScore;
+use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Str;
 
 return [
@@ -131,6 +134,10 @@ return [
     |
     */
 
-    'serializable_classes' => false,
+    'serializable_classes' => [
+        DayScore::class,
+        HourOfDayScore::class,
+        ScoreFigures::class,
+    ],
 
 ];

@@ -13,10 +13,7 @@ use App\Queries\ForecastAccuracy;
  * @phpstan-import-type Score from ForecastAccuracy
  * @phpstan-import-type Scored from ForecastAccuracy
  * @phpstan-import-type Miss from ForecastAccuracy
- * @phpstan-import-type Figures from ForecastAccuracy
  * @phpstan-import-type Rain from ForecastAccuracy
- * @phpstan-import-type Day from ForecastAccuracy
- * @phpstan-import-type Hour from ForecastAccuracy
  * @phpstan-import-type Band from Forecast
  */
 final readonly class ForecastScore
@@ -57,7 +54,7 @@ final readonly class ForecastScore
      *
      * @param  non-empty-list<Scored>  $scored  oldest first
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver
-     * @return list<Day>
+     * @return list<DayScore>
      */
     public static function byDay(array $scored, array $tookOver, int $lastIssued): array
     {
@@ -71,29 +68,15 @@ final readonly class ForecastScore
 
         foreach (LocalTime::of($scored[0]['issuedAt'])->daysThrough(LocalTime::of($lastIssued)) as $day) {
             $date = $day->date();
+            ['corrected' => $corrected, 'base' => $base] = isset($grouped[$date]) ? self::compared($grouped[$date]) : ['corrected' => null, 'base' => null];
 
-            if (! isset($grouped[$date])) {
-                $days[] = [$date, 0, null, null, null, null, null, null, null, null, null, $tookOver[$date]['model'] ?? null, $tookOver[$date]['correction'] ?? null];
-
-                continue;
-            }
-
-            ['corrected' => $corrected, 'base' => $base] = self::compared($grouped[$date]);
-            $days[] = [
-                $date,
-                $corrected['count'],
-                $corrected['skill'],
-                $corrected['error'],
-                $corrected['naive'],
-                $corrected['inRange'],
-                $corrected['width'],
-                $base['skill'] ?? null,
-                $base['error'] ?? null,
-                $base['inRange'] ?? null,
-                $base['width'] ?? null,
-                $tookOver[$date]['model'] ?? null,
-                $tookOver[$date]['correction'] ?? null,
-            ];
+            $days[] = new DayScore(
+                date: $date,
+                shown: $corrected,
+                base: $base,
+                modelTookOver: $tookOver[$date]['model'] ?? null,
+                correctionTookOver: $tookOver[$date]['correction'] ?? null,
+            );
         }
 
         return $days;
@@ -101,7 +84,7 @@ final readonly class ForecastScore
 
     /**
      * @param  list<Scored>  $scored
-     * @return list<Hour>
+     * @return list<HourOfDayScore> all 24 local hours
      */
     public static function byHour(array $scored): array
     {
@@ -115,7 +98,7 @@ final readonly class ForecastScore
 
         for ($hour = 0; $hour < 24; $hour++) {
             if (! isset($grouped[$hour])) {
-                $hours[] = [null, 0, null, null, null];
+                $hours[] = new HourOfDayScore;
 
                 continue;
             }
@@ -124,13 +107,13 @@ final readonly class ForecastScore
             $differences = array_column($grouped[$hour], 'difference');
             $distances = array_map(abs(...), $differences);
 
-            $hours[] = [
-                self::percent(array_column($grouped[$hour], 'inRange')),
-                $count,
-                round(array_sum($distances) / $count, 2),
-                round(max($distances), 2),
-                round(array_sum($differences) / $count, 2),
-            ];
+            $hours[] = new HourOfDayScore(
+                count: $count,
+                inRange: self::percent(array_column($grouped[$hour], 'inRange')),
+                error: round(array_sum($distances) / $count, 2),
+                worst: round(max($distances), 2),
+                bias: round(array_sum($differences) / $count, 2),
+            );
         }
 
         return $hours;
@@ -140,7 +123,7 @@ final readonly class ForecastScore
      * Shown and base on the same hours, so the gap is the correction's and not a different mix of days.
      *
      * @param  non-empty-list<Scored>  $scored
-     * @return array{corrected: Figures, base: ?Figures}
+     * @return array{corrected: ScoreFigures, base: ?ScoreFigures}
      */
     private static function compared(array $scored): array
     {
@@ -158,9 +141,9 @@ final readonly class ForecastScore
      *
      * @param  list<Scored>  $scored
      * @param  'corrected'|'base'  $which
-     * @return ($which is 'corrected' ? Figures : ?Figures)
+     * @return ($which is 'corrected' ? ScoreFigures : ?ScoreFigures)
      */
-    private static function figures(array $scored, string $which): ?array
+    private static function figures(array $scored, string $which): ?ScoreFigures
     {
         $misses = [];
         $paired = [];
@@ -184,15 +167,15 @@ final readonly class ForecastScore
         $missed = array_sum(array_column($paired, 0));
         $guessMissed = array_sum(array_column($paired, 1));
 
-        return [
-            'count' => count($misses),
+        return new ScoreFigures(
+            count: count($misses),
             // A guess that never missed leaves nothing to beat.
-            'skill' => $guessMissed > 0 ? round(100 * (1 - $missed / $guessMissed)) : null,
-            'error' => $paired === [] ? null : round($missed / count($paired), 2),
-            'naive' => $paired === [] ? null : round($guessMissed / count($paired), 2),
-            'inRange' => self::percent(array_column($misses, 'inRange')),
-            'width' => round(array_sum(array_column($misses, 'width')) / count($misses), 2),
-        ];
+            skill: $guessMissed > 0 ? round(100 * (1 - $missed / $guessMissed)) : null,
+            error: $paired === [] ? null : round($missed / count($paired), 2),
+            naive: $paired === [] ? null : round($guessMissed / count($paired), 2),
+            inRange: self::percent(array_column($misses, 'inRange')),
+            width: round(array_sum(array_column($misses, 'width')) / count($misses), 2),
+        );
     }
 
     /**

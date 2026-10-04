@@ -6,7 +6,10 @@ use App\Models\Forecast;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Queries\CachedForecastAccuracy;
+use App\ValueObject\DayScore;
+use App\ValueObject\HourOfDayScore;
 use App\ValueObject\MeasurementDataV1;
+use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 
@@ -41,7 +44,7 @@ function cachedAccuracyCounts(Sensor $sensor): array
 {
     $scores = new CachedForecastAccuracy($sensor->id)->lastDays(7);
 
-    return array_column(array_map(fn (array $score): array => [$score['hours'], $score['shown']['count']], $scores), 1, 0);
+    return array_column(array_map(fn (array $score): array => [$score['hours'], $score['shown']->count], $scores), 1, 0);
 }
 
 beforeEach(function (): void {
@@ -102,4 +105,17 @@ it('does not hand one span the scores cached for another', function (): void {
     new CachedForecastAccuracy($sensor->id)->lastDays(1);
 
     expect(cachedAccuracyCounts($sensor))->toBe([1 => 2]);
+});
+
+it('reads the scores back from the database store as value objects', function (): void {
+    config(['cache.default' => 'database']);
+    $sensor = Sensor::factory()->create();
+    cachedAccuracyForecast($sensor, Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp());
+    $scored = new CachedForecastAccuracy($sensor->id)->lastDays(7);
+
+    $cached = Cache::get("forecast-accuracy:{$sensor->id}")['scores'][0];
+
+    expect($cached['days'][0])->toBeInstanceOf(DayScore::class)->toEqual($scored[0]['days'][0])
+        ->and($cached['byHour'][0])->toBeInstanceOf(HourOfDayScore::class)
+        ->and($cached['shown'])->toBeInstanceOf(ScoreFigures::class);
 });

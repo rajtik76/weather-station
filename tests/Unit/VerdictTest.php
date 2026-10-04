@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
+use App\ValueObject\DayScore;
+use App\ValueObject\HourOfDayScore;
+use App\ValueObject\ScoreFigures;
 use App\ValueObject\Verdict;
 
 /**
- * @return array{hours: int, days: list<array{string, int, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, float|null, string|null, int|null}>, corrected: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, base: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}|null, shown: array{count: int, skill: float|null, error: float|null, naive: float|null, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: float|null, chanceWhenDry: float|null}, byHour: list<array{float|null, int, float|null, float|null, float|null}>}
+ * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<HourOfDayScore>}
  */
 function verdictScore(int $hours, ?float $skill, int $count = 200): array
 {
-    $figures = ['count' => $count, 'skill' => $skill, 'error' => 0.4, 'naive' => 0.8, 'inRange' => 82.0, 'width' => 2.5];
+    $figures = new ScoreFigures($count, $skill, 0.4, 0.8, 82.0, 2.5);
 
     return [
         'hours' => $hours,

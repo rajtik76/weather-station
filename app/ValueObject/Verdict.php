@@ -39,9 +39,9 @@ final readonly class Verdict
 
         return [
             'hours' => $headline['hours'],
-            'ready' => $figures['skill'] !== null && $figures['count'] >= self::MIN_FORECASTS,
-            ...$figures,
-            'horizons' => array_map(fn (array $score): array => ['hours' => $score['hours'], 'skill' => $score['shown']['skill']], $scores),
+            'ready' => $figures->skill !== null && $figures->count >= self::MIN_FORECASTS,
+            ...$figures->toArray(),
+            'horizons' => array_map(fn (array $score): array => ['hours' => $score['hours'], 'skill' => $score['shown']->skill], $scores),
         ];
     }
 }

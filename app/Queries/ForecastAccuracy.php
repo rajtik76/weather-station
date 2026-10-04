@@ -6,11 +6,14 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\DayScore;
 use App\ValueObject\ExperimentalForecastScore;
 use App\ValueObject\ForecastScore;
+use App\ValueObject\HourOfDayScore;
 use App\ValueObject\LocalTime;
 use App\ValueObject\ModelName;
 use App\ValueObject\RainDetector;
+use App\ValueObject\ScoreFigures;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,24 +32,11 @@ use Illuminate\Support\Facades\DB;
  * listen through are left out of the rain figures only. Days carry the model name
  * or correction version that took over that day; a null correction is skipped.
  * `byHour` buckets the shown forecast by the local hour it was for.
- * With an experiment (ExperimentalForecastScore), a ComparedDay appends the prototype's
- * skill, miss, percent in range, width and hours scored to the Day, and a
- * ComparedHour appends the prototype's Hour to the shown one.
+ * With an experiment (ExperimentalForecastScore), each DayScore and HourOfDayScore
+ * carries the prototype's own score beside the shown one.
  *
- * A Day is `[date, forecast hours scored, skill in %, mean miss and mean naive
- * miss in °C, percent in range, mean range width in °C, base: skill, miss,
- * percent in range, width, model that took over, correction that took over]`.
- * An Hour is `[percent in range, hours scored, mean and largest distance of the
- * reading from the forecast middle in °C, mean signed reading minus middle in °C]`.
- * Nulls where nothing was scored.
- *
- * @phpstan-type Hour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}
- * @phpstan-type Day array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}
- * @phpstan-type Figures array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
- * @phpstan-type ComparedDay array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int, 13: ?float, 14: ?float, 15: ?float, 16: ?float, 17: int}
- * @phpstan-type ComparedHour array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: int, 7: ?float, 8: ?float, 9: ?float}
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
- * @phpstan-type Score array{hours: int, days: list<Day|ComparedDay>, corrected: Figures, base: ?Figures, shown: Figures, rain: Rain, byHour: list<Hour|ComparedHour>, experiment?: array{version: string, synthetic: bool}}
+ * @phpstan-type Score array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: Rain, byHour: list<HourOfDayScore>, experiment?: array{version: string, synthetic: bool}}
  * @phpstan-type Miss array{inRange: bool, difference: float, width: float}
  *
  * @phpstan-import-type Band from Forecast

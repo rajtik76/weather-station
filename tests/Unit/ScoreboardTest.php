@@ -2,23 +2,20 @@
 
 declare(strict_types=1);
 
+use App\ValueObject\DayScore;
+use App\ValueObject\HourOfDayScore;
 use App\ValueObject\Scoreboard;
+use App\ValueObject\ScoreFigures;
 
-/**
- * @return array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}
- */
-function boardFigures(?float $skill, float $inRange, float $width, int $count = 10): array
+function boardFigures(?float $skill, float $inRange, float $width, int $count = 10): ScoreFigures
 {
-    return ['count' => $count, 'skill' => $skill, 'error' => 1.0, 'naive' => 2.0, 'inRange' => $inRange, 'width' => $width];
+    return new ScoreFigures($count, $skill, 1.0, 2.0, $inRange, $width);
 }
 
 /**
- * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}  $shown
- * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null  $corrected
- * @param  array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null  $base
- * @return array{hours: int, days: list<array{0: string, 1: int, 2: ?float, 3: ?float, 4: ?float, 5: ?float, 6: ?float, 7: ?float, 8: ?float, 9: ?float, 10: ?float, 11: ?string, 12: ?int}>, corrected: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, base: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}|null, shown: array{count: int, skill: ?float, error: ?float, naive: ?float, inRange: float, width: float}, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<array{0: ?float, 1: int, 2: ?float, 3: ?float, 4: ?float}>}
+ * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<HourOfDayScore>}
  */
-function boardScore(int $hours, array $shown, ?array $corrected = null, ?array $base = null): array
+function boardScore(int $hours, ScoreFigures $shown, ?ScoreFigures $corrected = null, ?ScoreFigures $base = null): array
 {
     return [
         'hours' => $hours,
