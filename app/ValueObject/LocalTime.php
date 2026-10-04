@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use DateTimeImmutable;
 use DateTimeZone;
-use Illuminate\Support\Facades\Date;
 
 /**
  * A stored epoch as the page prints it; storage stays UTC.
@@ -89,7 +89,7 @@ final readonly class LocalTime
     /** The station's clock may stamp ahead of the server; "4 minutes from now" reads as broken. */
     public function ago(): string
     {
-        return $this->timestamp > now()->getTimestamp()
+        return $this->timestamp > CarbonImmutable::now()->getTimestamp()
             ? 'just now'
             : $this->moment()->diffForHumans();
     }
@@ -112,6 +112,6 @@ final readonly class LocalTime
 
     private function moment(): CarbonInterface
     {
-        return Date::createFromTimestamp($this->timestamp, self::TIMEZONE);
+        return CarbonImmutable::createFromTimestamp($this->timestamp, self::TIMEZONE);
     }
 }

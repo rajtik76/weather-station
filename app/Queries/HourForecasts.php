@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use App\ValueObject\ForecastHours;
+use App\ValueObject\IssuedForecast;
 
 /** One sensor's forecasts issued in the clock hour of a given one, up to it. */
 final readonly class HourForecasts
@@ -14,7 +15,7 @@ final readonly class HourForecasts
     public function __construct(private ?int $sensorId) {}
 
     /**
-     * @return non-empty-list<Forecast> oldest first
+     * @return list<IssuedForecast> oldest first, without forecasts that have no horizons
      */
     public function upTo(Forecast $newest): array
     {
@@ -24,8 +25,15 @@ final readonly class HourForecasts
             ->where('issued_at', '<', $newest->issued_at)
             ->oldest('issued_at')
             ->get()
-            ->filter(fn (Forecast $forecast): bool => $forecast->data !== []);
+            ->all();
+        $issued = [];
 
-        return [...$earlier->values()->all(), $newest];
+        foreach ([...$earlier, $newest] as $forecast) {
+            if ($forecast->data !== []) {
+                $issued[] = new IssuedForecast($forecast->issued_at, $forecast->data);
+            }
+        }
+
+        return $issued;
     }
 }

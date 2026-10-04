@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
-use App\Models\Forecast;
-use InvalidArgumentException;
-
 /**
  * One clock hour's forecasts as the pages list them: temperature and rain on whole hours.
  * The median is the newest forecast's; the range and the rain chance are the widest any forecast of the hour gave.
  *
- * @phpstan-type Hour array{hours: int, at: int, clock: string, t: float, tLow: float, tHigh: float, rain: int}
  * @phpstan-type Reading array{at: int, t: float}
  * @phpstan-type Point array{at: int, values: list<float>}
  */
@@ -27,33 +23,37 @@ final readonly class ForecastHours
     /**
      * Hours not after the newest reading are left out: a forecast from the previous clock hour is still shown for a few windows.
      *
-     * @param  non-empty-list<Forecast>  $forecasts  issued in one clock hour, oldest first
+     * @param  list<IssuedForecast>  $forecasts  issued in one clock hour, oldest first
      * @param  list<Reading>  $readings  oldest first
-     * @return list<Hour>
+     * @return list<ForecastHour>
      */
     public static function of(array $forecasts, array $readings): array
     {
+        if ($forecasts === []) {
+            return [];
+        }
+
         $newest = $forecasts[array_key_last($forecasts)];
-        $hourStart = self::hourStart($newest->issued_at);
+        $hourStart = self::hourStart($newest->issuedAt);
         $measuredUntil = $readings === [] ? null : $readings[array_key_last($readings)]['at'];
         $ahead = array_filter(
-            array_column($newest->data, 'hours'),
+            array_column($newest->horizons, 'hours'),
             fn (int $hours): bool => $measuredUntil === null || $hourStart + $hours * self::HOUR_SECONDS > $measuredUntil,
         );
 
-        return array_values(array_map(function (int $hours) use ($forecasts, $readings, $hourStart): array {
+        return array_values(array_map(function (int $hours) use ($forecasts, $readings, $hourStart): ForecastHour {
             $at = $hourStart + $hours * self::HOUR_SECONDS;
-            $estimates = array_map(fn (Forecast $forecast): array => self::estimate($forecast, $readings, $at), $forecasts);
+            $estimates = array_map(fn (IssuedForecast $forecast): array => self::estimate($forecast, $readings, $at), $forecasts);
 
-            return [
-                'hours' => $hours,
-                'at' => $at,
-                'clock' => LocalTime::of($at)->clock(),
-                't' => round($estimates[array_key_last($estimates)]['mid'], 1),
-                'tLow' => round(min(array_column($estimates, 'low')), 1),
-                'tHigh' => round(max(array_column($estimates, 'high')), 1),
-                'rain' => (int) round(max(array_column($estimates, 'rain')) * 100),
-            ];
+            return new ForecastHour(
+                hours: $hours,
+                at: $at,
+                clock: LocalTime::of($at)->clock(),
+                t: round($estimates[array_key_last($estimates)]['mid'], 1),
+                tLow: round(min(array_column($estimates, 'low')), 1),
+                tHigh: round(max(array_column($estimates, 'high')), 1),
+                rain: (int) round(max(array_column($estimates, 'rain')) * 100),
+            );
         }, $ahead));
     }
 
@@ -63,15 +63,10 @@ final readonly class ForecastHours
      * @param  list<Reading>  $readings
      * @return array{low: float, mid: float, high: float, rain: float}
      */
-    private static function estimate(Forecast $forecast, array $readings, int $at): array
+    private static function estimate(IssuedForecast $forecast, array $readings, int $at): array
     {
-        $horizons = $forecast->data;
-
-        if ($horizons === []) {
-            throw new InvalidArgumentException("Forecast {$forecast->id} has no horizons.");
-        }
-
-        $horizonAt = fn (array $horizon): int => $forecast->issued_at + $horizon['hours'] * self::HOUR_SECONDS;
+        $horizons = $forecast->horizons;
+        $horizonAt = fn (array $horizon): int => $forecast->issuedAt + $horizon['hours'] * self::HOUR_SECONDS;
         $reading = self::readingOf($forecast, $readings);
 
         [$low, $mid, $high] = self::interpolate([
@@ -93,11 +88,11 @@ final readonly class ForecastHours
      * @param  list<Reading>  $readings
      * @return Reading|null
      */
-    private static function readingOf(Forecast $forecast, array $readings): ?array
+    private static function readingOf(IssuedForecast $forecast, array $readings): ?array
     {
-        $window = intdiv($forecast->issued_at, Forecast::INTERVAL_SECONDS);
+        $window = intdiv($forecast->issuedAt, ChartWindow::STEP_SECONDS);
 
-        return array_find($readings, fn (array $reading): bool => intdiv($reading['at'], Forecast::INTERVAL_SECONDS) === $window);
+        return array_find($readings, fn (array $reading): bool => intdiv($reading['at'], ChartWindow::STEP_SECONDS) === $window);
     }
 
     /**

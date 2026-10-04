@@ -7,7 +7,6 @@ namespace App\ValueObject;
 /**
  * The overview's forecast chart: the last six hours measured on the left, the forecast median and the hour's range on the right. Coordinates are percentages of a 100 × 100 box, y growing down.
  *
- * @phpstan-import-type Hour from ForecastHours
  *
  * @phpstan-type Point array{x: float, y: float}
  * @phpstan-type Tick array{value: float, y: float}
@@ -40,18 +39,18 @@ final readonly class ForecastChart
 
     /**
      * @param  non-empty-list<array{at: int, t: float}>  $readings  oldest first, the newest is "now"
-     * @param  non-empty-list<Hour>  $horizons
+     * @param  non-empty-list<ForecastHour>  $horizons
      */
     public static function of(array $readings, array $horizons): self
     {
         $now = $readings[count($readings) - 1];
-        $values = [...array_column($readings, 't'), ...array_column($horizons, 'tLow'), ...array_column($horizons, 'tHigh')];
+        $values = [...array_column($readings, 't'), ...array_map(fn (ForecastHour $hour): float => $hour->tLow, $horizons), ...array_map(fn (ForecastHour $hour): float => $hour->tHigh, $horizons)];
         $span = max(max($values) - min($values), 1.0);
         $low = min($values) - $span * self::PADDING;
         $high = max($values) + $span * self::PADDING;
         $y = fn (float $value): float => round(($high - $value) / ($high - $low) * 100, 2);
         // By the hour's epoch, not its number: a forecast issued a window early lands left.
-        $hourX = fn (array $hour): float => round(50 + ($hour['at'] - $now['at']) / (self::HORIZON_HOURS * 3600) * 50, 2);
+        $hourX = fn (ForecastHour $hour): float => round(50 + ($hour->at - $now['at']) / (self::HORIZON_HOURS * 3600) * 50, 2);
         $start = ['x' => 50.0, 'y' => $y($now['t'])];
 
         return new self(
@@ -59,16 +58,16 @@ final readonly class ForecastChart
                 'x' => round(max(0.0, 50 - ($now['at'] - $reading['at']) / self::HISTORY_SECONDS * 50), 2),
                 'y' => $y($reading['t']),
             ], $readings),
-            median: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['t'])], $horizons)],
-            high: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tHigh'])], $horizons)],
-            low: [$start, ...array_map(fn (array $hour): array => ['x' => $hourX($hour), 'y' => $y($hour['tLow'])], $horizons)],
+            median: [$start, ...array_map(fn (ForecastHour $hour): array => ['x' => $hourX($hour), 'y' => $y($hour->t)], $horizons)],
+            high: [$start, ...array_map(fn (ForecastHour $hour): array => ['x' => $hourX($hour), 'y' => $y($hour->tHigh)], $horizons)],
+            low: [$start, ...array_map(fn (ForecastHour $hour): array => ['x' => $hourX($hour), 'y' => $y($hour->tLow)], $horizons)],
             ticks: Trace::ticks($low, $high, $y),
-            hours: array_map(fn (array $hour): array => [
+            hours: array_map(fn (ForecastHour $hour): array => [
                 'x' => $hourX($hour),
-                'y' => $y($hour['t']),
-                'clock' => $hour['clock'],
-                't' => $hour['t'],
-                'rain' => $hour['rain'],
+                'y' => $y($hour->t),
+                'clock' => $hour->clock,
+                't' => $hour->t,
+                'rain' => $hour->rain,
             ], $horizons),
         );
     }

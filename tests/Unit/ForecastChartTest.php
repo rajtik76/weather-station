@@ -3,15 +3,13 @@
 declare(strict_types=1);
 
 use App\ValueObject\ForecastChart;
+use App\ValueObject\ForecastHour;
 
 const CHART_NOW = 1_790_000_000;
 
-/**
- * @return array{hours: int, at: int, clock: string, t: float, tLow: float, tHigh: float, rain: int}
- */
-function chartHour(int $hours, float $t, float $low, float $high, int $rain = 5, int $issuedAt = CHART_NOW): array
+function chartHour(int $hours, float $t, float $low, float $high, int $rain = 5, int $issuedAt = CHART_NOW): ForecastHour
 {
-    return ['hours' => $hours, 'at' => $issuedAt + $hours * 3600, 'clock' => sprintf('%02d:00', 14 + $hours), 't' => $t, 'tLow' => $low, 'tHigh' => $high, 'rain' => $rain];
+    return new ForecastHour($hours, $issuedAt + $hours * 3600, sprintf('%02d:00', 14 + $hours), $t, $low, $high, $rain);
 }
 
 function sampleChart(): ForecastChart

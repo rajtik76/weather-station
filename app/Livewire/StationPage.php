@@ -18,6 +18,7 @@ use App\Queries\Stations;
 use App\ValueObject\BoardReport;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\ForecastChart;
+use App\ValueObject\ForecastHour;
 use App\ValueObject\ForecastHours;
 use App\ValueObject\LocalTime;
 use App\ValueObject\Verdict;
@@ -29,7 +30,6 @@ use Livewire\Component;
 /**
  * What every page reads about the selected station.
  *
- * @phpstan-import-type Hour from ForecastHours as ForecastHour
  * @phpstan-import-type Answer from Verdict
  * @phpstan-import-type Score from ForecastAccuracy
  * @phpstan-import-type Report from BoardReport
