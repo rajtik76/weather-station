@@ -5,7 +5,7 @@
         @if ($this->measuredAt !== null)
             <p
                 wire:key="newest-{{ $this->newestMeasurement->timestamp }}"
-                @class(['arrival num m-0 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-full border border-line-2 bg-screen px-3.5 py-1.5 font-mono text-[14px]', 'is-live' => ! $this->isSilent])
+                @class(['arrival num m-0 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-full border border-line-2 bg-screen px-3.5 py-1.5 font-mono text-[14px]', 'just-arrived' => $readingArrived])
                 title="Newest reading from the station"
             >
                 <span @class(['electron', 'text-ch2' => ! $this->isSilent, 'text-ink-3' => $this->isSilent]) aria-hidden="true"></span>

@@ -208,3 +208,34 @@ it('tells how long ago the station last reported', function (int $minutesAgo, st
     'live' => [7, 'RUN'],
     'silent' => [45, 'STOP'],
 ]);
+
+it('flashes the status pill only when a newer reading arrives', function (): void {
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(9)->getTimestamp()]);
+    $overview = Livewire::test(Overview::class)->assertDontSee('just-arrived', false);
+
+    $overview->call('$refresh')->assertDontSee('just-arrived', false);
+
+    Measurement::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp()]);
+    $overview->call('$refresh')->assertSee('just-arrived', false);
+
+    $overview->call('$refresh')->assertDontSee('just-arrived', false);
+});
+
+it('shows the station status once on the overview and in the header elsewhere', function (): void {
+    Measurement::factory()->for(Sensor::factory())->create(['timestamp' => now()->subMinutes(5)->getTimestamp()]);
+
+    expect(substr_count((string) $this->get(route('overview'))->getContent(), 'title="Newest reading from the station"'))->toBe(1)
+        ->and(substr_count((string) $this->get(route('charts'))->getContent(), 'title="Newest reading from the station"'))->toBe(1);
+});
+
+it('does not flash on switching to a sensor with a newer reading', function (): void {
+    $north = Sensor::factory()->create(['name' => 'north']);
+    $south = Sensor::factory()->create(['name' => 'south']);
+    Measurement::factory()->for($north)->create(['timestamp' => now()->subMinutes(9)->getTimestamp()]);
+    Measurement::factory()->for($south)->create(['timestamp' => now()->getTimestamp()]);
+
+    Livewire::test(Overview::class)
+        ->set('sensor', $south->slug)
+        ->assertDontSee('just-arrived', false);
+});

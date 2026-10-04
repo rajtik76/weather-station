@@ -12,6 +12,7 @@ use App\ValueObject\Readout;
 use App\ValueObject\StationSite;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 
 /**
@@ -33,9 +34,30 @@ class Overview extends StationPage
     /** Blurs the public map into a circle this wide. */
     private const int LOCATION_RADIUS_METRES = 800;
 
+    /** Stamp of the newest reading already on screen; null before the station's first. */
+    #[Locked]
+    public ?int $shownReadingAt = null;
+
+    public function mount(): void
+    {
+        parent::mount();
+        $this->shownReadingAt = $this->newestMeasurement?->timestamp;
+    }
+
+    public function updatedSensor(): void
+    {
+        parent::updatedSensor();
+        unset($this->newestMeasurement);
+        $this->shownReadingAt = $this->newestMeasurement?->timestamp;
+    }
+
     public function render(): View
     {
-        return view('livewire.overview');
+        $newest = $this->newestMeasurement?->timestamp;
+        $readingArrived = $newest !== null && ($this->shownReadingAt === null || $newest > $this->shownReadingAt);
+        $this->shownReadingAt = $newest ?? $this->shownReadingAt;
+
+        return view('livewire.overview', ['readingArrived' => $readingArrived]);
     }
 
     /**

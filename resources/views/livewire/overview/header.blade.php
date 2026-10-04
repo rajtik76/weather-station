@@ -1,3 +1,4 @@
+@php($page ??= 'overview')
 <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-screen focus:px-3 focus:py-2">Skip to content</a>
 <header class="border-b border-line">
     <div class="page-wrap flex flex-wrap items-center gap-x-10 gap-y-2 pt-4 pb-3 sm:py-5">
@@ -24,7 +25,7 @@
                     </select>
                 </label>
             @endif
-            @if ($this->measuredAt !== null)
+            @if ($this->measuredAt !== null && $page !== 'overview')
                 <p class="num m-0 flex items-center gap-2 font-mono text-[13px] text-ink-3" title="Newest reading from the station">
                     <span @class(['electron', 'text-ink' => ! $this->isSilent, 'text-ink-3' => $this->isSilent]) aria-hidden="true"></span>
                     <span>{{ $this->isSilent ? 'STOP' : 'RUN' }}</span>
@@ -43,7 +44,6 @@
         </div>
         <nav aria-label="Main" class="w-full sm:w-auto">
             <ul class="m-0 flex list-none gap-7 p-0 text-[16px] font-medium">
-                @php($page ??= 'overview')
                 <li><a class="navlink" href="{{ route('overview', $this->sensorQuery()) }}" @if ($page === 'overview') aria-current="page" @endif>Overview</a></li>
                 <li><a class="navlink" href="{{ route('charts', $this->sensorQuery()) }}" @if ($page === 'charts') aria-current="page" @endif>Charts</a></li>
                 <li><a class="navlink" href="{{ route('forecast', $this->sensorQuery()) }}" @if ($page === 'forecast') aria-current="page" @endif>Forecast</a></li>

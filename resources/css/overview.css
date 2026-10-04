@@ -151,7 +151,7 @@
     }
 }
 
-.instrument .arrival.is-live {
+.instrument .arrival.just-arrived {
     animation: arrival-flash 1.8s ease-out;
 }
 @keyframes arrival-flash {
