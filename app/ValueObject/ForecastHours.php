@@ -25,6 +25,8 @@ final readonly class ForecastHours
     }
 
     /**
+     * Hours not after the newest reading are left out: a forecast from the previous clock hour is still shown for a few windows.
+     *
      * @param  non-empty-list<Forecast>  $forecasts  issued in one clock hour, oldest first
      * @param  list<Reading>  $readings  oldest first
      * @return list<Hour>
@@ -33,8 +35,13 @@ final readonly class ForecastHours
     {
         $newest = $forecasts[array_key_last($forecasts)];
         $hourStart = self::hourStart($newest->issued_at);
+        $measuredUntil = $readings === [] ? null : $readings[array_key_last($readings)]['at'];
+        $ahead = array_filter(
+            array_column($newest->data, 'hours'),
+            fn (int $hours): bool => $measuredUntil === null || $hourStart + $hours * self::HOUR_SECONDS > $measuredUntil,
+        );
 
-        return array_map(function (int $hours) use ($forecasts, $readings, $newest, $hourStart): array {
+        return array_values(array_map(function (int $hours) use ($forecasts, $readings, $hourStart): array {
             $at = $hourStart + $hours * self::HOUR_SECONDS;
             $estimates = array_map(fn (Forecast $forecast): array => self::estimate($forecast, $readings, $at), $forecasts);
 
@@ -42,12 +49,12 @@ final readonly class ForecastHours
                 'hours' => $hours,
                 'at' => $at,
                 'clock' => LocalTime::of($at)->clock(),
-                't' => round(self::estimate($newest, $readings, $at)['mid'], 1),
+                't' => round($estimates[array_key_last($estimates)]['mid'], 1),
                 'tLow' => round(min(array_column($estimates, 'low')), 1),
                 'tHigh' => round(max(array_column($estimates, 'high')), 1),
                 'rain' => (int) round(max(array_column($estimates, 'rain')) * 100),
             ];
-        }, array_column($newest->data, 'hours'));
+        }, $ahead));
     }
 
     /**

@@ -67,3 +67,10 @@ it('keeps the widest range and rain chance of the hour around the newest median'
 
     expect($hours[0])->toMatchArray(['clock' => '11:00', 't' => 16.5, 'tLow' => 15.0, 'tHigh' => 19.0, 'rain' => 40]);
 });
+
+it('leaves out an hour already measured when the newest forecast is from the previous hour', function (): void {
+    $forecast = forecastIssuedAt('2026-09-24 07:50:00', [forecastHoursHorizon(1, 12.0), forecastHoursHorizon(2, 13.0)]);
+    $newest = ['at' => Date::parse('2026-09-24 08:20:00', 'UTC')->getTimestamp(), 't' => 11.0];
+
+    expect(array_column(ForecastHours::of([$forecast], [$newest]), 'clock'))->toBe(['11:00']);
+});
