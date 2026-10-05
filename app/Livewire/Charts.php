@@ -11,6 +11,7 @@ use App\Queries\StationEventMarks;
 use App\ValueObject\ChannelSelection;
 use App\ValueObject\ChartRow;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\LightScale;
 use App\ValueObject\LocalTime;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -39,6 +40,7 @@ use Livewire\Attributes\Url;
  * @property-read int $recordCount
  * @property-read bool $isZoomed
  * @property-read list<string> $hiddenChannels
+ * @property-read LightScale $lightAxis
  * @property-read list<Transmission> $recentTransmissions
  * @property-read list<Mark> $stationEvents
  */
@@ -61,6 +63,9 @@ class Charts extends StationPage
      */
     #[Locked]
     public array $channels = ChannelSelection::DEFAULTS;
+
+    #[Locked]
+    public string $lightScale = LightScale::DEFAULT;
 
     public function mount(): void
     {
@@ -101,6 +106,17 @@ class Charts extends StationPage
     public function toggleChannel(string $channel): void
     {
         $this->channels = ChannelSelection::of($this->channels)->toggle($channel)->toArray();
+    }
+
+    public function useLightScale(string $scale): void
+    {
+        $this->lightScale = LightScale::of($scale)->name;
+    }
+
+    #[Computed]
+    public function lightAxis(): LightScale
+    {
+        return LightScale::of($this->lightScale);
     }
 
     public function isLastChannel(string $channel): bool

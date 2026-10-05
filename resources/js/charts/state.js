@@ -8,6 +8,8 @@ export const state = {
     noiseRows: [],
     /** Light rows (see LIGHT_COLUMN in rows.js). */
     lightRows: [],
+    /** LIGHT_SCALE in light-scale.js. */
+    lightScale: "log",
     /** `[wall-clock ms, epoch]` of the noise slots with rain. */
     rainSlots: [],
     /** The navigator's rows, which always span the whole record. */

@@ -15,6 +15,7 @@
     data-noise-rows="{{ json_encode($this->noise) }}"
     data-noise-rain="{{ json_encode($this->rainSlots) }}"
     data-light-rows="{{ json_encode($this->light) }}"
+    data-light-scale="{{ $this->lightAxis->name }}"
     data-window-from="{{ $this->windowMs['from'] }}"
     data-window-to="{{ $this->windowMs['to'] }}"
     data-chart-component="{{ $this->getId() }}"
@@ -95,7 +96,22 @@
             {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers: lux are relative, read the shape. --}}
             @if ($this->light !== [])
                 <x-channel-strip key="light" label="Light" channel="AUX" height="h-48 sm:h-56">
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx, log scale</span>
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx</span>
+                    <span class="flex items-center gap-1" role="group" aria-label="Light scale">
+                        @foreach (\App\ValueObject\LightScale::LABELS as $scale => $scaleLabel)
+                            @php($chosen = $this->lightAxis->is($scale))
+                            <button
+                                type="button"
+                                wire:click="useLightScale('{{ $scale }}')"
+                                aria-pressed="{{ $chosen ? 'true' : 'false' }}"
+                                @class([
+                                    'rounded-md px-1.5 py-1',
+                                    'text-ink cursor-default' => $chosen,
+                                    'text-ink-3 cursor-pointer hover:text-ink' => ! $chosen,
+                                ])
+                            >{{ $scaleLabel }}</button>
+                        @endforeach
+                    </span>
                 </x-channel-strip>
             @endif
         </div>

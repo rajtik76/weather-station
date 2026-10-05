@@ -73,3 +73,30 @@ it('averages the light in a bucket with the extremes of its windows', function (
     expect(array_slice($row, 2))->toEqual([2000.0, 800.0, 4000.0])
         ->and($html)->toContain('Light in the shield, lx');
 });
+
+it('switches the light strip between the log and the linear scale', function (): void {
+    $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
+
+    Measurement::factory()->v4()->create(['timestamp' => now()->subMinutes(10)->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
+
+    $charts = Livewire::test(Charts::class);
+
+    expect($charts->html())
+        ->toContain('data-light-scale="log"')
+        ->toMatch('/useLightScale\(\'log\'\)"\s+aria-pressed="true"/')
+        ->toMatch('/useLightScale\(\'linear\'\)"\s+aria-pressed="false"/');
+
+    expect($charts->call('useLightScale', 'linear')->html())
+        ->toContain('data-light-scale="linear"')
+        ->toMatch('/useLightScale\(\'linear\'\)"\s+aria-pressed="true"/');
+
+    expect($charts->call('useLightScale', 'log')->html())
+        ->toContain('data-light-scale="log"');
+});
+
+it('keeps the light scale on an unknown name', function (): void {
+    Measurement::factory()->v4()->create(['timestamp' => now()->subMinutes(10)->getTimestamp(), 'data' => (string) litWindow(100_000, 80_000, 120_000)]);
+
+    expect(Livewire::test(Charts::class)->call('useLightScale', 'cubic')->html())
+        ->toContain('data-light-scale="log"');
+});

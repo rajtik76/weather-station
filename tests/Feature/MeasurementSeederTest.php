@@ -63,8 +63,8 @@ it('seeds the first station\'s last day with light that follows the sun', functi
 it('draws the light strip only for the station that sends it', function (): void {
     seed(MeasurementSeeder::class);
 
-    Livewire::test(Charts::class)->assertSee('Light in the shield, lx, log scale');
-    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->assertDontSee('Light in the shield, lx, log scale');
+    Livewire::test(Charts::class)->assertSee('Light in the shield, lx');
+    Livewire::withQueryParams(['sensor' => 'sensor-002'])->test(Charts::class)->assertDontSee('Light in the shield, lx');
 });
 
 it('draws the noise strips for the seeded station with a microphone only', function (): void {

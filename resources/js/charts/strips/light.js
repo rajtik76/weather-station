@@ -1,10 +1,8 @@
 import { formatLux, formatNumber } from "../format";
+import { lightAxis, plottedLux } from "../light-scale";
 import { LIGHT_COLUMN } from "../rows";
 import { state } from "../state";
 import { BAND_OPACITY, colourFor } from "../theme";
-
-/** A log axis has no zero and a dark night reads 0 lx, so lower values are drawn here; the tooltip prints the measured one. */
-const LIGHT_FLOOR = 0.01;
 
 function lightColour() {
     return colourFor("light");
@@ -26,27 +24,23 @@ function lightLines(row) {
     ];
 }
 
-function floorLux(value) {
-    return value === null ? null : Math.max(value, LIGHT_FLOOR);
-}
-
-/** Log axis: dusk and noon are four orders apart, on a linear one every night is flat. */
+/** Tooltip prints the measured lux, the line the plotted one. */
 function lightOption(strip, colours) {
     const colour = lightColour();
+    const plot = (value) => plottedLux(value, state.lightScale);
     const time = (row) => row[LIGHT_COLUMN.time];
     const spread = (row) =>
         row[LIGHT_COLUMN.min] === null || row[LIGHT_COLUMN.max] === null
             ? null
-            : floorLux(row[LIGHT_COLUMN.max]) - floorLux(row[LIGHT_COLUMN.min]);
+            : plot(row[LIGHT_COLUMN.max]) - plot(row[LIGHT_COLUMN.min]);
 
     return {
         yAxis: {
-            type: "log",
-            min: LIGHT_FLOOR,
+            ...lightAxis(state.lightScale),
             axisLabel: {
                 fontSize: 10,
                 color: colour,
-                formatter: (value) => formatNumber(value, value < 1 ? 2 : 0),
+                formatter: (value) => formatNumber(value, value > 0 && value < 1 ? 2 : 0),
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
@@ -58,7 +52,7 @@ function lightOption(strip, colours) {
                 silent: true,
                 showSymbol: false,
                 lineStyle: { opacity: 0 },
-                data: state.lightRows.map((row) => [time(row), floorLux(row[LIGHT_COLUMN.min])]),
+                data: state.lightRows.map((row) => [time(row), plot(row[LIGHT_COLUMN.min])]),
             },
             {
                 type: "line",
@@ -76,7 +70,7 @@ function lightOption(strip, colours) {
                 showSymbol: false,
                 lineStyle: { width: 1.5, color: colour },
                 itemStyle: { color: colour },
-                data: state.lightRows.map((row) => [time(row), floorLux(row[LIGHT_COLUMN.mean])]),
+                data: state.lightRows.map((row) => [time(row), plot(row[LIGHT_COLUMN.mean])]),
             },
         ],
     };

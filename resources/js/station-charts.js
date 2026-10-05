@@ -45,7 +45,9 @@ function paintKey(payload) {
         "\n" +
         payload.dataset.noiseRows +
         "\n" +
-        payload.dataset.lightRows
+        payload.dataset.lightRows +
+        "\n" +
+        payload.dataset.lightScale
     );
 }
 
@@ -81,6 +83,8 @@ function render(payload, force) {
     state.noiseRows = parsed(payload.dataset.noiseRows);
 
     state.lightRows = parsed(payload.dataset.lightRows);
+
+    state.lightScale = payload.dataset.lightScale;
 
     // Changes only with the noise rows: neither paintKey() nor the observer needs it.
     state.rainSlots = parsed(payload.dataset.noiseRain);
@@ -165,6 +169,7 @@ function watchPayload() {
             "data-hidden-channels",
             "data-noise-rows",
             "data-light-rows",
+            "data-light-scale",
         ],
     });
 }
