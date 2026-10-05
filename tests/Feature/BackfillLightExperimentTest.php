@@ -170,7 +170,7 @@ it('replaces an older experiment version', function (): void {
 
     Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']);
 
-    expect($older->refresh()->data[0]['experiment'])->toEqual([
+    expect($older->refresh()->data[0]['experiment'] ?? null)->toEqual([
         'version' => 'light-v2', 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0],
     ]);
 });

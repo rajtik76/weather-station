@@ -34,12 +34,12 @@ function lightShown(int $issuedAt): array
     return ['issued_at' => $issuedAt, 'model' => '2026-09-24', 'corrected' => true, 'correction' => 3, 'horizons' => [$horizon]];
 }
 
-/** @return array{model: string, version: string, profile: array{day: string, values: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>} */
+/** @return array{model: string, version: string, profile: array{day: string, values: list<?float>, gains: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>} */
 function lightFitted(): array
 {
     return [
         'model' => '2026-09-24', 'version' => 'light-v1',
-        'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0)],
+        'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
         'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
     ];
 }
