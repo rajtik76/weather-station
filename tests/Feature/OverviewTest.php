@@ -32,10 +32,10 @@ it('shows the current readings and polls for new ones', function (): void {
     $this->get(route('overview'))
         ->assertOk()
         ->assertSee('wire:poll.60s', false)
-        ->assertSeeInOrder(['Measure · CH1', '21,5'])
-        ->assertSeeInOrder(['Humidity', '48,0'])
-        // 97 389 Pa at 345 m, 21,50 °C -> 1013,5 hPa.
-        ->assertSeeInOrder(['Pressure, MSL', '1 013,5'])
+        ->assertSeeInOrder(['Measure · CH1', '21,50'])
+        ->assertSeeInOrder(['Humidity', '48,00'])
+        // 97 389 Pa at 345 m, 21,50 °C -> 1013,48 hPa.
+        ->assertSeeInOrder(['Pressure, MSL', '1 013,48'])
         ->assertDontSee('Waiting for the first reading');
 });
 

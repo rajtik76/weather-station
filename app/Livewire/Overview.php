@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
+use App\Enums\Channel;
 use App\ValueObject\CarriesNoise;
 use App\ValueObject\DayFigures;
 use App\ValueObject\NoiseWindow;
@@ -23,9 +24,10 @@ use Livewire\Attributes\Title;
  *
  * @property-read list<DayRow> $lastDay
  * @property-read array<string, Figures> $metrics
+ * @property-read list<Channel> $channels
  * @property-read ?float $dewPoint
  * @property-read ?bool $rainHeard
- * @property-read list<string> $silentChannels
+ * @property-read list<Channel> $silentChannels
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  */
 #[Title('Balcony Station')]
@@ -87,9 +89,20 @@ class Overview extends StationPage
     }
 
     /**
+     * Channels with day figures.
+     *
+     * @return list<Channel>
+     */
+    #[Computed]
+    public function channels(): array
+    {
+        return array_values(array_filter(Channel::cases(), fn (Channel $channel): bool => isset($this->metrics[$channel->value])));
+    }
+
+    /**
      * Noise and light channels with day figures but missing from the newest window, so their "now" is stale.
      *
-     * @return list<string>
+     * @return list<Channel>
      */
     #[Computed]
     public function silentChannels(): array
@@ -97,8 +110,8 @@ class Overview extends StationPage
         $newest = $this->lastDay === [] ? null : $this->lastDay[array_key_last($this->lastDay)];
 
         return array_values(array_filter(
-            ['n', 'l'],
-            fn (string $key): bool => isset($this->metrics[$key]) && ($newest[$key] ?? null) === null,
+            [Channel::Noise, Channel::Light],
+            fn (Channel $channel): bool => isset($this->metrics[$channel->value]) && ($newest[$channel->value] ?? null) === null,
         ));
     }
 

@@ -45,3 +45,10 @@ it('joins a range with a hyphen, and with words once an end is below zero', func
         ->and(Figure::range(-3.2, -1.0, 1))->toBe('−3,2 to −1,0')
         ->and(Figure::range(-0.5, 1.2, 1))->toBe('−0,5 to 1,2');
 });
+
+it('prints a figure to the hundredth, signed on request', function (): void {
+    expect(Figure::twoDecimals(1020.1))->toBe('1 020,10')
+        ->and(Figure::twoDecimals(-3.256))->toBe('−3,26')
+        ->and(Figure::twoDecimals(0.03, signed: true))->toBe('+0,03')
+        ->and(Figure::twoDecimals(-41.62, signed: true))->toBe('−41,62');
+});

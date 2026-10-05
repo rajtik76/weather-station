@@ -15,8 +15,8 @@
                 </div>
                 <div class="border-r border-line p-4 sm:p-5">
                     <dt class="label-mono">Mean miss</dt>
-                    <dd class="num m-0 mt-2 font-mono text-[30px] leading-none font-medium tracking-[-0.02em] sm:text-[36px]">{{ \App\ValueObject\Figure::format($verdict['error'], 2) }}<span class="text-[16px] font-normal text-ink-3"> °C</span></dd>
-                    <dd class="num m-0 mt-1.5 font-mono text-[13px] text-ink-3">naive {{ \App\ValueObject\Figure::format($verdict['naive'], 2) }}</dd>
+                    <dd class="num m-0 mt-2 font-mono text-[30px] leading-none font-medium tracking-[-0.02em] sm:text-[36px]">{{ \App\ValueObject\Figure::twoDecimals($verdict['error']) }}<span class="text-[16px] font-normal text-ink-3"> °C</span></dd>
+                    <dd class="num m-0 mt-1.5 font-mono text-[13px] text-ink-3">naive {{ \App\ValueObject\Figure::twoDecimals($verdict['naive']) }}</dd>
                 </div>
                 <div class="p-4 sm:p-5">
                     <dt class="label-mono">In range</dt>

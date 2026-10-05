@@ -18,6 +18,12 @@ final readonly class Figure
         return str_starts_with($formatted, '-') ? self::MINUS.substr($formatted, 1) : $formatted;
     }
 
+    /** Hundredths, the station's own resolution; `$signed` as in signed(). */
+    public static function twoDecimals(float|int $value, bool $signed = false): string
+    {
+        return $signed ? self::signed($value, 2) : self::format($value, 2);
+    }
+
     /** "to" once an end is below zero: a hyphen between signed figures reads as a third minus. */
     public static function range(float|int $low, float|int $high, int $decimals): string
     {
