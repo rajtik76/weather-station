@@ -134,8 +134,8 @@ it('appends the latest experiment version to the score and leaves shown and base
     $score = new ForecastAccuracy($stations[0]->id)->since($issued)[0];
     $plain = new ForecastAccuracy($stations[1]->id)->since($issued)[0];
 
-    // light-v1 starts two hours after the first forecast shown: by hour it covers no period.
-    expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false, 'since' => $issued + 7200, 'covers' => []]);
+    // light-v1 starts two hours after the first forecast shown: by hour it covers only yesterday, which has none.
+    expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false, 'since' => $issued + 7200, 'covers' => ['yesterday']]);
     expect(array_diff_key($score, array_flip(['days', 'today', 'experiment'])))->toEqual(array_diff_key($plain, array_flip(['days', 'today'])));
     expect(array_map(fn (DayScore $day): DayScore => $day->withExperiment(null), $score['days']))->toEqual($plain['days']);
     expect($score['days'][0]->shown?->count)->toBe(3);
@@ -167,6 +167,22 @@ it('adds the experiment by hour only to the periods it covers from their first f
     expect($score['byHour']['yesterday'][11]->experiment)->toEqual($prototype(1));
     expect($score['byHour']['week'][11]->experiment)->toEqual($prototype(2));
     expect(array_map(fn (HourOfDayScore $hour): ?HourOfDayScore => $hour->experiment, $score['byHour']['month']))->toBe(array_fill(0, 24, null));
+});
+
+it('traces today with the experiment version its horizon is scored on', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
+    measuredAt($sensor, $issued, 1200);
+    measuredAt($sensor, $issued + 3600, 1300);
+    $experiment = fn (string $version): array => ['experiment' => ['version' => $version, 'temperature' => ['low' => 12.5, 'mid' => 12.9, 'high' => 13.5]]];
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [[...scoredHorizon(1, 12.0, 12.8, 13.5), ...$experiment('light-v1')]]]);
+    // A newer version whose hour has not come yet.
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 3600, 'data' => [[...scoredHorizon(1, 12.0, 12.8, 13.5), ...$experiment('light-v2')]]]);
+
+    $score = new ForecastAccuracy($sensor->id)->since($issued)[0];
+
+    expect($score['experiment']['version'] ?? null)->toBe('light-v1')
+        ->and(array_column(array_map(fn (TodaySlot $slot): array => $slot->jsonSerialize(), $score['today'] ?? []), 'experiment', 'clock'))->toMatchArray(['11:00' => 12.9]);
 });
 
 it('traces today from local midnight against the forecast issued one horizon before each slot', function (): void {

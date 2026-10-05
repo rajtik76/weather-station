@@ -71,7 +71,6 @@ final readonly class ForecastAccuracy
         $previousCorrection = null;
         /** @var array<int, list<Horizon>> $byIssue */
         $byIssue = [];
-        $experimentVersion = null;
 
         foreach ($forecasts as $forecast) {
             $byIssue[$forecast->issued_at] = $forecast->data;
@@ -93,7 +92,6 @@ final readonly class ForecastAccuracy
             $previousModel = $forecast->model;
 
             foreach ($forecast->data as $horizon) {
-                $experimentVersion = $horizon['experiment']['version'] ?? $experimentVersion;
                 $hours = $horizon['hours'];
                 $target = $forecast->issued_at + $hours * 3600;
                 $truth = $temperatures[$target] ?? null;
@@ -125,12 +123,11 @@ final readonly class ForecastAccuracy
         $scores = [];
         $lastIssued = $forecasts->last()->issued_at;
         $latest = (int) array_key_last($temperatures);
+        $now = now()->getTimestamp();
 
         foreach ($tally as $hours => $scored) {
-            $scores[] = [
-                ...ExperimentalForecastScore::onto(ForecastScore::of($hours, $scored, $tookOver, $lastIssued, $latest), $scored, $tookOver, $lastIssued, $latest),
-                'today' => TodayTrace::of($hours, $byIssue, $temperatures, $latest, $experimentVersion),
-            ];
+            $score = ExperimentalForecastScore::onto(ForecastScore::of($hours, $scored, $tookOver, $lastIssued, $now), $scored, $tookOver, $lastIssued, $now);
+            $scores[] = [...$score, 'today' => TodayTrace::of($hours, $byIssue, $temperatures, $now, $latest, $score['experiment']['version'] ?? null)];
         }
 
         return $scores;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { hasValues, periodRows, todaySeries } from "./hour-of-day";
+import { hasValues, markLonePoints, periodRows, todaySeries } from "./hour-of-day";
 
 const payload = {
     today: [{ clock: "00:00" }],
@@ -47,5 +47,17 @@ describe("hasValues", () => {
     it("is false only when every value is missing", () => {
         expect(hasValues([null, null])).toBe(false);
         expect(hasValues([null, 0])).toBe(true);
+    });
+});
+
+describe("markLonePoints", () => {
+    it("marks only values with no neighbour on either side", () => {
+        expect(markLonePoints([7.1, null, 7.3, 7.4, null])).toEqual([
+            { value: 7.1, symbol: "circle", symbolSize: 5 },
+            null,
+            7.3,
+            7.4,
+            null,
+        ]);
     });
 });

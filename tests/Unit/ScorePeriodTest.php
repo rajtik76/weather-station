@@ -9,22 +9,17 @@ function pragueAt(string $moment): int
     return new DateTimeImmutable($moment, new DateTimeZone('Europe/Prague'))->getTimestamp();
 }
 
-it('holds yesterday by local date, a 25-hour day included', function (string $target, bool $held): void {
-    expect(ScorePeriod::Yesterday->holds(pragueAt($target), pragueAt('2026-10-26 09:00')))->toBe($held);
-})->with([
-    'its first slot' => ['2026-10-25 00:00', true],
-    'its last slot' => ['2026-10-25 23:50', true],
-    'the day before' => ['2026-10-24 23:50', false],
-    'today' => ['2026-10-26 00:00', false],
-]);
-
-it('holds the last seven days back from the newest slot', function (): void {
-    $latest = pragueAt('2026-10-05 12:00');
-
-    expect(ScorePeriod::Week->holds($latest - 7 * 86400 + 600, $latest))->toBeTrue()
-        ->and(ScorePeriod::Week->holds($latest - 7 * 86400, $latest))->toBeFalse();
+it('bounds yesterday by local date, a 25-hour day included', function (): void {
+    expect(ScorePeriod::Yesterday->bounds(pragueAt('2026-10-26 09:00')))->toBe([pragueAt('2026-10-25 00:00'), pragueAt('2026-10-26 00:00')])
+        ->and(pragueAt('2026-10-26 00:00') - pragueAt('2026-10-25 00:00'))->toBe(25 * 3600);
 });
 
-it('holds everything scored for the month', function (): void {
-    expect(ScorePeriod::Month->holds(pragueAt('2026-01-01 00:00'), pragueAt('2026-10-05 12:00')))->toBeTrue();
+it('bounds the week to the seven days back from now', function (): void {
+    $now = pragueAt('2026-10-05 12:00');
+
+    expect(ScorePeriod::Week->bounds($now))->toBe([$now - 7 * 86400 + 1, PHP_INT_MAX]);
+});
+
+it('leaves the month unbounded', function (): void {
+    expect(ScorePeriod::Month->bounds(pragueAt('2026-10-05 12:00')))->toBe([PHP_INT_MIN, PHP_INT_MAX]);
 });

@@ -1,11 +1,20 @@
-/** The hour-of-day chart's periods; `today` draws the day's slots, the others the bias by hour. */
-export const PERIODS = ["today", "yesterday", "week", "month"];
-
+/** `today` draws the day's slots, every other period the bias by hour. */
 export const DEFAULT_PERIOD = "today";
 
-/** Payload: `today` a list of slots, every other period 24 hour rows. */
+/** Payload: `today` a list of slots, every other period (ScorePeriod) 24 hour rows. */
 export function periodRows(payload, period) {
-    return payload[PERIODS.includes(period) ? period : DEFAULT_PERIOD] ?? [];
+    return payload[period] ?? payload[DEFAULT_PERIOD] ?? [];
+}
+
+/** A value with no neighbour on either side gets its own marker: a line needs two points. */
+export function markLonePoints(values) {
+    return values.map((value, index) =>
+        value !== null &&
+        (values[index - 1] ?? null) === null &&
+        (values[index + 1] ?? null) === null
+            ? { value, symbol: "circle", symbolSize: 5 }
+            : value,
+    );
 }
 
 /** Slot: `clock`, `measured`, `shown` band or null, `base` and `experiment` medians or null, in °C. */

@@ -9,7 +9,7 @@ use App\Queries\ForecastAccuracy;
 
 /**
  * The latest experiment version scored on its own forecasts and appended to the score; shown and base stay as scored.
- * By hour it is added only to a period whose forecasts it covers from the first one.
+ * By hour it is added only to a period whose forecasts it covers from the first one; a period with none is covered.
  *
  * @phpstan-import-type Score from ForecastAccuracy
  * @phpstan-import-type Scored from ForecastAccuracy
@@ -20,10 +20,9 @@ final readonly class ExperimentalForecastScore
      * @param  Score  $score  ForecastScore::of() over the same $scored
      * @param  non-empty-list<Scored>  $scored
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver
-     * @param  int  $latest  the newest measured slot
      * @return Score
      */
-    public static function onto(array $score, array $scored, array $tookOver, int $lastIssued, int $latest): array
+    public static function onto(array $score, array $scored, array $tookOver, int $lastIssued, int $now): array
     {
         $newest = null;
 
@@ -58,9 +57,15 @@ final readonly class ExperimentalForecastScore
         $covers = [];
 
         foreach (ScorePeriod::cases() as $period) {
-            $shown = ForecastScore::within($scored, $period, $latest);
+            $shown = ForecastScore::within($scored, $period, $now);
 
-            if ($shown === [] || $since > min(array_column($shown, 'issuedAt'))) {
+            if ($shown === []) {
+                $covers[] = $period->value;
+
+                continue;
+            }
+
+            if ($since > min(array_column($shown, 'issuedAt'))) {
                 continue;
             }
 
@@ -68,7 +73,7 @@ final readonly class ExperimentalForecastScore
             $byHour[$period->value] = array_map(
                 fn (HourOfDayScore $hour, HourOfDayScore $prototypeHour): HourOfDayScore => $hour->withExperiment($prototypeHour),
                 $byHour[$period->value],
-                ForecastScore::byHour(ForecastScore::within($prototype, $period, $latest)),
+                ForecastScore::byHour(ForecastScore::within($prototype, $period, $now)),
             );
         }
 

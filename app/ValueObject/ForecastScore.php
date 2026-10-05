@@ -22,10 +22,9 @@ final readonly class ForecastScore
     /**
      * @param  non-empty-list<Scored>  $scored  oldest first
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver  what took over, by the day it did
-     * @param  int  $latest  the newest measured slot
      * @return Score
      */
-    public static function of(int $hours, array $scored, array $tookOver, int $lastIssued, int $latest): array
+    public static function of(int $hours, array $scored, array $tookOver, int $lastIssued, int $now): array
     {
         return [
             'hours' => $hours,
@@ -34,7 +33,7 @@ final readonly class ForecastScore
             // Every hour scored, not only those with a base: the headline is no comparison.
             'shown' => self::figures($scored, 'corrected'),
             'rain' => self::rain($scored),
-            'byHour' => self::byPeriod($scored, $latest),
+            'byHour' => self::byPeriod($scored, $now),
         ];
     }
 
@@ -90,12 +89,12 @@ final readonly class ForecastScore
      * @param  list<Scored>  $scored
      * @return array<value-of<ScorePeriod>, list<HourOfDayScore>>
      */
-    public static function byPeriod(array $scored, int $latest): array
+    public static function byPeriod(array $scored, int $now): array
     {
         $periods = [];
 
         foreach (ScorePeriod::cases() as $period) {
-            $within = self::within($scored, $period, $latest);
+            $within = self::within($scored, $period, $now);
             $withBase = array_values(array_filter($within, fn (array $one): bool => $one['base'] !== null));
             $periods[$period->value] = array_map(
                 fn (HourOfDayScore $shown, HourOfDayScore $base): HourOfDayScore => $shown->withBase($base),
@@ -111,9 +110,11 @@ final readonly class ForecastScore
      * @param  list<Scored>  $scored
      * @return list<Scored>
      */
-    public static function within(array $scored, ScorePeriod $period, int $latest): array
+    public static function within(array $scored, ScorePeriod $period, int $now): array
     {
-        return array_values(array_filter($scored, fn (array $one): bool => $period->holds($one['target'], $latest)));
+        [$from, $until] = $period->bounds($now);
+
+        return array_values(array_filter($scored, fn (array $one): bool => $one['target'] >= $from && $one['target'] < $until));
     }
 
     /**

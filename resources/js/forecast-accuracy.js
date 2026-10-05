@@ -3,7 +3,13 @@ import { LineChart } from "echarts/charts";
 import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { formatNumber } from "./charts/format";
-import { DEFAULT_PERIOD, hasValues, periodRows, todaySeries } from "./charts/hour-of-day";
+import {
+    DEFAULT_PERIOD,
+    hasValues,
+    markLonePoints,
+    periodRows,
+    todaySeries,
+} from "./charts/hour-of-day";
 import { parsed, unwatchSize, watchSize, watchThemeChange } from "./charts/lifecycle";
 import { BAND_OPACITY, CHART_FONT, basePalette, token } from "./charts/theme";
 
@@ -367,8 +373,9 @@ function todayOption(slots, canvas) {
         name,
         type: "line",
         connectNulls: false,
-        showSymbol: false,
-        data,
+        symbol: "none",
+        itemStyle: { color: style.lineStyle.color },
+        data: markLonePoints(data),
         ...style,
     });
 

@@ -141,6 +141,7 @@ it('keeps the shown and base history when the prototype starts later', function 
 
     $html = $this->get(route('forecast'))
         ->assertSee('VEML prototype (light-v1) runs since 24.9.2026, not long enough for this period.')
+        ->assertSeeInOrder(['>Today<', '>Yesterday<', '>7 days<', '>30 days<'], false)
         ->getContent();
     preg_match_all('/data-accuracy-chart="([^"]+)"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches, PREG_SET_ORDER);
     $charts = [];

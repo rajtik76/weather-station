@@ -96,7 +96,7 @@
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
                     <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]" x-text="period === 'today' ? 'Today against the forecast' : 'Bias by hour of day'">Today against the forecast</h3>
                     <div class="seg" role="group" aria-label="Period">
-                        @foreach (['today' => 'Today', 'yesterday' => 'Yesterday', 'week' => '7 days', 'month' => '30 days'] as $period => $label)
+                        @foreach (['today' => 'Today', ...collect(\App\Enums\ScorePeriod::cases())->mapWithKeys(fn (\App\Enums\ScorePeriod $period): array => [$period->value => $period->label()])] as $period => $label)
                             <button
                                 type="button"
                                 x-on:click="period = '{{ $period }}'; $dispatch('accuracy-period', { period: '{{ $period }}' })"
