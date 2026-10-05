@@ -94,7 +94,7 @@ it('sets the base model\'s range width beside the forecast shown', function (): 
         ->assertSeeInOrder(['1 h', '+80 %', '100 %', '1,5 °C', 'base 0,9']);
 });
 
-it('offers only the horizons that have come true, the longest first shown', function (): void {
+it('offers only the horizons that have come true, an hour ahead first shown', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     scoresReading($sensor, $issued, 1200);
@@ -103,17 +103,17 @@ it('offers only the horizons that have come true, the longest first shown', func
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoresHorizon(1, 12.0, 12.8, 13.5), scoresHorizon(2, 12.5, 13.0, 14.0)]]);
     Forecast::factory()->for($sensor)->create(['issued_at' => $issued + 7200]);
 
-    $page = Livewire::test(ForecastPage::class)->assertSet('horizon', 2);
+    $page = Livewire::test(ForecastPage::class)->assertSet('horizon', 1);
 
     expect($page->html())
-        ->toMatch('/wire:click="\$set\(\'horizon\', 1\)"\s+aria-pressed="false"/')
-        ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/')
+        ->toMatch('/wire:click="\$set\(\'horizon\', 1\)"\s+aria-pressed="true"/')
+        ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="false"/')
         ->not->toContain("\$set('horizon', 3)")
         ->not->toContain("\$set('horizon', 6)");
 
-    $page->call('$set', 'horizon', 1)->assertSet('horizon', 1);
+    $page->call('$set', 'horizon', 2)->assertSet('horizon', 2);
 
-    expect($page->html())->toMatch('/wire:click="\$set\(\'horizon\', 1\)"\s+aria-pressed="true"/');
+    expect($page->html())->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/');
 });
 
 it('moves the choice onto a horizon still scored when the scores change under it', function (): void {

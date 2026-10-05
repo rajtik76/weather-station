@@ -169,10 +169,13 @@ it('keeps the shown and base history when the prototype starts later', function 
     expect($charts['hours']['today'])->not->toBeEmpty();
 });
 
-it('charts the verdict\'s horizon in detail, the longest scored until it has come true', function (): void {
+it('charts an hour ahead in detail, the longest scored when the chosen horizon has not come true', function (): void {
     scoredStation();
 
-    $page = Livewire::test(ForecastPage::class)->assertSet('horizon', 2);
+    $page = Livewire::test(ForecastPage::class)->assertSet('horizon', 1)->assertSee('1 h ahead');
+    expect($page->get('score')['hours'])->toBe(1);
+
+    $page->set('horizon', 2)->assertSet('horizon', 2);
 
     expect($page->html())
         ->toContain('data-accuracy-chart="days"')
@@ -180,9 +183,6 @@ it('charts the verdict\'s horizon in detail, the longest scored until it has com
         ->toContain('data-accuracy-chart="hours"')
         ->toMatch('/wire:click="\$set\(\'horizon\', 2\)"\s+aria-pressed="true"/')
         ->toContain('data-accuracy-rows="'.e(json_encode([new DayScore('24.9.2026', new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5))], JSON_THROW_ON_ERROR)).'"');
-
-    $page->set('horizon', 1)->assertSet('horizon', 1)->assertSee('1 h ahead');
-    expect($page->get('score')['hours'])->toBe(1);
 
     $page->set('horizon', 5)->assertSet('horizon', 2);
 });

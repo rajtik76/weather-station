@@ -7,7 +7,6 @@ namespace App\Livewire;
 use App\Queries\ForecastAccuracy;
 use App\Queries\ForecastChanges;
 use App\ValueObject\Scoreboard;
-use App\ValueObject\Verdict;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -26,8 +25,8 @@ use Livewire\Attributes\Title;
 #[Title('Balcony Station Forecast')]
 class Forecast extends StationPage
 {
-    /** Detail charts' horizon in hours; not #[Url], so a reload starts from the verdict's. */
-    public int $horizon = Verdict::HOURS;
+    /** Detail charts' horizon in hours; not #[Url], so a reload starts from an hour ahead. */
+    public int $horizon = 1;
 
     /** Re-checked every render: the chosen horizon may not have come true yet. */
     public function render(): View
