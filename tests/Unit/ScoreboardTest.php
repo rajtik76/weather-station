@@ -13,7 +13,7 @@ function boardFigures(?float $skill, float $inRange, float $width, int $count = 
 }
 
 /**
- * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<HourOfDayScore>}
+ * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: array<string, list<HourOfDayScore>>}
  */
 function boardScore(int $hours, ScoreFigures $shown, ?ScoreFigures $corrected = null, ?ScoreFigures $base = null): array
 {

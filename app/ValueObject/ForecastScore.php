@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
+use App\Enums\ScorePeriod;
 use App\Models\Forecast;
 use App\Queries\ForecastAccuracy;
 
@@ -21,9 +22,10 @@ final readonly class ForecastScore
     /**
      * @param  non-empty-list<Scored>  $scored  oldest first
      * @param  array<string, array{model?: string, correction?: int}>  $tookOver  what took over, by the day it did
+     * @param  int  $latest  the newest measured slot
      * @return Score
      */
-    public static function of(int $hours, array $scored, array $tookOver, int $lastIssued): array
+    public static function of(int $hours, array $scored, array $tookOver, int $lastIssued, int $latest): array
     {
         return [
             'hours' => $hours,
@@ -32,7 +34,7 @@ final readonly class ForecastScore
             // Every hour scored, not only those with a base: the headline is no comparison.
             'shown' => self::figures($scored, 'corrected'),
             'rain' => self::rain($scored),
-            'byHour' => self::byHour($scored),
+            'byHour' => self::byPeriod($scored, $latest),
         ];
     }
 
@@ -83,15 +85,50 @@ final readonly class ForecastScore
     }
 
     /**
+     * Shown with base by the hour each period's forecasts were for; on the forecasts with a base once any has one, as compared().
+     *
      * @param  list<Scored>  $scored
+     * @return array<value-of<ScorePeriod>, list<HourOfDayScore>>
+     */
+    public static function byPeriod(array $scored, int $latest): array
+    {
+        $periods = [];
+
+        foreach (ScorePeriod::cases() as $period) {
+            $within = self::within($scored, $period, $latest);
+            $withBase = array_values(array_filter($within, fn (array $one): bool => $one['base'] !== null));
+            $periods[$period->value] = array_map(
+                fn (HourOfDayScore $shown, HourOfDayScore $base): HourOfDayScore => $shown->withBase($base),
+                self::byHour($withBase === [] ? $within : $withBase),
+                self::byHour($withBase, 'base'),
+            );
+        }
+
+        return $periods;
+    }
+
+    /**
+     * @param  list<Scored>  $scored
+     * @return list<Scored>
+     */
+    public static function within(array $scored, ScorePeriod $period, int $latest): array
+    {
+        return array_values(array_filter($scored, fn (array $one): bool => $period->holds($one['target'], $latest)));
+    }
+
+    /**
+     * @param  list<Scored>  $scored
+     * @param  'corrected'|'base'  $which
      * @return list<HourOfDayScore> all 24 local hours
      */
-    public static function byHour(array $scored): array
+    public static function byHour(array $scored, string $which = 'corrected'): array
     {
         $grouped = [];
 
         foreach ($scored as $one) {
-            $grouped[$one['hour']][] = $one['corrected'];
+            if ($one[$which] !== null) {
+                $grouped[$one['hour']][] = $one[$which];
+            }
         }
 
         $hours = [];

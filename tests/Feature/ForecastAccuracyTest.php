@@ -13,6 +13,8 @@ use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\NoiseWindow;
 use App\ValueObject\ScoreFigures;
+use App\ValueObject\TodaySlot;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -71,17 +73,38 @@ function listenedAt(Sensor $sensor, int $timestamp, bool $raining): void
  * All 24 local hours, empty but for the given ones.
  *
  * @param  array<int, HourOfDayScore>  $scored
+ * @param  array<int, HourOfDayScore>  $base
  * @return list<HourOfDayScore>
  */
-function byHour(array $scored): array
+function byHour(array $scored, array $base = []): array
 {
     $hours = [];
 
     for ($hour = 0; $hour < 24; $hour++) {
-        $hours[] = $scored[$hour] ?? new HourOfDayScore;
+        $hours[] = ($scored[$hour] ?? new HourOfDayScore)->withBase($base[$hour] ?? new HourOfDayScore);
     }
 
     return $hours;
+}
+
+/**
+ * Forecasts for today only: nothing yesterday, the week and the month alike.
+ *
+ * @param  list<HourOfDayScore>  $hours
+ * @return array{yesterday: list<HourOfDayScore>, week: list<HourOfDayScore>, month: list<HourOfDayScore>}
+ */
+function todayOnly(array $hours): array
+{
+    return ['yesterday' => byHour([]), 'week' => $hours, 'month' => $hours];
+}
+
+/**
+ * @param  list<array<string, mixed>>  $scores
+ * @return list<array<string, mixed>>
+ */
+function withoutToday(array $scores): array
+{
+    return array_map(fn (array $score): array => Arr::except($score, 'today'), $scores);
 }
 
 it('appends the latest experiment version to the score and leaves shown and base as scored without it', function (): void {
@@ -111,14 +134,60 @@ it('appends the latest experiment version to the score and leaves shown and base
     $score = new ForecastAccuracy($stations[0]->id)->since($issued)[0];
     $plain = new ForecastAccuracy($stations[1]->id)->since($issued)[0];
 
-    expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false]);
-    expect(array_diff_key($score, array_flip(['days', 'byHour', 'experiment'])))->toEqual(array_diff_key($plain, array_flip(['days', 'byHour'])));
+    // light-v1 starts two hours after the first forecast shown: by hour it covers no period.
+    expect($score['experiment'] ?? null)->toBe(['version' => 'light-v1', 'synthetic' => false, 'since' => $issued + 7200, 'covers' => []]);
+    expect(array_diff_key($score, array_flip(['days', 'today', 'experiment'])))->toEqual(array_diff_key($plain, array_flip(['days', 'today'])));
     expect(array_map(fn (DayScore $day): DayScore => $day->withExperiment(null), $score['days']))->toEqual($plain['days']);
-    expect(array_map(fn (HourOfDayScore $hour): HourOfDayScore => $hour->withExperiment(null), $score['byHour']))->toEqual($plain['byHour']);
     expect($score['days'][0]->shown?->count)->toBe(3);
     expect($score['days'][0]->experiment)->toEqual(new ScoreFigures(1, 75.0, 0.25, 1.0, 100.0, 1.0));
-    expect($score['byHour'][11]->experiment)->toEqual(new HourOfDayScore);
-    expect($score['byHour'][13]->experiment)->toEqual(new HourOfDayScore(count: 1, inRange: 100.0, error: 0.25, worst: 0.25, bias: 0.25));
+});
+
+it('adds the experiment by hour only to the periods it covers from their first forecast', function (): void {
+    $sensor = Sensor::factory()->create();
+    $experiment = ['version' => 'light-v1', 'temperature' => ['low' => 12.5, 'mid' => 12.9, 'high' => 13.5]];
+    $issues = [
+        '2026-09-14 08:00:00' => null,
+        '2026-09-23 08:00:00' => $experiment,
+        '2026-09-24 08:00:00' => $experiment,
+    ];
+    foreach ($issues as $at => $withExperiment) {
+        $issued = Date::parse($at, 'UTC')->getTimestamp();
+        measuredAt($sensor, $issued, 1200);
+        measuredAt($sensor, $issued + 3600, 1300);
+        Forecast::factory()->for($sensor)->create([
+            'issued_at' => $issued,
+            'data' => [[...scoredHorizon(1, 12.0, 12.8, 13.5), ...($withExperiment === null ? [] : ['experiment' => $withExperiment])]],
+        ]);
+    }
+
+    $score = new ForecastAccuracy($sensor->id)->since(Date::parse('2026-09-14 08:00:00', 'UTC')->getTimestamp())[0];
+
+    $prototype = fn (int $count): HourOfDayScore => new HourOfDayScore(count: $count, inRange: 100.0, error: 0.1, worst: 0.1, bias: 0.1);
+    expect($score['experiment']['covers'] ?? null)->toBe(['yesterday', 'week']);
+    expect($score['byHour']['yesterday'][11]->experiment)->toEqual($prototype(1));
+    expect($score['byHour']['week'][11]->experiment)->toEqual($prototype(2));
+    expect(array_map(fn (HourOfDayScore $hour): ?HourOfDayScore => $hour->experiment, $score['byHour']['month']))->toBe(array_fill(0, 24, null));
+});
+
+it('traces today from local midnight against the forecast issued one horizon before each slot', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = Date::parse('2026-09-23 21:30:00', 'UTC')->getTimestamp();
+    measuredAt($sensor, $issued, 1200);
+    measuredAt($sensor, $issued + 3600, 1300);
+    Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5, base: [12.0, 12.4, 12.9])]]);
+
+    $today = new ForecastAccuracy($sensor->id)->since($issued)[0]['today'] ?? [];
+
+    // 22:30 UTC is 00:30 in Prague: four slots from midnight, the last one measured and forecast.
+    expect($today)->toHaveCount(4)
+        ->and($today[3])->toEqual(new TodaySlot(
+            at: $issued + 3600,
+            clock: '00:30',
+            measured: 13.0,
+            shown: ['low' => 12.0, 'mid' => 12.8, 'high' => 13.5],
+            base: 12.4,
+        ))
+        ->and($today[0])->toEqual(new TodaySlot(at: $issued + 1800, clock: '00:00'));
 });
 
 beforeEach(function (): void {
@@ -147,7 +216,7 @@ it('scores each horizon against the window that came n hours later, overall, by 
 
     // Off by 0.2 °C where the naive 12 °C was off by 1: 80 % better. Off by 2 against 3: 33 %.
     // 09:00 and 10:00 UTC are 11:00 and 12:00 in Prague. Stored without a base: none to score.
-    expect(new ForecastAccuracy($sensor->id)->since($issued))->toEqual([
+    expect(withoutToday(new ForecastAccuracy($sensor->id)->since($issued)))->toEqual([
         [
             'hours' => 1,
             'days' => [new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5))],
@@ -155,7 +224,7 @@ it('scores each horizon against the window that came n hours later, overall, by 
             'base' => null,
             'shown' => new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5),
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
-            'byHour' => byHour([11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)]),
+            'byHour' => todayOnly(byHour([11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)])),
         ],
         [
             'hours' => 2,
@@ -164,7 +233,7 @@ it('scores each horizon against the window that came n hours later, overall, by 
             'base' => null,
             'shown' => new ScoreFigures(1, 33.0, 2.0, 3.0, 0.0, 1.5),
             'rain' => ['count' => 0, 'cases' => 0, 'chanceWhenRain' => null, 'chanceWhenDry' => null],
-            'byHour' => byHour([12 => new HourOfDayScore(count: 1, inRange: 0.0, error: 2.0, worst: 2.0, bias: 2.0)]),
+            'byHour' => todayOnly(byHour([12 => new HourOfDayScore(count: 1, inRange: 0.0, error: 2.0, worst: 2.0, bias: 2.0)])),
         ],
     ]);
 });
@@ -182,7 +251,10 @@ it('scores the base model on the same hours, beside the forecast shown', functio
             ->corrected->toEqual(new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5))
             ->base->toEqual(new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))
             ->days->toEqual([new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5), new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))])
-            ->byHour->toEqual(byHour([11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)])),
+            ->byHour->toEqual(todayOnly(byHour(
+                [11 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2)],
+                [11 => new HourOfDayScore(count: 1, inRange: 0.0, error: 0.6, worst: 0.6, bias: 0.6)],
+            ))),
     );
 });
 
@@ -205,7 +277,11 @@ it('compares the two on the hours that have a base, not the shown forecast on mo
             // The headline is no comparison: every forecast shown, off by 2.2 against the guess's 3.
             ->shown->toMatchObject(['count' => 2, 'skill' => 27.0, 'error' => 1.1])
             ->days->toEqual([new DayScore('24.9.2026', new ScoreFigures(1, 80.0, 0.2, 1.0, 100.0, 1.5), new ScoreFigures(1, 40.0, 0.6, 1.0, 0.0, 0.9))])
-            ->byHour->{11}->toEqual(new HourOfDayScore(count: 2, inRange: 50.0, error: 1.1, worst: 2.0, bias: 1.1)),
+            // By hour too: only the forecast with a base, beside it.
+            ->byHour->month->{11}->toEqual(new HourOfDayScore(
+                count: 1, inRange: 100.0, error: 0.2, worst: 0.2, bias: 0.2,
+                base: new HourOfDayScore(count: 1, inRange: 0.0, error: 0.6, worst: 0.6, bias: 0.6),
+            )),
     );
 });
 
@@ -306,7 +382,7 @@ it('gives each local hour its mean and largest miss, and which way it went', fun
         Forecast::factory()->for($sensor)->create(['issued_at' => $at, 'data' => [scoredHorizon(1, 12.0, 12.8, 13.5)]]);
     }
 
-    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.11'))->toEqual(new HourOfDayScore(count: 2, inRange: 50.0, error: 0.7, worst: 1.2, bias: -0.5));
+    expect(data_get(new ForecastAccuracy($sensor->id)->since($issued), '0.byHour.month.11'))->toEqual(new HourOfDayScore(count: 2, inRange: 50.0, error: 0.7, worst: 1.2, bias: -0.5, base: new HourOfDayScore));
 });
 
 it('scores rain by what the microphone heard within the hours ahead', function (): void {
@@ -398,7 +474,7 @@ it('scores a horizon however far ahead the service forecasts', function (): void
 
     // 05:00 UTC on the next day, 07:00 in Prague.
     expect(new ForecastAccuracy($sensor->id)->since($issued))->sequence(
-        fn ($score) => $score->hours->toBe(9)->byHour->toEqual(byHour([7 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.5, worst: 0.5, bias: -0.5)])),
+        fn ($score) => $score->hours->toBe(9)->byHour->toEqual(todayOnly(byHour([7 => new HourOfDayScore(count: 1, inRange: 100.0, error: 0.5, worst: 0.5, bias: -0.5)]))),
     );
 });
 

@@ -3,6 +3,7 @@
 use App\ValueObject\DayScore;
 use App\ValueObject\HourOfDayScore;
 use App\ValueObject\ScoreFigures;
+use App\ValueObject\TodaySlot;
 use Illuminate\Support\Str;
 
 return [
@@ -137,6 +138,7 @@ return [
     'serializable_classes' => [
         DayScore::class,
         HourOfDayScore::class,
+        TodaySlot::class,
         ScoreFigures::class,
     ],
 

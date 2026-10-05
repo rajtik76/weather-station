@@ -92,21 +92,42 @@
                     <p class="m-0 mt-6 text-[15px] leading-relaxed text-ink-3">Rain as the INMP441 microphone heard it within the hours ahead. The gap between the two is what matters; drizzle is not heard, and a single station hears rain only once it arrives.</p>
                 </div>
             </div>
-            <div class="min-w-0">
+            <div class="min-w-0" x-data="{ period: 'today' }">
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
-                    <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]">Bias by hour of day</h3>
-                    <p class="m-0 font-mono text-[13px] text-ink-3">{{ $experiment === null ? 'shown' : 'shown · VEML prototype' }}, {{ $score['hours'] }} h ahead, °C</p>
+                    <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]" x-text="period === 'today' ? 'Today against the forecast' : 'Bias by hour of day'">Today against the forecast</h3>
+                    <div class="seg" role="group" aria-label="Period">
+                        @foreach (['today' => 'Today', 'yesterday' => 'Yesterday', 'week' => '7 days', 'month' => '30 days'] as $period => $label)
+                            <button
+                                type="button"
+                                x-on:click="period = '{{ $period }}'; $dispatch('accuracy-period', { period: '{{ $period }}' })"
+                                x-bind:aria-pressed="(period === '{{ $period }}').toString()"
+                            >{{ $label }}</button>
+                        @endforeach
+                    </div>
                 </div>
+                <p class="m-0 mb-3 flex flex-wrap items-center gap-4 font-mono text-[13px] text-ink-3">
+                    <span class="flex items-center gap-2" x-show="period === 'today'"><span class="swatch bg-ink"></span>measured</span>
+                    <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Temperature->backgroundClass() }}"></span>shown</span>
+                    <span class="flex items-center gap-2">{!! $base !!}base</span>
+                    @if ($experiment !== null)
+                        <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>VEML prototype</span>
+                    @endif
+                    <span>{{ $score['hours'] }} h ahead, °C</span>
+                </p>
                 <div
                     class="rounded-[10px] border border-line bg-screen p-3"
                     data-accuracy-chart="hours"
-                    data-accuracy-rows="{{ json_encode($score['byHour']) }}"
+                    data-accuracy-rows="{{ json_encode(['today' => $score['today'] ?? [], ...$score['byHour']]) }}"
                     role="img"
-                    aria-label="Temperature {{ $score['hours'] }} h ahead, measured minus forecast by hour of the day{{ $experiment === null ? '' : ', shown and VEML prototype' }}"
+                    aria-label="Temperature {{ $score['hours'] }} h ahead: today's readings against the forecasts for them, or the reading minus the forecast by hour of the day, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[220px] w-full"></div>
                 </div>
-                <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">Reading minus the forecast's median, by the hour it was for; above zero the balcony read warmer than forecast. After sunrise the sun heats the shield and the reading runs high; the correction learns that from 20-minute solar-time bins.</p>
+                @if ($experiment !== null)
+                    <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period !== 'today' && ! {{ json_encode($experiment['covers']) }}.includes(period)" x-cloak>VEML prototype ({{ $experiment['version'] }}) runs since {{ \App\ValueObject\LocalTime::of($experiment['since'])->date() }}, not long enough for this period.</p>
+                @endif
+                <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period === 'today'">Today's readings since midnight against what each forecast said {{ $score['hours'] }} h before; the band is the shown forecast's 10-90 % range.</p>
+                <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period !== 'today'" x-cloak>Reading minus the forecast's median, by the hour it was for; above zero the balcony read warmer than forecast. After sunrise the sun heats the shield and the reading runs high; the correction learns that from 20-minute solar-time bins.</p>
             </div>
         </div>
     </section>

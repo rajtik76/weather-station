@@ -115,7 +115,6 @@ it('shows the sensor prototype only in the comparison graphs', function (): void
     $html = $this->get(route('forecast'))
         ->assertSee('VEML prototype (light-v1)')
         ->assertSee('changes nothing on it')
-        ->assertSee('shown · VEML prototype')
         ->getContent();
 
     preg_match('/data-accuracy-chart="days"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);
@@ -140,7 +139,9 @@ it('keeps the shown and base history when the prototype starts later', function 
         Forecast::factory()->for($sensor)->create(['issued_at' => $issued, 'data' => [$horizon]]);
     }
 
-    $html = $this->get(route('forecast'))->assertSee('VEML prototype')->getContent();
+    $html = $this->get(route('forecast'))
+        ->assertSee('VEML prototype (light-v1) runs since 24.9.2026, not long enough for this period.')
+        ->getContent();
     preg_match_all('/data-accuracy-chart="([^"]+)"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches, PREG_SET_ORDER);
     $charts = [];
     foreach ($matches as $match) {
@@ -160,9 +161,11 @@ it('keeps the shown and base history when the prototype starts later', function 
         expect($charts[$key][14]['date'])->toBe('24.9.2026');
         expect($charts[$key][14]['experiment'])->toEqual(['count' => 1, 'skill' => 90.0, 'error' => 0.1, 'naive' => 1.0, 'inRange' => 100.0, 'width' => 1.0]);
     }
-    $noPrototype = ['count' => 0, 'inRange' => null, 'error' => null, 'worst' => null, 'bias' => null, 'experiment' => null];
-    expect($charts['hours'][11])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.2, 'worst' => 0.2, 'bias' => 0.2, 'experiment' => $noPrototype]);
-    expect($charts['hours'][12]['experiment'])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.1, 'worst' => 0.1, 'bias' => 0.1, 'experiment' => null]);
+    $base = ['count' => 1, 'inRange' => 0.0, 'error' => 0.6, 'worst' => 0.6, 'bias' => 0.6, 'experiment' => null, 'base' => null];
+    expect($charts['hours']['month'][11])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.2, 'worst' => 0.2, 'bias' => 0.2, 'experiment' => null, 'base' => $base]);
+    expect($charts['hours']['month'][12]['experiment'])->toBeNull();
+    expect($charts['hours']['week'][12]['experiment'])->toEqual(['count' => 1, 'inRange' => 100.0, 'error' => 0.1, 'worst' => 0.1, 'bias' => 0.1, 'experiment' => null, 'base' => null]);
+    expect($charts['hours']['today'])->not->toBeEmpty();
 });
 
 it('charts the verdict\'s horizon in detail, the longest scored until it has come true', function (): void {

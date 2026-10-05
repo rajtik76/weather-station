@@ -3,19 +3,23 @@ import { LineChart } from "echarts/charts";
 import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { formatNumber } from "./charts/format";
+import { DEFAULT_PERIOD, hasValues, periodRows, todaySeries } from "./charts/hour-of-day";
 import { parsed, unwatchSize, watchSize, watchThemeChange } from "./charts/lifecycle";
-import { CHART_FONT, basePalette, token } from "./charts/theme";
+import { BAND_OPACITY, CHART_FONT, basePalette, token } from "./charts/theme";
 
 echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
 /** Forecast page accuracy charts (`data-accuracy-chart`: days, hours, widths). Not strips: no time axis, zoom or crosshair. */
+
+/** Chosen through the `accuracy-period` window event the period buttons dispatch. */
+let hoursPeriod = DEFAULT_PERIOD;
 
 /** Day row: `shown`, `base` and `experiment` figures (skill in %, misses and widths in °C) or null, `modelTookOver`, `correctionTookOver`. */
 
 // A calm day can score -1000 % and would flatten the rest; the tooltip prints the real figure.
 const SKILL_FLOOR = -100;
 
-/** Hour row: `count`, `inRange`, `error`, `worst`, `bias` in °C (null with none scored), `experiment` the prototype's hour or null. */
+/** Hour row: `count`, `inRange`, `error`, `worst`, `bias` in °C (null with none scored), `base` and `experiment` the same for those or null. */
 
 const celsius = { format: (value) => formatNumber(value, 1) };
 
@@ -113,8 +117,40 @@ function hourTooltipHtml(hour, row) {
         `<br>off by ${celsius.format(row.error)} °C on average` +
         `<br>off by ${celsius.format(row.worst)} °C at most` +
         `<br>${row.inRange} % in range<br>${forecastHours(row.count)}` +
+        baseHourHtml(row.base) +
         prototypeHourHtml(row.experiment)
     );
+}
+
+function baseHourHtml(base) {
+    if (base === null || base.count === 0) {
+        return "";
+    }
+
+    return `<br>base: bias ${signedDegrees(base.bias)}, off by ${celsius.format(base.error)} °C on average`;
+}
+
+function slotTooltipHtml(slot) {
+    const degrees = (value) => (value === null ? "n/a" : `${celsius.format(value)} °C`);
+    const lines = [slot.clock, `<strong>measured ${degrees(slot.measured)}</strong>`];
+
+    if (slot.shown === null) {
+        lines.push("no forecast for this slot");
+    } else {
+        lines.push(
+            `shown ${degrees(slot.shown.mid)}, range ${celsius.format(slot.shown.low)}-${celsius.format(slot.shown.high)} °C`,
+        );
+    }
+
+    if (slot.base !== null) {
+        lines.push(`base ${degrees(slot.base)}`);
+    }
+
+    if (slot.experiment !== null) {
+        lines.push(`VEML prototype ${degrees(slot.experiment)}`);
+    }
+
+    return lines.join("<br>");
 }
 
 function prototypeHourHtml(experiment) {
@@ -309,7 +345,87 @@ function changeLabel(row) {
         .join(", ");
 }
 
-function hoursOption(rows, canvas) {
+function hoursOption(payload, canvas) {
+    const rows = periodRows(payload, hoursPeriod);
+
+    return hoursPeriod === DEFAULT_PERIOD ? todayOption(rows, canvas) : biasOption(rows, canvas);
+}
+
+function todayOption(slots, canvas) {
+    const colours = palette();
+    const series = todaySeries(slots);
+    const band = {
+        type: "line",
+        stack: "shown-range",
+        stackStrategy: "all",
+        silent: true,
+        showSymbol: false,
+        lineStyle: { width: 0 },
+        emphasis: { disabled: true },
+    };
+    const line = (name, data, style) => ({
+        name,
+        type: "line",
+        connectNulls: false,
+        showSymbol: false,
+        data,
+        ...style,
+    });
+
+    return {
+        animation: false,
+        grid: { left: 44, right: 8, top: 8, bottom: 22 },
+        xAxis: {
+            type: "category",
+            data: series.clocks,
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: colours.axis } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                hideOverlap: true,
+            },
+        },
+        yAxis: {
+            type: "value",
+            scale: true,
+            splitNumber: 3,
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                formatter: (value) => `${width.format(value)} °C`,
+            },
+            splitLine: { lineStyle: { color: colours.grid } },
+        },
+        tooltip: tooltip(colours, canvas, (index) => slotTooltipHtml(slots[index])),
+        series: [
+            { ...band, name: "shown range low", data: series.shownLow },
+            {
+                ...band,
+                name: "shown range",
+                areaStyle: { color: colours.temperature, opacity: BAND_OPACITY },
+                data: series.shownSpread,
+            },
+            line("base", series.base, {
+                lineStyle: { color: colours.label, width: 1.5, type: "dashed" },
+            }),
+            line("shown", series.shown, { lineStyle: { color: colours.temperature, width: 2 } }),
+            ...(hasValues(series.experiment)
+                ? [
+                      line("VEML prototype", series.experiment, {
+                          lineStyle: { color: colours.prototype, width: 2 },
+                      }),
+                  ]
+                : []),
+            line("measured", series.measured, { lineStyle: { color: colours.text, width: 2 } }),
+        ],
+    };
+}
+
+function biasOption(rows, canvas) {
     const colours = palette();
 
     return {
@@ -345,12 +461,25 @@ function hoursOption(rows, canvas) {
         tooltip: tooltip(colours, canvas, (index) => hourTooltipHtml(index, rows[index])),
         series: [
             {
+                name: "base",
                 type: "line",
                 connectNulls: false,
                 symbol: "circle",
                 symbolSize: 6,
-                lineStyle: { color: colours.label, width: 1.5 },
+                lineStyle: { color: colours.label, width: 1.5, type: "dashed" },
                 itemStyle: { color: colours.label },
+                data: rows.map((row) =>
+                    row.base === null || row.base.count === 0 ? null : row.base.bias,
+                ),
+            },
+            {
+                name: "shown",
+                type: "line",
+                connectNulls: false,
+                symbol: "circle",
+                symbolSize: 8,
+                lineStyle: { color: colours.temperature, width: 2 },
+                itemStyle: { color: colours.temperature },
                 markLine: {
                     silent: true,
                     symbol: "none",
@@ -457,7 +586,7 @@ function mount(force = false) {
             watchSize(key, chart, canvas);
         }
 
-        const payload = element.dataset.accuracyRows;
+        const payload = `${key === "hours" ? hoursPeriod : ""}${element.dataset.accuracyRows}`;
 
         if (!force && painted.get(key) === payload) {
             return;
@@ -487,4 +616,12 @@ document.addEventListener("DOMContentLoaded", () => {
     watchThemeChange(() => mount(true));
 });
 
-document.addEventListener("livewire:navigated", () => mount(true));
+document.addEventListener("livewire:navigated", () => {
+    hoursPeriod = DEFAULT_PERIOD;
+    mount(true);
+});
+
+window.addEventListener("accuracy-period", (event) => {
+    hoursPeriod = event.detail.period;
+    mount();
+});

@@ -14,6 +14,8 @@ use App\ValueObject\LocalTime;
 use App\ValueObject\ModelName;
 use App\ValueObject\RainDetector;
 use App\ValueObject\ScoreFigures;
+use App\ValueObject\TodaySlot;
+use App\ValueObject\TodayTrace;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,12 +27,13 @@ use Illuminate\Support\Facades\DB;
  * Rain truth is RainDetector within the n hours; hours without microphone data are left out of the rain figures.
  *
  * @phpstan-type Rain array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}
- * @phpstan-type Score array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: Rain, byHour: list<HourOfDayScore>, experiment?: array{version: string, synthetic: bool}}
+ * @phpstan-type Score array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: Rain, byHour: array<string, list<HourOfDayScore>>, today?: list<TodaySlot>, experiment?: array{version: string, synthetic: bool, since: int, covers: list<string>}}
  * @phpstan-type Miss array{inRange: bool, difference: float, width: float}
  *
  * @phpstan-import-type Band from Forecast
+ * @phpstan-import-type Horizon from Forecast
  *
- * @phpstan-type Scored array{issuedAt: int, date: string, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss, experiment?: array{version: string, synthetic: bool, miss: Miss}}
+ * @phpstan-type Scored array{issuedAt: int, date: string, target: int, hour: int, naive: ?float, rained: ?bool, chance: float, corrected: Miss, base: ?Miss, experiment?: array{version: string, synthetic: bool, miss: Miss}}
  */
 final readonly class ForecastAccuracy
 {
@@ -66,8 +69,12 @@ final readonly class ForecastAccuracy
         $tookOver = [];
         $previousModel = null;
         $previousCorrection = null;
+        /** @var array<int, list<Horizon>> $byIssue */
+        $byIssue = [];
+        $experimentVersion = null;
 
         foreach ($forecasts as $forecast) {
+            $byIssue[$forecast->issued_at] = $forecast->data;
             $now = $temperatures[$forecast->issued_at] ?? null;
             $date = LocalTime::of($forecast->issued_at)->date();
 
@@ -86,6 +93,7 @@ final readonly class ForecastAccuracy
             $previousModel = $forecast->model;
 
             foreach ($forecast->data as $horizon) {
+                $experimentVersion = $horizon['experiment']['version'] ?? $experimentVersion;
                 $hours = $horizon['hours'];
                 $target = $forecast->issued_at + $hours * 3600;
                 $truth = $temperatures[$target] ?? null;
@@ -97,6 +105,7 @@ final readonly class ForecastAccuracy
                 $tally[$hours][] = [
                     'issuedAt' => $forecast->issued_at,
                     'date' => $date,
+                    'target' => $target,
                     'hour' => LocalTime::of($target)->hour(),
                     'naive' => $now === null ? null : abs($truth - $now),
                     'rained' => $this->rainedWithin($forecast->issued_at, $hours, $heard, $rainy),
@@ -114,10 +123,14 @@ final readonly class ForecastAccuracy
 
         ksort($tally);
         $scores = [];
+        $lastIssued = $forecasts->last()->issued_at;
+        $latest = (int) array_key_last($temperatures);
 
         foreach ($tally as $hours => $scored) {
-            $lastIssued = $forecasts->last()->issued_at;
-            $scores[] = ExperimentalForecastScore::onto(ForecastScore::of($hours, $scored, $tookOver, $lastIssued), $scored, $tookOver, $lastIssued);
+            $scores[] = [
+                ...ExperimentalForecastScore::onto(ForecastScore::of($hours, $scored, $tookOver, $lastIssued, $latest), $scored, $tookOver, $lastIssued, $latest),
+                'today' => TodayTrace::of($hours, $byIssue, $temperatures, $latest, $experimentVersion),
+            ];
         }
 
         return $scores;

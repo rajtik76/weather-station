@@ -8,7 +8,7 @@ use App\ValueObject\ScoreFigures;
 use App\ValueObject\Verdict;
 
 /**
- * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: list<HourOfDayScore>}
+ * @return array{hours: int, days: list<DayScore>, corrected: ScoreFigures, base: ?ScoreFigures, shown: ScoreFigures, rain: array{count: int, cases: int, chanceWhenRain: ?float, chanceWhenDry: ?float}, byHour: array<string, list<HourOfDayScore>>}
  */
 function verdictScore(int $hours, ?float $skill, int $count = 200): array
 {

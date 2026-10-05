@@ -9,7 +9,7 @@ use JsonSerializable;
 /**
  * One local hour of the day a horizon's forecasts were for; misses in °C, bias is the mean reading minus the median.
  *
- * @phpstan-type HourRow array{count: int, inRange: ?float, error: ?float, worst: ?float, bias: ?float, experiment: ?HourOfDayScore}
+ * @phpstan-type HourRow array{count: int, inRange: ?float, error: ?float, worst: ?float, bias: ?float, experiment: ?HourOfDayScore, base: ?HourOfDayScore}
  */
 final readonly class HourOfDayScore implements JsonSerializable
 {
@@ -23,11 +23,17 @@ final readonly class HourOfDayScore implements JsonSerializable
         public ?float $worst = null,
         public ?float $bias = null,
         public ?HourOfDayScore $experiment = null,
+        public ?HourOfDayScore $base = null,
     ) {}
 
     public function withExperiment(?self $experiment): self
     {
-        return new self($this->count, $this->inRange, $this->error, $this->worst, $this->bias, $experiment);
+        return new self($this->count, $this->inRange, $this->error, $this->worst, $this->bias, $experiment, $this->base);
+    }
+
+    public function withBase(?self $base): self
+    {
+        return new self($this->count, $this->inRange, $this->error, $this->worst, $this->bias, $this->experiment, $base);
     }
 
     /**
@@ -42,6 +48,7 @@ final readonly class HourOfDayScore implements JsonSerializable
             'worst' => $this->worst,
             'bias' => $this->bias,
             'experiment' => $this->experiment,
+            'base' => $this->base,
         ];
     }
 }

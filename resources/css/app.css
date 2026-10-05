@@ -40,3 +40,7 @@
     color: inherit;
     text-decoration: underline;
 }
+
+[x-cloak] {
+    display: none !important;
+}

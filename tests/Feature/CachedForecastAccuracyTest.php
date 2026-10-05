@@ -10,6 +10,7 @@ use App\ValueObject\DayScore;
 use App\ValueObject\HourOfDayScore;
 use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\ScoreFigures;
+use App\ValueObject\TodaySlot;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 
@@ -116,6 +117,7 @@ it('reads the scores back from the database store as value objects', function ()
     $cached = Cache::get("forecast-accuracy:{$sensor->id}")['scores'][0];
 
     expect($cached['days'][0])->toBeInstanceOf(DayScore::class)->toEqual($scored[0]['days'][0])
-        ->and($cached['byHour'][0])->toBeInstanceOf(HourOfDayScore::class)
+        ->and($cached['byHour']['month'][0])->toBeInstanceOf(HourOfDayScore::class)
+        ->and($cached['today'][0] ?? null)->toBeInstanceOf(TodaySlot::class)
         ->and($cached['shown'])->toBeInstanceOf(ScoreFigures::class);
 });

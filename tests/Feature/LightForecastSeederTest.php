@@ -84,7 +84,7 @@ it('refreshes the graph cache and distinguishes the synthetic preview from measu
 
     seed(LightForecastSeeder::class);
 
-    expect($cached->lastDays(30)[0]['experiment'] ?? null)->toBe(['version' => 'demo-light-v1', 'synthetic' => true]);
+    expect($cached->lastDays(30)[0]['experiment'] ?? null)->toMatchArray(['version' => 'demo-light-v1', 'synthetic' => true]);
     $this->get(route('forecast'))
         ->assertSee('Synthetic preview: VEML prototype (demo-light-v1)')
         ->assertSee('not measured prototype performance');

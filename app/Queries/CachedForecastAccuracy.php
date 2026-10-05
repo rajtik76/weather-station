@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Cache;
 final readonly class CachedForecastAccuracy
 {
     /** Bump when Score changes shape so a deploy never reads the old one. */
-    private const int SHAPE = 13;
+    private const int SHAPE = 14;
 
     private const int TTL_MINUTES = 15;
 
