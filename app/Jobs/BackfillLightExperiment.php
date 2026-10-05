@@ -21,7 +21,8 @@ use UnexpectedValueException;
 /**
  * Replays the light experiment on forecasts stored without its current version; returns how many were filled.
  * Fitted once per local day from the readings held at the day's first upload, issued from those held at the forecast's upload.
- * Only forecasts of the model `/health` reports with no horizon of the experiment version it reports; an older version is replaced.
+ * Only forecasts of the model `/health` reports with no horizon of the experiment version it reports.
+ * An older version is replaced where the current one is issued; a forecast it cannot issue keeps the older one.
  *
  * @phpstan-import-type LightFitted from ForecastService
  */
@@ -43,13 +44,14 @@ class BackfillLightExperiment
         $lookback = (int) config('forecast.lookback_hours') * 3600;
 
         $health = $service->health();
+        $version = $health['experiment'] ?? throw new UnexpectedValueException('The forecast service does not report its experiment version');
 
         $missing = Forecast::query()
             ->where('sensor_id', $this->sensor->id)
             ->where('issued_at', '>=', $this->since)
             ->where('model', $health['model'])
             ->whereRaw('jsonb_array_length(data) > 0')
-            ->whereRaw("NOT EXISTS (SELECT 1 FROM jsonb_array_elements(data) AS horizon WHERE horizon->'experiment'->>'version' = ?)", [$health['experiment']])
+            ->whereRaw("NOT EXISTS (SELECT 1 FROM jsonb_array_elements(data) AS horizon WHERE horizon->'experiment'->>'version' = ?)", [$version])
             ->oldest('issued_at')
             ->get();
 

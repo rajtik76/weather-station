@@ -64,11 +64,11 @@ final readonly class ForecastService
     }
 
     /**
-     * @return array{model: string, experiment: string}
+     * @return array{model: string, experiment?: string}
      */
     public function health(int $timeout = 10): array
     {
-        /** @var array{model: string, experiment: string} */
+        /** @var array{model: string, experiment?: string} */
         return Http::timeout($timeout)->get($this->endpoint('health'))->throw()->json();
     }
 

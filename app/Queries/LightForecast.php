@@ -89,6 +89,8 @@ final readonly class LightForecast
     }
 
     /**
+     * A horizon the experiment does not answer loses any experiment it held.
+     *
      * @param  list<Horizon>  $horizons
      * @param  LightIssued  $experiment
      * @return list<Horizon>
@@ -98,9 +100,15 @@ final readonly class LightForecast
         $bands = array_column($experiment['horizons'], 'temperature', 'hours');
 
         return array_map(
-            fn (array $horizon): array => isset($bands[$horizon['hours']])
-                ? [...$horizon, 'experiment' => ['version' => $experiment['version'], 'temperature' => $bands[$horizon['hours']]]]
-                : $horizon,
+            function (array $horizon) use ($bands, $experiment): array {
+                if (isset($bands[$horizon['hours']])) {
+                    return [...$horizon, 'experiment' => ['version' => $experiment['version'], 'temperature' => $bands[$horizon['hours']]]];
+                }
+
+                unset($horizon['experiment']);
+
+                return $horizon;
+            },
             $horizons,
         );
     }

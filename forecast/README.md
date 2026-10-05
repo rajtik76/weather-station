@@ -212,7 +212,7 @@ POST /light-forecast
 ```
 
 - Only fitted horizons
-- `php artisan forecast:backfill-light <Y-m-d>` replays both calls for forecasts stored without the version `/health` reports (`experiment`), each from the readings the server held at the time; an older version is replaced
+- `php artisan forecast:backfill-light <Y-m-d>` replays both calls for forecasts stored without the version `/health` reports (`experiment`), each from the readings the server held at the time; an older version is replaced where the current one is issued, a forecast it cannot issue keeps the older one
 
 ## Deploying
 

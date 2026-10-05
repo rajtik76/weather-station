@@ -35,5 +35,5 @@ A second temperature correction that reads the VEML7700 in the shield. It runs b
 - Fitted by `POST /light-correction` once per local day of the newest reading, from the last 60 days, and cached per sensor
 - A failure is reported and pauses the experiment for an hour; the forecast is already stored
 - The forecast page adds it as one more line to skill by day, range width and bias by hour, scored on its own forecasts; shown and base stay exactly as without it, tooltips give each line's count
-- `php artisan forecast:backfill-light <Y-m-d>` replays it on forecasts stored without its current version, from the readings the server held when each was issued (`created_at`); unlike the weather model, nothing later leaks in. An older version is replaced; the page scores the latest version only
+- `php artisan forecast:backfill-light <Y-m-d>` replays it on forecasts stored without its current version, from the readings the server held when each was issued (`created_at`); unlike the weather model, nothing later leaks in. An older version is replaced where the current one is issued, a forecast it cannot issue keeps the older one; the page scores the latest version only
 - Sample data: `LightForecastSeeder` adds a synthetic `demo-light-v1` curve, flagged `synthetic`; the page labels it a preview

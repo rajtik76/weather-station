@@ -155,24 +155,37 @@ it('leaves a forecast that has the current experiment version on any horizon', f
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/light-'));
 });
 
-it('replaces an older experiment version', function (): void {
+it('replaces an older experiment version and drops it from horizons the current one does not answer', function (): void {
     fakeReplayService();
     $sensor = Sensor::factory()->create();
     arrivedReading($sensor, '2026-10-02 08:01:00', '2026-10-02 08:02:00');
+    $olderExperiment = ['version' => 'light-v1', 'temperature' => ['low' => 11.0, 'mid' => 12.0, 'high' => 13.0]];
     $older = Forecast::factory()->for($sensor)->create([
         'issued_at' => Date::parse('2026-10-02 08:00:00', 'UTC')->getTimestamp(),
         'model' => REPLAY_MODEL,
-        'data' => [[
-            ...forecastHorizon(1, 13.0, 70.0, 0.0),
-            'experiment' => ['version' => 'light-v1', 'temperature' => ['low' => 11.0, 'mid' => 12.0, 'high' => 13.0]],
-        ]],
+        'data' => [
+            [...forecastHorizon(1, 13.0, 70.0, 0.0), 'experiment' => $olderExperiment],
+            [...forecastHorizon(2, 13.0, 70.0, 0.0), 'experiment' => $olderExperiment],
+        ],
     ]);
 
     Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']);
 
-    expect($older->refresh()->data[0]['experiment'] ?? null)->toEqual([
+    $data = $older->refresh()->data;
+    expect($data[0]['experiment'] ?? null)->toEqual([
         'version' => 'light-v2', 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0],
     ]);
+    expect($data[1])->not->toHaveKey('experiment');
+});
+
+it('refuses to replay when the service does not report its experiment version', function (): void {
+    fakeReplayService(['http://forecast.test/health' => Http::response(['status' => 'ok', 'model' => REPLAY_MODEL, 'correction' => 3])]);
+    $sensor = Sensor::factory()->create();
+    replayedForecast($sensor, '2026-10-02 08:00:00');
+
+    expect(fn (): int => Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']))
+        ->toThrow(UnexpectedValueException::class, 'The forecast service does not report its experiment version');
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/light-'));
 });
 
 it('reports a day whose fit failed and goes on with the next', function (): void {
