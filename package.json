@@ -5,7 +5,8 @@
     "scripts": {
         "build": "vp build",
         "dev": "vp dev",
-        "prepare": "vp config"
+        "prepare": "vp config",
+        "test": "vp test run"
     },
     "dependencies": {
         "echarts": "^6.1.0",

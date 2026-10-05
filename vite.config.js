@@ -8,6 +8,9 @@ export default defineConfig({
         "*": "vp check --fix",
     },
     fmt: {},
+    test: {
+        include: ["resources/js/**/*.test.js"],
+    },
     lint: {
         jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
         rules: { "vite-plus/prefer-vite-plus-imports": "error" },

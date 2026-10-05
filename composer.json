@@ -105,11 +105,15 @@
         "stan": [
             "@php vendor/bin/phpstan analyse --memory-limit=1G"
         ],
+        "npm:test": [
+            "npm run test"
+        ],
         "review": [
             "Composer\\Config::disableProcessTimeout",
             "@lint:check",
             "@rector:check",
             "@stan",
+            "@npm:test",
             "@test"
         ]
     },
