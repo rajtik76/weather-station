@@ -5,6 +5,15 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v3 - 2026-10-05
+
+Model 2026-09-24T08:40:43Z · Server v4.13.0
+
+- light-v2 without the recent-error inputs (`error_same`, `error_1h`) from 4 h ahead; 1 to 3 h unchanged. Fitted on sunny mornings, their weights pushed overcast and foggy ones up
+- Walked forward on the balcony, fitted at local midnight, 5 October 2026 (fog 8 to 9:40 h), temperature vs light-v2: 4 h 1.74 °C (1.66), 5 h 2.17 °C (2.21), 6 h 2.62 °C (2.73); mornings 7 to 12 h, 4 h 2.36 °C (2.42), 6 h 2.83 °C (2.95); in the fog 4 h 1.60 °C (1.83), 5 h 1.80 °C (2.07). Base lower at every horizon that day
+- With 200 history rows instead of 432 also 3 and 4 October: 6 h 1.49 °C (1.67), mornings 6 h 1.65 °C (1.93)
+- Tried and dropped: the base model's rise scaled by the missing light and by air near saturation, gain held while saturated. Within 0.05 °C or worse; on 3 October the same damp, dim start (1.4 K above dew point, under 300 lx at 8 h) warmed 6 °C by 10 h, so the station alone does not tell when fog lifts
+
 ## Light experiment light-v2 - 2026-10-05
 
 Model 2026-09-24T08:40:43Z · Server v4.11.0

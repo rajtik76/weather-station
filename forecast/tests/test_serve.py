@@ -410,7 +410,7 @@ def test_health_reports_the_model_and_the_correction_and_experiment_versions(ser
     status, answer = request(server, "GET", "/health")
 
     assert status == 200
-    assert answer == {"status": "ok", "model": service["trained_at"], "correction": CORRECTION_VERSION, "experiment": "light-v2"}
+    assert answer == {"status": "ok", "model": service["trained_at"], "correction": CORRECTION_VERSION, "experiment": "light-v3"}
 
 
 def test_unknown_paths_are_404(server: tuple[str, int]) -> None:
@@ -503,7 +503,7 @@ def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(se
     })
 
     assert status == issued == 200
-    assert experiment["version"] == "light-v2"
+    assert experiment["version"] == "light-v3"
     assert experiment["issued_at"] == before["issued_at"]
     assert experiment["model"] == before["model"]
     assert [h["hours"] for h in experiment["horizons"]] == [1, 2, 3, 4, 5, 6]
@@ -530,7 +530,7 @@ def test_light_experiment_omits_unfitted_horizons(service: dict) -> None:
     assert make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": fitted})["horizons"] == []
 
 
-@pytest.mark.parametrize("change", [{"version": "light-v1"}, {"model": "old"}, {"profile": {"day": "2020-01-01", "values": [None] * 48, "gains": [None] * 48}}])
+@pytest.mark.parametrize("change", [{"version": "light-v2"}, {"model": "old"}, {"profile": {"day": "2020-01-01", "values": [None] * 48, "gains": [None] * 48}}])
 def test_stale_light_calibration_gets_409(server: tuple[str, int], change: dict) -> None:
     history = readings(24)
     fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})

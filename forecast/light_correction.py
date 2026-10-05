@@ -6,7 +6,8 @@ from correction import MIN_HISTORY_ROWS, RANGE_COVERAGE, RIDGE_ALPHA, SOLAR_INPU
 from features import STEPS_PER_HOUR
 from light_gain import LightProfile, availability, current_gain, expected_gain
 
-EXPERIMENT_VERSION = "light-v2"
+EXPERIMENT_VERSION = "light-v3"
+ERROR_INPUT_HOURS = 3
 
 
 def light_inputs(
@@ -14,7 +15,7 @@ def light_inputs(
 ) -> pd.DataFrame:
     frame = inputs(forecast, current, "T", n, longitude)
     frame[list(SOLAR_INPUTS)] = frame[list(SOLAR_INPUTS)].mul(gains, axis=0)
-    return frame
+    return frame if n <= ERROR_INPUT_HOURS else frame[list(SOLAR_INPUTS)]
 
 
 def fit(

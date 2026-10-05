@@ -17,13 +17,20 @@ def temperature_forecast(current: pd.DataFrame, horizons: list[int]) -> pd.DataF
 
 def test_light_only_scales_solar_inputs() -> None:
     current = grid_frame(144, T=10.0, H=50.0, P=980.0, L=200.0)
-    forecast = temperature_forecast(current, [1, 4])
+    forecast = temperature_forecast(current, [1, 3])
     gains = pd.Series(0.2, index=current.index)
-    standard = inputs(forecast, current, "T", 4, 13.4)
-    gated = light.light_inputs(forecast, current, 4, 13.4, gains)
+    standard = inputs(forecast, current, "T", 3, 13.4)
+    gated = light.light_inputs(forecast, current, 3, 13.4, gains)
 
     pd.testing.assert_frame_equal(gated[["error_same", "error_1h"]], standard[["error_same", "error_1h"]])
     assert gated[list(SOLAR_INPUTS)].sum(axis=1).to_numpy() == pytest.approx(0.2)
+
+
+def test_horizons_past_three_hours_read_no_recent_errors() -> None:
+    current = grid_frame(144, T=10.0, H=50.0, P=980.0, L=200.0)
+    forecast = temperature_forecast(current, [1, 4])
+
+    assert list(light.light_inputs(forecast, current, 4, 13.4, pd.Series(0.2, index=current.index))) == list(SOLAR_INPUTS)
 
 
 def test_unverified_targets_cannot_teach_the_experiment() -> None:
