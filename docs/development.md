@@ -48,7 +48,7 @@ composer setup         # install, .env, app key, migrate, build assets
 php artisan migrate:fresh --seed   # a month of sample data; wipes the local database
 composer dev           # server, queue worker, logs, vite
 composer test
-composer review        # rector, phpstan, tests
+composer review        # rector, phpstan, js, forecast (uv) and php tests
 ```
 
 PostgreSQL everywhere (same image as production); the charts average buckets in SQL only PostgreSQL speaks.
