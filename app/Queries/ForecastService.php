@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Http;
  * @phpstan-type BaseHorizon array{hours: int, temperature: Band, humidity: Band, rain_probability?: float}
  * @phpstan-type BaseAnswer array{model: string, forecasts: list<array{issued_at: int, horizons: list<BaseHorizon>}>}
  * @phpstan-type Fitted array{model: string, correction: int, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
- * @phpstan-type LightFitted array{model: string, version: string, profile: array{day: string, values: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
+ * @phpstan-type LightFitted array{model: string, version: string, profile: array{day: string, values: list<?float>, gains: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
  * @phpstan-type LightIssued array{issued_at: int, model: string, version: string, horizons: list<array{hours: int, temperature: Band}>}
  */
 final readonly class ForecastService
@@ -64,11 +64,11 @@ final readonly class ForecastService
     }
 
     /**
-     * @return array{model: string}
+     * @return array{model: string, experiment: string}
      */
     public function health(int $timeout = 10): array
     {
-        /** @var array{model: string} */
+        /** @var array{model: string, experiment: string} */
         return Http::timeout($timeout)->get($this->endpoint('health'))->throw()->json();
     }
 

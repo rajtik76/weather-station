@@ -28,4 +28,4 @@ Artisan::command('forecast:backfill-light {from : Local date (Y-m-d) of the firs
     }
 
     return 0;
-})->purpose('Replay the light experiment on forecasts stored without it, as it would have been issued');
+})->purpose('Replay the light experiment on forecasts stored without its current version, as it would have been issued');

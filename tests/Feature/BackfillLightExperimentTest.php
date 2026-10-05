@@ -27,15 +27,15 @@ beforeEach(function (): void {
 function fakeReplayService(array $overrides = []): void
 {
     Http::fake([
-        'http://forecast.test/health' => Http::response(['status' => 'ok', 'model' => REPLAY_MODEL, 'correction' => 3]),
+        'http://forecast.test/health' => Http::response(['status' => 'ok', 'model' => REPLAY_MODEL, 'correction' => 3, 'experiment' => 'light-v2']),
         'http://forecast.test/light-correction' => Http::response([
-            'model' => REPLAY_MODEL, 'version' => 'light-v1',
-            'profile' => ['day' => '2026-10-02', 'values' => array_fill(0, 48, 1000.0)],
+            'model' => REPLAY_MODEL, 'version' => 'light-v2',
+            'profile' => ['day' => '2026-10-02', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
             'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
         ]),
         'http://forecast.test/light-forecast' => fn (Request $request): PromiseInterface => Http::response([
             'issued_at' => intdiv(max([0, ...array_column($request['readings'], 'timestamp')]), 600) * 600,
-            'model' => REPLAY_MODEL, 'version' => 'light-v1',
+            'model' => REPLAY_MODEL, 'version' => 'light-v2',
             'horizons' => [['hours' => 1, 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0]]],
         ]),
         ...$overrides,
@@ -92,7 +92,7 @@ it('replays the experiment from the readings the server held when each forecast 
     ]);
     foreach ([$midnight, $morning] as $forecast) {
         expect($forecast->refresh()->data[0]['experiment'] ?? null)->toEqual([
-            'version' => 'light-v1', 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0],
+            'version' => 'light-v2', 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0],
         ]);
     }
     expect($before->refresh()->data[0])->not->toHaveKey('experiment');
@@ -139,13 +139,13 @@ it('reports and skips an answer issued for another window', function (): void {
     expect($next->refresh()->data[0])->toHaveKey('experiment');
 });
 
-it('leaves a forecast that has the experiment on any horizon', function (): void {
+it('leaves a forecast that has the current experiment version on any horizon', function (): void {
     fakeReplayService();
     $sensor = Sensor::factory()->create();
     arrivedReading($sensor, '2026-10-02 08:01:00', '2026-10-02 08:02:00');
     $data = [forecastHorizon(1, 13.0, 70.0, 0.0), [
         ...forecastHorizon(2, 13.0, 70.0, 0.0),
-        'experiment' => ['version' => 'light-v1', 'temperature' => ['low' => 11.0, 'mid' => 12.0, 'high' => 13.0]],
+        'experiment' => ['version' => 'light-v2', 'temperature' => ['low' => 11.0, 'mid' => 12.0, 'high' => 13.0]],
     ]];
     $live = Forecast::factory()->for($sensor)->create(['issued_at' => Date::parse('2026-10-02 08:00:00', 'UTC')->getTimestamp(), 'model' => REPLAY_MODEL, 'data' => $data]);
 
@@ -155,13 +155,33 @@ it('leaves a forecast that has the experiment on any horizon', function (): void
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/light-'));
 });
 
+it('replaces an older experiment version', function (): void {
+    fakeReplayService();
+    $sensor = Sensor::factory()->create();
+    arrivedReading($sensor, '2026-10-02 08:01:00', '2026-10-02 08:02:00');
+    $older = Forecast::factory()->for($sensor)->create([
+        'issued_at' => Date::parse('2026-10-02 08:00:00', 'UTC')->getTimestamp(),
+        'model' => REPLAY_MODEL,
+        'data' => [[
+            ...forecastHorizon(1, 13.0, 70.0, 0.0),
+            'experiment' => ['version' => 'light-v1', 'temperature' => ['low' => 11.0, 'mid' => 12.0, 'high' => 13.0]],
+        ]],
+    ]);
+
+    Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']);
+
+    expect($older->refresh()->data[0]['experiment'])->toEqual([
+        'version' => 'light-v2', 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0],
+    ]);
+});
+
 it('reports a day whose fit failed and goes on with the next', function (): void {
     fakeReplayService([
         'http://forecast.test/light-correction' => Http::sequence()
             ->pushStatus(500)
             ->push([
-                'model' => REPLAY_MODEL, 'version' => 'light-v1',
-                'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0)],
+                'model' => REPLAY_MODEL, 'version' => 'light-v2',
+                'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
                 'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
             ]),
     ]);
