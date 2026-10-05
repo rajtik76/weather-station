@@ -203,8 +203,9 @@ def make_light_correction(payload: dict) -> dict:
     since = timestamp(payload.get("since"), "since", required=False)
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
-    corrections = light_correction.fit(forecast, current, bundle["horizons"], longitude, since)
-    reference = light_gain.profile(current, light_gain.local_day(current.index[-1]))
+    daylight, realized = light_gain.historical_gains(current)
+    corrections = light_correction.fit(forecast, current, realized, bundle["horizons"], longitude, since)
+    reference = light_gain.profile(current, daylight, light_gain.local_day(current.index[-1]))
     return {
         "model": bundle["trained_at"],
         "version": light_correction.EXPERIMENT_VERSION,
@@ -221,22 +222,24 @@ def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> tuple[di
     reference = value.get("profile")
     if not isinstance(reference, dict):
         raise InvalidRequest("light profile must be an object")
+    values = profile_series(reference.get("values"), "values")
+    gains = profile_series(reference.get("gains"), "gains")
+    if any(gain is not None and gain > 1 for gain in gains):
+        raise InvalidRequest("light profile gains must not exceed 1")
     day = light_gain.local_day(current.index[-1]).strftime("%Y-%m-%d")
     if reference.get("day") != day:
         raise StaleCorrection("light profile was fitted for another day")
-    values = profile_series(reference.get("values"), "values", math.inf)
-    gains = profile_series(reference.get("gains"), "gains", 1.0)
     known = {f"T_{n}h" for n in bundle["horizons"]}
     corrections = {target: correction_of(target, fitted, known) for target, fitted in value["targets"].items()}
     return corrections, light_gain.LightProfile(day, values, gains)
 
 
-def profile_series(value: object, name: str, ceiling: float) -> list[float | None]:
+def profile_series(value: object, name: str) -> list[float | None]:
     if not isinstance(value, list) or len(value) != light_gain.PHASES:
         raise InvalidRequest(f"light profile needs {light_gain.PHASES} {name}")
     series = [None if item is None else finite(item, f"light profile {name}") for item in value]
-    if any(item is not None and not 0 <= item <= ceiling for item in series):
-        raise InvalidRequest(f"light profile {name} must be within 0 and {ceiling}")
+    if any(item is not None and item < 0 for item in series):
+        raise InvalidRequest(f"light profile {name} must be non-negative")
     return series
 
 

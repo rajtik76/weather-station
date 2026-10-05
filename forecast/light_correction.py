@@ -4,7 +4,7 @@ from sklearn.linear_model import Ridge
 
 from correction import MIN_HISTORY_ROWS, RANGE_COVERAGE, RIDGE_ALPHA, SOLAR_INPUTS, Correction, errors, inputs
 from features import STEPS_PER_HOUR
-from light_gain import LightProfile, availability, expected_gain, historical_gains
+from light_gain import LightProfile, availability, current_gain, expected_gain
 
 EXPERIMENT_VERSION = "light-v2"
 
@@ -18,11 +18,10 @@ def light_inputs(
 
 
 def fit(
-    forecast: pd.DataFrame, current: pd.DataFrame, horizons: list[int], longitude: float,
+    forecast: pd.DataFrame, current: pd.DataFrame, realized: pd.Series, horizons: list[int], longitude: float,
     since: pd.Timestamp | None, cutoff: pd.Timestamp | None = None,
 ) -> dict[str, Correction]:
     cutoff = current.index[-1] if cutoff is None else cutoff
-    _, realized = historical_gains(current)
     available = availability(current)
     corrections = {}
     for n in horizons:
@@ -58,11 +57,12 @@ def apply(
     horizons: list[int], longitude: float, reference: LightProfile,
 ) -> pd.DataFrame:
     corrected = forecast.copy()
+    now = current_gain(current, reference)
     for n in horizons:
         fitted = corrections.get(f"T_{n}h")
         if fitted is None:
             continue
-        moved = fitted.shift(light_inputs(forecast, current, n, longitude, expected_gain(current, reference, n)))
+        moved = fitted.shift(light_inputs(forecast, current, n, longitude, expected_gain(now, reference, n)))
         mid = forecast[f"T_{n}h_mid"] + moved
         corrected[f"T_{n}h_mid"] = mid
         corrected[f"T_{n}h_low"] = (forecast[f"T_{n}h_low"] + moved - fitted.widen).clip(upper=mid)

@@ -5,7 +5,7 @@ import pytest
 import light_correction as light
 from conftest import grid_frame
 from correction import SOLAR_INPUTS, Correction, inputs
-from light_gain import LightProfile
+from light_gain import LightProfile, historical_gains
 
 
 def temperature_forecast(current: pd.DataFrame, horizons: list[int]) -> pd.DataFrame:
@@ -30,23 +30,24 @@ def test_unverified_targets_cannot_teach_the_experiment() -> None:
     current = grid_frame(6 * 144, T=10.0, H=50.0, P=980.0, L=1000.0)
     forecast = temperature_forecast(current, [1])
     cutoff = current.index[600]
-    fitted = light.fit(forecast, current, [1], 13.4, None, cutoff)
+    realized = historical_gains(current)[1]
+    fitted = light.fit(forecast, current, realized, [1], 13.4, None, cutoff)
     current.loc[current.index > cutoff, "T"] = 1000.0
 
-    assert light.fit(forecast, current, [1], 13.4, None, cutoff) == fitted
+    assert light.fit(forecast, current, realized, [1], 13.4, None, cutoff) == fitted
 
 
 def test_sparse_verified_history_does_not_produce_experimental_targets() -> None:
     current = grid_frame(4 * 144, T=10.0, H=50.0, P=980.0, L=1000.0)
     current.loc[current.index[1:], "T"] = np.nan
 
-    assert light.fit(temperature_forecast(current, [1]), current, [1], 13.4, None) == {}
+    assert light.fit(temperature_forecast(current, [1]), current, historical_gains(current)[1], [1], 13.4, None) == {}
 
 
 def test_history_without_light_does_not_teach_the_experiment() -> None:
     current = grid_frame(6 * 144, T=10.0, H=50.0, P=980.0, L=np.nan)
 
-    assert light.fit(temperature_forecast(current, [1]), current, [1], 13.4, None) == {}
+    assert light.fit(temperature_forecast(current, [1]), current, historical_gains(current)[1], [1], 13.4, None) == {}
 
 
 def test_apply_preserves_base_and_never_crosses_the_median() -> None:

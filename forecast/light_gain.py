@@ -51,9 +51,8 @@ def reference_values(smoothed: pd.Series, available: pd.Series | None, day: pd.T
     return by_phase(smoothed[before].groupby(phases(smoothed.index[before])).quantile(REFERENCE_QUANTILE))
 
 
-def profile(current: pd.DataFrame, day: pd.Timestamp) -> LightProfile:
+def profile(current: pd.DataFrame, daylight: pd.Series, day: pd.Timestamp) -> LightProfile:
     available = availability(current)
-    daylight, _ = historical_gains(current)
     before = before_day(daylight.index, available, day)
     return LightProfile(
         day=day.strftime("%Y-%m-%d"),
@@ -91,9 +90,12 @@ def historical_gains(current: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     return daylight, realized
 
 
-def expected_gain(current: pd.DataFrame, reference: LightProfile, n: int) -> pd.Series:
-    targets = current.index + pd.Timedelta(hours=n)
-    usual = pd.Series(np.array(reference.gains, dtype=float)[phases(targets)], index=current.index).fillna(1.0)
-    now = daylight_gain(illumination(current), current["L"], reference.values)
+def current_gain(current: pd.DataFrame, reference: LightProfile) -> pd.Series:
+    return daylight_gain(illumination(current), current["L"], reference.values)
+
+
+def expected_gain(now: pd.Series, reference: LightProfile, n: int) -> pd.Series:
+    targets = now.index + pd.Timedelta(hours=n)
+    usual = pd.Series(np.array(reference.gains, dtype=float)[phases(targets)], index=now.index).fillna(1.0)
     weight = max(0.0, 1 - n / GAIN_FADE_HOURS)
     return (weight * now + (1 - weight) * usual).fillna(usual)

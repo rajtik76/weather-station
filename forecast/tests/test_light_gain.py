@@ -18,7 +18,7 @@ def test_reference_uses_previous_days_and_excludes_late_arrivals() -> None:
     before = current.index < day
     current.loc[before, "received_at"] = day.timestamp() + 100
 
-    profile = light.profile(current, day)
+    profile = light.profile(current, light.historical_gains(current)[0], day)
 
     assert profile.values == [None] * 48
     assert profile.gains == [None] * 48
@@ -65,18 +65,18 @@ def test_profile_gains_are_the_mean_daylight_gain_per_half_hour() -> None:
     phases = light.phases(current.index)
     afternoon = int(phases[100])
 
-    gains = light.profile(current, day).gains
+    gains = light.profile(current, daylight, day).gains
 
     assert gains[afternoon] == pytest.approx(daylight[phases == afternoon].mean())
     assert gains[int(phases[30])] is None
 
 
 def test_expected_gain_fades_from_now_into_the_half_hours_mean() -> None:
-    current = grid_frame(6, L=200.0)
     reference = light.LightProfile("2026-09-06", [1000.0] * 48, [0.8] * 48)
+    now = light.current_gain(grid_frame(6, L=200.0), reference)
 
-    assert light.expected_gain(current, reference, 3).iloc[-1] == pytest.approx(0.5 * 0.2 + 0.5 * 0.8)
-    assert light.expected_gain(current, reference, light.GAIN_FADE_HOURS).iloc[-1] == pytest.approx(0.8)
+    assert light.expected_gain(now, reference, 3).iloc[-1] == pytest.approx(0.5 * 0.2 + 0.5 * 0.8)
+    assert light.expected_gain(now, reference, light.GAIN_FADE_HOURS).iloc[-1] == pytest.approx(0.8)
 
 
 def test_expected_gain_in_the_dark_is_the_targets_mean_and_full_without_one() -> None:
@@ -84,5 +84,24 @@ def test_expected_gain_in_the_dark_is_the_targets_mean_and_full_without_one() ->
     gains = [None] * 48
     gains[int(light.phases(current.index[-1:] + pd.Timedelta(hours=2))[0])] = 0.3
 
-    assert light.expected_gain(current, light.LightProfile("2026-09-06", [0.0] * 48, gains), 2).iloc[-1] == pytest.approx(0.3)
-    assert light.expected_gain(current, light.LightProfile("2026-09-06", [0.0] * 48, [None] * 48), 2).iloc[-1] == 1.0
+    with_mean = light.LightProfile("2026-09-06", [0.0] * 48, gains)
+    without_mean = light.LightProfile("2026-09-06", [0.0] * 48, [None] * 48)
+
+    assert light.expected_gain(light.current_gain(current, with_mean), with_mean, 2).iloc[-1] == pytest.approx(0.3)
+    assert light.expected_gain(light.current_gain(current, without_mean), without_mean, 2).iloc[-1] == 1.0
+
+
+def test_historical_gains_use_each_days_own_reference() -> None:
+    current = grid_frame(5 * 144, L=1000.0)
+    current["L"] = current["L"] * (1 + np.sin(np.arange(len(current)) / 7) / 2)
+    current["received_at"] = current.index.astype("int64") / 1e9 + 600
+    smoothed = light.illumination(current)
+    available = light.availability(current)
+    days = current.index.tz_convert(light.TIMEZONE).normalize()
+    expected = pd.Series(np.nan, index=current.index)
+    for day in days.unique():
+        today = days == day
+        values = light.reference_values(smoothed, available, day)
+        expected.loc[today] = light.daylight_gain(smoothed[today], current["L"][today], values)
+
+    pd.testing.assert_series_equal(light.historical_gains(current)[0], expected)

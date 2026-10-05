@@ -544,10 +544,12 @@ def test_stale_light_calibration_gets_409(server: tuple[str, int], change: dict)
     ("values", [None] * 47), ("values", [-1] * 48), ("values", [True] * 48), ("values", [float("inf")] * 48),
     ("gains", None), ("gains", [None] * 47), ("gains", [-0.1] * 48), ("gains", [1.5] * 48), ("gains", ["1"] * 48),
 ])
-def test_invalid_light_profiles_get_422(server: tuple[str, int], key: str, series: list | None) -> None:
+@pytest.mark.parametrize("day", [None, "2020-01-01"])
+def test_invalid_light_profiles_get_422(server: tuple[str, int], key: str, series: list | None, day: str | None) -> None:
     history = readings(24)
     fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
     fitted["profile"][key] = series
+    fitted["profile"]["day"] = day or fitted["profile"]["day"]
 
     status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": fitted})
 
