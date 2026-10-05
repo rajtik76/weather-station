@@ -19,14 +19,16 @@ POST /base  {"longitude", "since" (required), "readings"}
   -> {"model", "forecasts": [{"issued_at", "horizons": [{"hours", "temperature", "humidity",
       "rain_probability"}]}]}  - uncorrected, per reading from since on; readings should start 48 h earlier.
 POST /light-correction  {"longitude", "readings" (lit), "since"?}
-  -> {"model": trained_at, "version": EXPERIMENT_VERSION, "profile": {"day": local Y-m-d, "values": 48 x lx or null},
+  -> {"model": trained_at, "version": EXPERIMENT_VERSION,
+      "profile": {"day": local Y-m-d, "values": 48 x lx or null, "gains": 48 x 0-1 or null},
       "targets": {"T_1h": {"intercept", "coefficients", "widen"}, ...}}
-  profile: 90th percentile per half hour over the 14 days before the latest local day, readings that had arrived by then.
+  profile over the 14 days before the latest local day, readings that had arrived by then, per half hour:
+  values the 90th percentile, gains the mean daylight gain.
 POST /light-forecast  {"longitude", "readings" (lit), "experiment"}
   -> {"issued_at", "model", "version", "horizons": [{"hours": n, "temperature": band}]}
   "experiment": a /light-correction answer; another model or version, or a profile for another
   local day -> 409. Only fitted horizons are answered.
-GET /health -> {"status": "ok", "model", "correction"}
+GET /health -> {"status": "ok", "model", "correction", "experiment": EXPERIMENT_VERSION}
 
 Lit readings add {"illuminance": lx or null, "received_at": unix s the server stored it, default timestamp};
 a reading counts for a past moment only if it had arrived by then.
@@ -42,6 +44,7 @@ import joblib
 import pandas as pd
 
 import light_correction
+import light_gain
 from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, INPUTS, Correction, apply, fit
 from features import build_features, to_grid
 from forecast import QUANTILES, predict
@@ -201,7 +204,7 @@ def make_light_correction(payload: dict) -> dict:
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
     corrections = light_correction.fit(forecast, current, bundle["horizons"], longitude, since)
-    reference = light_correction.profile(current, light_correction.local_day(current.index[-1]))
+    reference = light_gain.profile(current, light_gain.local_day(current.index[-1]))
     return {
         "model": bundle["trained_at"],
         "version": light_correction.EXPERIMENT_VERSION,
@@ -210,23 +213,31 @@ def make_light_correction(payload: dict) -> dict:
     }
 
 
-def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> tuple[dict, light_correction.LightProfile]:
+def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> tuple[dict, light_gain.LightProfile]:
     if not isinstance(value, dict) or not isinstance(value.get("targets"), dict):
         raise InvalidRequest("experiment must be an answer of /light-correction")
     if value.get("model") != bundle["trained_at"] or value.get("version") != light_correction.EXPERIMENT_VERSION:
         raise StaleCorrection("experiment was fitted for another model or experiment version")
     reference = value.get("profile")
-    if not isinstance(reference, dict) or not isinstance(reference.get("values"), list) or len(reference["values"]) != 48:
-        raise InvalidRequest("light profile needs 48 values")
-    day = light_correction.local_day(current.index[-1]).strftime("%Y-%m-%d")
+    if not isinstance(reference, dict):
+        raise InvalidRequest("light profile must be an object")
+    day = light_gain.local_day(current.index[-1]).strftime("%Y-%m-%d")
     if reference.get("day") != day:
         raise StaleCorrection("light profile was fitted for another day")
-    values = [None if item is None else finite(item, "light profile value") for item in reference["values"]]
-    if any(item is not None and item < 0 for item in values):
-        raise InvalidRequest("light profile values must be non-negative")
+    values = profile_series(reference.get("values"), "values", math.inf)
+    gains = profile_series(reference.get("gains"), "gains", 1.0)
     known = {f"T_{n}h" for n in bundle["horizons"]}
     corrections = {target: correction_of(target, fitted, known) for target, fitted in value["targets"].items()}
-    return corrections, light_correction.LightProfile(day, values)
+    return corrections, light_gain.LightProfile(day, values, gains)
+
+
+def profile_series(value: object, name: str, ceiling: float) -> list[float | None]:
+    if not isinstance(value, list) or len(value) != light_gain.PHASES:
+        raise InvalidRequest(f"light profile needs {light_gain.PHASES} {name}")
+    series = [None if item is None else finite(item, f"light profile {name}") for item in value]
+    if any(item is not None and not 0 <= item <= ceiling for item in series):
+        raise InvalidRequest(f"light profile {name} must be within 0 and {ceiling}")
+    return series
 
 
 def make_light_forecast(payload: dict) -> dict:
@@ -329,7 +340,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path != "/health":
             return self.reply(404, {"error": "not found"})
-        self.reply(200, {"status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION})
+        self.reply(200, {
+            "status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION,
+            "experiment": light_correction.EXPERIMENT_VERSION,
+        })
 
     def do_POST(self) -> None:
         endpoints = {

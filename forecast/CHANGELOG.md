@@ -5,6 +5,15 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v2 - 2026-10-05
+
+Model 2026-09-24T08:40:43Z · Server v4.11.0
+
+- Fitted on the gain measured at the target instead of at issue; rows without light or a reference do not teach
+- Issued with the expected gain: the gain now fading into the target half hour's 14-day mean by 6 h ahead, the mean alone in the dark (light-v1 assumed full sun before dawn, so 8 and 9 h matched shown); no halving from 4 h
+- Needs three days of lit history: first fit 5 October 2026
+- Walked forward on the balcony, fitted at local midnight, 5 October 2026 (overcast, fog from 9 h), temperature vs shown and light-v1: 3 h 1.18 °C (2.36, 2.18), 6 h 1.72 °C (3.81, 3.26); mornings 7 to 11 h, 3 h 1.69 °C (4.39, 4.01), base 1.60; one day, no clear morning yet
+
 ## Light experiment light-v1 - 2026-10-03
 
 Model 2026-09-24T08:40:43Z · Server v4.6.0
