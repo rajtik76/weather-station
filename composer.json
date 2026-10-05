@@ -109,7 +109,7 @@
             "npm run test"
         ],
         "forecast:test": [
-            "uv run --project forecast --directory forecast --frozen --group dev pytest -q"
+            "uv run --directory forecast --frozen --group dev pytest -q"
         ],
         "review": [
             "Composer\\Config::disableProcessTimeout",
