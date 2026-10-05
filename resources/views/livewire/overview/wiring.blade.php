@@ -19,20 +19,20 @@
           <rect x="44" y="70" width="180" height="60" class="box"/>
           <text x="58" y="96" class="t-part">SHT4x</text>
           <text x="58" y="117" class="t-fn">Temperature, humidity</text>
-          <text x="212" y="96" text-anchor="end" class="t-ch"><tspan class="s-ch1">CH1</tspan> <tspan class="s-ch2">CH2</tspan></text>
+          <text x="212" y="96" text-anchor="end" class="t-ch"><tspan class="s-{{ \App\Enums\Channel::Temperature->colour() }}">{{ \App\Enums\Channel::Temperature->code() }}</tspan> <tspan class="s-{{ \App\Enums\Channel::Humidity->colour() }}">{{ \App\Enums\Channel::Humidity->code() }}</tspan></text>
           <text x="212" y="117" class="t-pin" text-anchor="end">0x44</text>
 
           <rect x="44" y="160" width="180" height="60" class="box"/>
           <text x="58" y="186" class="t-part">VEML7700</text>
           <text x="58" y="207" class="t-fn">Light</text>
-          <text x="212" y="186" text-anchor="end" class="t-ch s-aux">AUX</text>
+          <text x="212" y="186" text-anchor="end" class="t-ch s-{{ \App\Enums\Channel::Light->colour() }}">{{ \App\Enums\Channel::Light->code() }}</text>
           <text x="212" y="207" class="t-pin" text-anchor="end">0x10</text>
 
           <rect x="44" y="300" width="180" height="60" class="box"/>
           <text x="58" y="326" class="t-part">INMP441</text>
           <text x="58" y="347" class="t-fn">MEMS microphone</text>
-          <text x="212" y="326" text-anchor="end" class="t-ch s-ch4">CH4</text>
-          <path d="M168 345 q4 -8 8 0 t8 0 t8 0 t8 0 t8 0" class="sine s-ch4"/>
+          <text x="212" y="326" text-anchor="end" class="t-ch s-{{ \App\Enums\Channel::Noise->colour() }}">{{ \App\Enums\Channel::Noise->code() }}</text>
+          <path d="M168 345 q4 -8 8 0 t8 0 t8 0 t8 0 t8 0" class="sine s-{{ \App\Enums\Channel::Noise->colour() }}"/>
 
           <!-- Indoor: base board -->
           <rect x="320" y="40" width="420" height="370" class="bound"/>
@@ -41,7 +41,7 @@
           <rect x="350" y="205" width="160" height="60" class="box"/>
           <text x="364" y="231" class="t-part">BMP280</text>
           <text x="364" y="252" class="t-fn">Pressure</text>
-          <text x="498" y="231" text-anchor="end" class="t-ch s-ch3">CH3</text>
+          <text x="498" y="231" text-anchor="end" class="t-ch s-{{ \App\Enums\Channel::Pressure->colour() }}">{{ \App\Enums\Channel::Pressure->code() }}</text>
           <text x="498" y="252" class="t-pin" text-anchor="end">0x76</text>
 
           <rect x="540" y="70" width="180" height="310" class="box box-mcu"/>
@@ -53,7 +53,7 @@
           <text x="708" y="169" class="t-pin" text-anchor="end">Wi-Fi</text>
           <text x="554" y="236" class="t-note">sample every 30 s</text>
           <text x="554" y="256" class="t-note">fold into 10 min</text>
-          <path d="M554 280 q5 -9 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" class="sine s-ch1"/>
+          <path d="M554 280 q5 -9 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" class="sine s-{{ \App\Enums\Channel::Temperature->colour() }}"/>
 
           <!-- Buses -->
           <path d="M224 100H262M224 190H262" class="sch-wire"/>
@@ -92,12 +92,12 @@
           <path d="M960 245H970V92H962" class="sch-wire" marker-end="url(#sch-arrow)"/>
 
           <!-- Electrons: one bead per reading; I2C beads share one speed and are staggered, one bead leaves the ESP32 per upload -->
-          <g class="bead b-ch1"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-0.2s" dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
-          <g class="bead b-ch2"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
-          <g class="bead b-aux"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.6s" dur="3s" repeatCount="indefinite" path="M224 190H262V145H540"/></g>
-          <g class="bead b-ch3"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-2.31s" dur="3s" repeatCount="indefinite" calcMode="linear" keyPoints="0;1;1" keyTimes="0;0.471;1" path="M430 205V145H540"/><animate attributeName="opacity" begin="-2.31s" dur="3s" repeatCount="indefinite" calcMode="discrete" values="1;0" keyTimes="0;0.471"/></g>
-          <g class="bead b-ch4"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="2.7s" repeatCount="indefinite" path="M224 330H540"/></g>
-          <g class="bead b-ch4"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.35s" dur="2.7s" repeatCount="indefinite" path="M224 330H540"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Temperature->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-0.2s" dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Humidity->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Light->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.6s" dur="3s" repeatCount="indefinite" path="M224 190H262V145H540"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Pressure->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-2.31s" dur="3s" repeatCount="indefinite" calcMode="linear" keyPoints="0;1;1" keyTimes="0;0.471;1" path="M430 205V145H540"/><animate attributeName="opacity" begin="-2.31s" dur="3s" repeatCount="indefinite" calcMode="discrete" values="1;0" keyTimes="0;0.471"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Noise->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="2.7s" repeatCount="indefinite" path="M224 330H540"/></g>
+          <g class="bead b-{{ \App\Enums\Channel::Noise->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.35s" dur="2.7s" repeatCount="indefinite" path="M224 330H540"/></g>
           <g class="bead b-ink"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="1.8s" repeatCount="indefinite" path="M720 165H796"/></g>
         </svg>
     </div>

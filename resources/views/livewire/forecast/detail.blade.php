@@ -33,10 +33,10 @@
                 <div class="mb-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-2">
                     <h3 class="m-0 font-display text-[22px] leading-tight font-semibold sm:text-[24px]">Skill by day</h3>
                     <p class="m-0 flex flex-wrap items-center gap-4 font-mono text-[13px] text-ink-3">
-                        <span class="flex items-center gap-2"><span class="swatch bg-ch1"></span>shown</span>
+                        <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Temperature->backgroundClass() }}"></span>shown</span>
                         <span class="flex items-center gap-2">{!! $base !!}base</span>
                         @if ($experiment !== null)
-                            <span class="flex items-center gap-2"><span class="swatch bg-aux"></span>VEML prototype</span>
+                            <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>VEML prototype</span>
                         @endif
                         <span>{{ $score['hours'] }} h ahead</span>
                     </p>

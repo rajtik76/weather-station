@@ -1,9 +1,13 @@
 {{-- The dew point is derived, so it starts off. --}}
 @php($hasNoise = $this->noise !== [])
 @php($weatherChannels = [
-    ['key' => 't', 'ch' => 'CH1', 'colour' => '--ch1', 'label' => 'Temperature, °C'],
-    ['key' => 'h', 'ch' => 'CH2', 'colour' => '--ch2', 'label' => 'Humidity, %'],
-    ['key' => 'd', 'ch' => 'REF', 'colour' => '--ref', 'label' => 'Dew point, °C'],
+    ...array_map(fn (\App\Enums\Channel $channel): array => [
+        'key' => $channel->value,
+        'ch' => $channel->code(),
+        'colour' => $channel->backgroundClass(),
+        'label' => $channel->label().', '.$channel->unit(),
+    ], [\App\Enums\Channel::Temperature, \App\Enums\Channel::Humidity]),
+    ['key' => 'd', 'ch' => 'REF', 'colour' => 'bg-ref', 'label' => 'Dew point, °C'],
 ])
 
 {{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
@@ -47,7 +51,7 @@
         @endunless
 
         <div class="mt-5 space-y-8">
-            <x-channel-strip key="th" label="Temperature and humidity" channel="CH1 · CH2" height="h-72 sm:h-80">
+            <x-channel-strip key="th" label="Temperature and humidity" :channel="\App\Enums\Channel::Temperature->code().' · '.\App\Enums\Channel::Humidity->code()" height="h-72 sm:h-80">
                 @foreach ($weatherChannels as $channel)
                     @php($shown = $this->channels[$channel['key']] ?? false)
                     @php($last = $this->isLastChannel($channel['key']))
@@ -64,23 +68,23 @@
                             'cursor-default' => $last,
                         ])
                     >
-                        <span class="swatch" style="background: var({{ $channel['colour'] }}); opacity: {{ $shown ? 1 : 0.35 }}" aria-hidden="true"></span>
+                        <span @class(['swatch', $channel['colour'], 'opacity-35' => ! $shown]) aria-hidden="true"></span>
                         <span>{{ $channel['ch'] }}</span>
                         <span>{{ $channel['label'] }}</span>
                     </button>
                 @endforeach
             </x-channel-strip>
 
-            <x-channel-strip key="p" label="Pressure, MSL" channel="CH3" height="h-48 sm:h-56">
-                <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>Pressure, MSL, hPa</span>
+            <x-channel-strip key="p" :label="\App\Enums\Channel::Pressure->label()" :channel="\App\Enums\Channel::Pressure->code()" height="h-48 sm:h-56">
+                <span class="flex items-center gap-2 text-ink-2"><span class="swatch {{ \App\Enums\Channel::Pressure->backgroundClass() }}" aria-hidden="true"></span>{{ \App\Enums\Channel::Pressure->label() }}, {{ \App\Enums\Channel::Pressure->unit() }}</span>
             </x-channel-strip>
 
             {{-- Protocol 3 only: no strips for a sensor that never sent noise. --}}
             @if ($hasNoise)
-                <x-channel-strip key="noise" label="Noise" channel="CH4" height="h-48 sm:h-56">
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch4" aria-hidden="true"></span>LAeq, dB(A)</span>
-                    <span class="flex items-center gap-2 text-ink-3"><span class="inline-block h-2.5 w-4 rounded-[2px] bg-ch4/20" aria-hidden="true"></span>LA90 to LA10</span>
-                    <span class="flex items-center gap-2 text-ink-3"><span class="swatch bg-ch4/60" aria-hidden="true"></span>LAmax</span>
+                <x-channel-strip key="noise" label="Noise" :channel="\App\Enums\Channel::Noise->code()" height="h-48 sm:h-56">
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch {{ \App\Enums\Channel::Noise->backgroundClass() }}" aria-hidden="true"></span>LAeq, {{ \App\Enums\Channel::Noise->unit() }}</span>
+                    <span class="flex items-center gap-2 text-ink-3"><span class="inline-block h-2.5 w-4 rounded-[2px] {{ \App\Enums\Channel::Noise->bandBackgroundClass() }}" aria-hidden="true"></span>LA90 to LA10</span>
+                    <span class="flex items-center gap-2 text-ink-3"><span class="swatch {{ \App\Enums\Channel::Noise->dimBackgroundClass() }}" aria-hidden="true"></span>LAmax</span>
                 </x-channel-strip>
 
                 <x-channel-strip key="spectrum" label="Noise spectrum" channel="FFT" height="h-72 sm:h-80">
@@ -95,8 +99,8 @@
 
             {{-- Protocol 4 only. The VEML7700 sits behind the shield's louvers: lux are relative, read the shape. --}}
             @if ($this->light !== [])
-                <x-channel-strip key="light" label="Light" channel="AUX" height="h-48 sm:h-56">
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-aux" aria-hidden="true"></span>Light in the shield, lx</span>
+                <x-channel-strip key="light" :label="\App\Enums\Channel::Light->label()" :channel="\App\Enums\Channel::Light->code()" height="h-48 sm:h-56">
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}" aria-hidden="true"></span>Light in the shield, {{ \App\Enums\Channel::Light->unit() }}</span>
                     <span class="flex items-center gap-1" role="group" aria-label="Light scale">
                         @foreach (\App\ValueObject\LightScale::LABELS as $scale => $scaleLabel)
                             @php($chosen = $this->lightAxis->is($scale))

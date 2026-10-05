@@ -3,6 +3,7 @@
     'horizons',
 ])
 
+@php($temperatureChannel = \App\Enums\Channel::Temperature)
 @php($drop = '<svg class="shrink-0 text-ch2" width="10" height="13" viewBox="0 0 10 13" aria-hidden="true"><path d="M5 .8C5 .8 1 5.8 1 8.6a4 4 0 0 0 8 0C9 5.8 5 .8 5 .8Z" fill="currentColor" /></svg>')
 <div {{ $attributes->class('flex flex-1 flex-col rounded-[10px] border border-line bg-screen') }}>
     <div class="relative min-h-[270px] flex-1 sm:min-h-[300px]" role="img" aria-label="Temperature over the last six hours and the forecast for the next six, with its range.">
@@ -19,11 +20,11 @@
                 <line x1="{{ $chart->now()['x'] }}" y1="0" x2="{{ $chart->now()['x'] }}" y2="100" style="stroke: var(--grid-2)" />
             </svg>
             <svg class="layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                <path d="{{ $chart->band() }}" style="fill: color-mix(in srgb, var(--ch1) 18%, transparent); stroke: none" />
-                <path d="{{ $chart->medianLine() }}" style="fill: none; stroke: var(--ch1); stroke-width: 2px; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round" />
+                <path d="{{ $chart->band() }}" class="{{ $temperatureChannel->bandFillClass() }}" style="stroke: none" />
+                <path d="{{ $chart->medianLine() }}" class="{{ $temperatureChannel->strokeClass() }}" style="fill: none; stroke-width: 2px; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round" />
             </svg>
-            <svg class="layer phosphor" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--trace: var(--ch1)">
-                <path d="{{ $chart->measuredLine() }}" style="fill: none; stroke: var(--ch1); stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round" />
+            <svg class="layer phosphor" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--trace: {{ $temperatureChannel->cssColour() }}">
+                <path d="{{ $chart->measuredLine() }}" class="{{ $temperatureChannel->strokeClass() }}" style="fill: none; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round" />
             </svg>
             @foreach ($chart->ticks as $tick)
                 <span class="ylab" style="top: {{ $tick['y'] }}%">{{ \App\ValueObject\Figure::format($tick['value'], 0) }} °C</span>
@@ -35,7 +36,7 @@
                     <span class="xlab" style="left: {{ $hour['x'] }}%">{{ $hour['clock'] }}</span>
                 @endif
             @endforeach
-            <span class="trig" style="left: {{ $chart->now()['x'] }}%; top: {{ $chart->now()['y'] }}%; color: var(--ch1)" aria-hidden="true"></span>
+            <span class="trig {{ $temperatureChannel->textClass() }}" style="left: {{ $chart->now()['x'] }}%; top: {{ $chart->now()['y'] }}%" aria-hidden="true"></span>
             <span class="tag" style="top: 0; left: {{ $chart->now()['x'] }}%; transform: translate(-50%, -125%)">now</span>
         </div>
     </div>

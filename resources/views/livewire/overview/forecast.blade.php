@@ -29,11 +29,11 @@
 
             <div class="mt-7 space-y-4">
                 <div>
-                    <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Forecast, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::format($verdict['error'], 2) }} °C</span></div>
-                    <div class="mt-2 h-1.5 rounded-full bg-line"><div class="h-full rounded-full bg-ch1" style="width: {{ $verdict['naive'] > 0 ? min(100, $verdict['error'] / max($verdict['error'], $verdict['naive']) * 100) : 0 }}%"></div></div>
+                    <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Forecast, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::twoDecimals($verdict['error']) }} °C</span></div>
+                    <div class="mt-2 h-1.5 rounded-full bg-line"><div class="h-full rounded-full {{ \App\Enums\Channel::Temperature->backgroundClass() }}" style="width: {{ $verdict['naive'] > 0 ? min(100, $verdict['error'] / max($verdict['error'], $verdict['naive']) * 100) : 0 }}%"></div></div>
                 </div>
                 <div>
-                    <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Naive guess, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::format($verdict['naive'], 2) }} °C</span></div>
+                    <div class="flex items-baseline justify-between gap-3 text-[15px]"><span class="text-ink-2">Naive guess, mean miss</span><span class="num font-mono">{{ \App\ValueObject\Figure::twoDecimals($verdict['naive']) }} °C</span></div>
                     <div class="mt-2 h-1.5 rounded-full bg-line"><div class="h-full rounded-full bg-ref" style="width: {{ $verdict['naive'] > 0 ? min(100, $verdict['naive'] / max($verdict['error'], $verdict['naive']) * 100) : 0 }}%"></div></div>
                 </div>
                 <div>

@@ -25,7 +25,7 @@
                             <td>{{ $row['hours'] }} h</td>
                             <td>
                                 <span class="flex items-center justify-end gap-3">
-                                    <span class="relative h-1.5 w-full max-w-[200px] rounded-full bg-line"><span class="absolute inset-y-0 left-0 rounded-full bg-ch1" style="width: {{ $row['skillBar'] }}%"></span></span>
+                                    <span class="relative h-1.5 w-full max-w-[200px] rounded-full bg-line"><span class="absolute inset-y-0 left-0 rounded-full {{ \App\Enums\Channel::Temperature->backgroundClass() }}" style="width: {{ $row['skillBar'] }}%"></span></span>
                                     <span class="w-14">{{ $row['skill'] === null ? 'n/a' : \App\ValueObject\Figure::signed($row['skill'], 0).' %' }}</span>
                                 </span>
                             </td>

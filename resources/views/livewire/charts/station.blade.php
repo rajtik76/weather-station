@@ -13,9 +13,9 @@
                             <p class="num m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[14px]">
                                 <span class="text-ink">{{ $transmission['at'] }}</span>
                                 <span class="text-ink-3">{{ $transmission['ago'] }}</span>
-                                <span><span class="text-ch1">CH1</span> {{ \App\ValueObject\Figure::format($transmission['t'], 2) }} °C</span>
-                                <span><span class="text-ch2">CH2</span> {{ \App\ValueObject\Figure::format($transmission['h'], 2) }} %</span>
-                                <span><span class="text-ch3">CH3</span> {{ \App\ValueObject\Figure::format($transmission['p'], 1) }} hPa</span>
+                                <span><span class="{{ \App\Enums\Channel::Temperature->textClass() }}">{{ \App\Enums\Channel::Temperature->code() }}</span> {{ \App\Enums\Channel::Temperature->format($transmission['t']) }} {{ \App\Enums\Channel::Temperature->unit() }}</span>
+                                <span><span class="{{ \App\Enums\Channel::Humidity->textClass() }}">{{ \App\Enums\Channel::Humidity->code() }}</span> {{ \App\Enums\Channel::Humidity->format($transmission['h']) }} {{ \App\Enums\Channel::Humidity->unit() }}</span>
+                                <span><span class="{{ \App\Enums\Channel::Pressure->textClass() }}">{{ \App\Enums\Channel::Pressure->code() }}</span> {{ \App\ValueObject\Figure::format($transmission['p'], 1) }} {{ \App\Enums\Channel::Pressure->unit() }}</span>
                             </p>
                             <button
                                 type="button"
