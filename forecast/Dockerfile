@@ -18,7 +18,9 @@ WORKDIR /app
 COPY --from=venv /app/.venv ./.venv
 COPY features.py forecast.py correction.py shield.py light_gain.py light_correction.py serve.py ./
 
+# OpenMP start-up per model call outweighs predicting a few rows: 375 ms -> 62 ms for 60 models.
 ENV PATH="/app/.venv/bin:$PATH" \
+    OMP_NUM_THREADS=1 \
     PYTHONUNBUFFERED=1 \
     MODEL_PATH=/models/forecast.joblib \
     PORT=8000

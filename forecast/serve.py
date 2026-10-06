@@ -46,7 +46,7 @@ import light_correction
 import light_gain
 import shield
 from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, INPUTS, Correction, apply, fit
-from features import build_features, to_grid
+from features import STEPS_PER_HOUR, build_features, to_grid
 from forecast import QUANTILES, predict
 
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", Path(__file__).parent / "models" / "forecast.joblib"))
@@ -181,8 +181,7 @@ def make_forecast(payload: dict) -> dict:
     bundle = model.get()
     horizons = bundle["horizons"]
     corrections = station_correction(payload.get("correction"), bundle)
-    features = build_features(current, longitude)
-    forecast = predict(bundle, features, current)
+    forecast = predict_latest(bundle, current, longitude, max(horizons) * STEPS_PER_HOUR + 1)
     latest = apply(corrections, forecast, current, horizons, longitude).iloc[-1]
 
     return {
@@ -196,6 +195,11 @@ def make_forecast(payload: dict) -> dict:
             for n in horizons
         ],
     }
+
+
+def predict_latest(bundle: dict, current: pd.DataFrame, longitude: float, windows: int) -> pd.DataFrame:
+    """Base forecast of the newest `windows` only; a model call costs the same for one row as for the whole history."""
+    return predict(bundle, build_features(current, longitude).iloc[-windows:], current.iloc[-windows:])
 
 
 def make_light_correction(payload: dict) -> dict:
@@ -240,7 +244,7 @@ def make_light_forecast(payload: dict) -> dict:
     reference = fitted_light(payload.get("experiment"), bundle, current)
     heated = shield.heating(current, longitude)
     cooled = shield.air(current, heated)
-    latest = predict(bundle, build_features(cooled, longitude), cooled).iloc[-1]
+    latest = predict_latest(bundle, cooled, longitude, 1).iloc[-1]
     ahead = light_correction.heating_ahead(current, heated, longitude, reference, bundle["horizons"])
     return {
         "issued_at": int(latest.name.timestamp()),

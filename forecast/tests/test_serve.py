@@ -15,7 +15,9 @@ import pytest
 
 import serve
 from conftest import START, Constant, weather_frame
-from correction import CORRECTION_VERSION, INPUTS
+from correction import CORRECTION_VERSION, INPUTS, apply
+from features import build_features
+from forecast import predict
 from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast, make_light_correction, make_light_forecast
 
 LONGITUDE = 13.4
@@ -142,6 +144,21 @@ def test_the_last_54_hours_forecast_what_the_whole_history_does(service: dict) -
 
     assert recent["corrected"] is True
     assert recent == whole
+
+
+def test_the_corrected_forecast_reads_the_same_errors_as_over_the_whole_window(service: dict) -> None:
+    history = readings(96)
+    correction = make_correction({"longitude": LONGITUDE, "readings": history})
+    answer = make_forecast({"longitude": LONGITUDE, "readings": history, "correction": correction})
+    _, current = serve.station_history({"longitude": LONGITUDE, "readings": history})
+    whole = predict(service, build_features(current, LONGITUDE), current)
+    latest = apply(serve.station_correction(correction, service), whole, current, service["horizons"], LONGITUDE).iloc[-1]
+
+    assert answer["corrected"]
+    for horizon in answer["horizons"]:
+        n = horizon["hours"]
+        assert horizon["temperature"] == {name: round(float(latest[f"T_{n}h_{name}"]), 2) for name in ("low", "mid", "high")}
+        assert horizon["humidity"] == {name: round(float(latest[f"H_{n}h_{name}"]), 2) for name in ("low", "mid", "high")}
 
 
 def test_a_correction_for_another_model_or_version_is_stale(service: dict) -> None:
