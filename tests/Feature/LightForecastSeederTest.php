@@ -70,7 +70,7 @@ it('does not replace a recorded experiment or use another sensors light', functi
     expect($unlit->refresh()->data)->toEqual(demoHorizons());
 });
 
-it('refreshes the graph cache and distinguishes the synthetic preview from measured prototype performance', function (): void {
+it('refreshes the graph cache and distinguishes the synthetic preview from measured experiment performance', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = now()->subHours(7)->getTimestamp();
     foreach ([$issued => 1200, $issued + 6 * 3600 => 1300] as $timestamp => $temperature) {
@@ -86,8 +86,8 @@ it('refreshes the graph cache and distinguishes the synthetic preview from measu
 
     expect($cached->lastDays(30)[0]['experiment'] ?? null)->toMatchArray(['version' => 'demo-light-v1', 'synthetic' => true]);
     $this->get(route('forecast'))
-        ->assertSee('Synthetic preview: VEML prototype (demo-light-v1)')
-        ->assertSee('not measured prototype performance');
+        ->assertSee('Synthetic preview: demo-light-v1.')
+        ->assertSee('not measured experiment performance');
 });
 
 it('does not seed synthetic forecasts in production', function (): void {

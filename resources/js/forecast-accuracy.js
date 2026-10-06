@@ -42,7 +42,7 @@ const charts = new Map();
 const painted = new Map();
 
 function palette() {
-    return { ...basePalette(), temperature: token("--ch1"), prototype: token("--aux") };
+    return { ...basePalette(), temperature: token("--ch1"), experiment: token("--aux") };
 }
 
 const pad = (hour) => String(hour).padStart(2, "0");
@@ -60,7 +60,7 @@ function versus(skill) {
 }
 
 /** Short lines, one fact each: a phone is 320 px wide. */
-function dayTooltipHtml(row) {
+function dayTooltipHtml(row, version) {
     const { shown, base, experiment } = row;
     const tookOver =
         (row.modelTookOver === null ? "" : `<br>model trained ${row.modelTookOver} took over`) +
@@ -94,18 +94,18 @@ function dayTooltipHtml(row) {
     lines.push(forecastHours(shown.count));
 
     if (experiment !== null) {
-        lines.push(`VEML prototype ${versus(experiment.skill)}`);
+        lines.push(`${version} ${versus(experiment.skill)}`);
         lines.push(
-            `prototype off by ${experiment.error === null ? "n/a" : celsius.format(experiment.error)} °C`,
+            `${version} off by ${experiment.error === null ? "n/a" : celsius.format(experiment.error)} °C`,
         );
         lines.push(`${experiment.inRange} % in range, ${celsius.format(experiment.width)} °C wide`);
-        lines.push(`prototype: ${forecastHours(experiment.count)}`);
+        lines.push(`${version}: ${forecastHours(experiment.count)}`);
     }
 
     return lines.join("<br>") + tookOver;
 }
 
-function hourTooltipHtml(hour, row) {
+function hourTooltipHtml(hour, row, version) {
     const span = `${pad(hour)}:00-${pad((hour + 1) % 24)}:00`;
 
     if (row.inRange === null) {
@@ -124,7 +124,7 @@ function hourTooltipHtml(hour, row) {
         `<br>off by ${celsius.format(row.worst)} °C at most` +
         `<br>${row.inRange} % in range<br>${forecastHours(row.count)}` +
         baseHourHtml(row.base) +
-        prototypeHourHtml(row.experiment)
+        experimentHourHtml(row.experiment, version)
     );
 }
 
@@ -136,7 +136,7 @@ function baseHourHtml(base) {
     return `<br>base: bias ${signedDegrees(base.bias)}, off by ${celsius.format(base.error)} °C on average`;
 }
 
-function slotTooltipHtml(slot) {
+function slotTooltipHtml(slot, version) {
     const degrees = (value) => (value === null ? "n/a" : `${celsius.format(value)} °C`);
     const lines = [slot.clock, `<strong>measured ${degrees(slot.measured)}</strong>`];
 
@@ -153,25 +153,25 @@ function slotTooltipHtml(slot) {
     }
 
     if (slot.experiment !== null) {
-        lines.push(`VEML prototype ${degrees(slot.experiment)}`);
+        lines.push(`${version} ${degrees(slot.experiment)}`);
     }
 
     return lines.join("<br>");
 }
 
-function prototypeHourHtml(experiment) {
+function experimentHourHtml(experiment, version) {
     if (experiment === null) {
         return "";
     }
 
     if (experiment.count === 0) {
-        return "<br><strong>VEML prototype</strong>: no forecast scored";
+        return `<br><strong>${version}</strong>: no forecast scored`;
     }
 
     return (
-        `<br><strong>VEML prototype</strong>: bias ${signedDegrees(experiment.bias)}` +
+        `<br><strong>${version}</strong>: bias ${signedDegrees(experiment.bias)}` +
         `<br>off by ${celsius.format(experiment.error)} °C on average` +
-        `<br>${experiment.inRange} % in range<br>prototype: ${forecastHours(experiment.count)}`
+        `<br>${experiment.inRange} % in range<br>${version}: ${forecastHours(experiment.count)}`
     );
 }
 
@@ -237,26 +237,26 @@ function zeroLine(colours) {
     return { yAxis: 0, lineStyle: { color: colours.axis, type: "solid", width: 1 } };
 }
 
-function prototypeLine(rows, value, colours) {
+function experimentLine(rows, value, colours, version) {
     if (rows.every((row) => row.experiment === null)) {
         return [];
     }
 
     return [
         {
-            name: "VEML prototype",
+            name: version,
             type: "line",
             connectNulls: false,
             symbol: "circle",
             symbolSize: 6,
-            lineStyle: { color: colours.prototype, width: 2 },
-            itemStyle: { color: colours.prototype },
+            lineStyle: { color: colours.experiment, width: 2 },
+            itemStyle: { color: colours.experiment },
             data: rows.map((row) => (row.experiment === null ? null : value(row.experiment))),
         },
     ];
 }
 
-function daysOption(rows, canvas) {
+function daysOption(rows, canvas, version) {
     const colours = palette();
 
     return {
@@ -289,7 +289,7 @@ function daysOption(rows, canvas) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index])),
+        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index], version)),
         series: [
             {
                 name: "base",
@@ -314,7 +314,7 @@ function daysOption(rows, canvas) {
                 ]),
                 data: rows.map((row) => row.shown?.skill ?? null),
             },
-            ...prototypeLine(rows, (figures) => figures.skill, colours),
+            ...experimentLine(rows, (figures) => figures.skill, colours, version),
         ],
     };
 }
@@ -351,13 +351,15 @@ function changeLabel(row) {
         .join(", ");
 }
 
-function hoursOption(payload, canvas) {
+function hoursOption(payload, canvas, version) {
     const rows = periodRows(payload, hoursPeriod);
 
-    return hoursPeriod === DEFAULT_PERIOD ? todayOption(rows, canvas) : biasOption(rows, canvas);
+    return hoursPeriod === DEFAULT_PERIOD
+        ? todayOption(rows, canvas, version)
+        : biasOption(rows, canvas, version);
 }
 
-function todayOption(slots, canvas) {
+function todayOption(slots, canvas, version) {
     const colours = palette();
     const series = todaySeries(slots);
     const band = {
@@ -407,7 +409,7 @@ function todayOption(slots, canvas) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => slotTooltipHtml(slots[index])),
+        tooltip: tooltip(colours, canvas, (index) => slotTooltipHtml(slots[index], version)),
         series: [
             { ...band, name: "shown range low", data: series.shownLow },
             {
@@ -422,8 +424,8 @@ function todayOption(slots, canvas) {
             line("shown", series.shown, { lineStyle: { color: colours.temperature, width: 2 } }),
             ...(hasValues(series.experiment)
                 ? [
-                      line("VEML prototype", series.experiment, {
-                          lineStyle: { color: colours.prototype, width: 2 },
+                      line(version, series.experiment, {
+                          lineStyle: { color: colours.experiment, width: 2 },
                       }),
                   ]
                 : []),
@@ -432,7 +434,7 @@ function todayOption(slots, canvas) {
     };
 }
 
-function biasOption(rows, canvas) {
+function biasOption(rows, canvas, version) {
     const colours = palette();
 
     return {
@@ -465,7 +467,7 @@ function biasOption(rows, canvas) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => hourTooltipHtml(index, rows[index])),
+        tooltip: tooltip(colours, canvas, (index) => hourTooltipHtml(index, rows[index], version)),
         series: [
             {
                 name: "base",
@@ -495,12 +497,12 @@ function biasOption(rows, canvas) {
                 },
                 data: rows.map((row) => row.bias),
             },
-            ...prototypeLine(rows, (hour) => hour.bias, colours),
+            ...experimentLine(rows, (hour) => hour.bias, colours, version),
         ],
     };
 }
 
-function widthsOption(rows, canvas) {
+function widthsOption(rows, canvas, version) {
     const colours = palette();
 
     return {
@@ -533,7 +535,7 @@ function widthsOption(rows, canvas) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index])),
+        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index], version)),
         series: [
             {
                 name: "base",
@@ -556,7 +558,7 @@ function widthsOption(rows, canvas) {
                 markLine: changeMarks(rows, colours),
                 data: rows.map((row) => row.shown?.width ?? null),
             },
-            ...prototypeLine(rows, (figures) => figures.width, colours),
+            ...experimentLine(rows, (figures) => figures.width, colours, version),
         ],
     };
 }
@@ -593,14 +595,15 @@ function mount(force = false) {
             watchSize(key, chart, canvas);
         }
 
-        const payload = `${key === "hours" ? hoursPeriod : ""}${element.dataset.accuracyRows}`;
+        const version = element.dataset.accuracyExperiment;
+        const payload = `${key === "hours" ? hoursPeriod : ""}${version}${element.dataset.accuracyRows}`;
 
         if (!force && painted.get(key) === payload) {
             return;
         }
 
         painted.set(key, payload);
-        chart.setOption(OPTIONS[key](parsed(element.dataset.accuracyRows), canvas), {
+        chart.setOption(OPTIONS[key](parsed(element.dataset.accuracyRows), canvas, version), {
             notMerge: true,
         });
     });

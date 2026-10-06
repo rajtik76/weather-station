@@ -98,7 +98,7 @@ it('keeps the stored weather model off the page', function (): void {
         ->assertDontSee('Open-Meteo');
 });
 
-it('shows the sensor prototype only in the comparison graphs', function (): void {
+it('names the light experiment by its version in the comparison graphs', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = Date::parse('2026-09-24 08:00:00', 'UTC')->getTimestamp();
     pageReading($sensor, $issued, 1200);
@@ -113,8 +113,9 @@ it('shows the sensor prototype only in the comparison graphs', function (): void
     ]);
 
     $html = $this->get(route('forecast'))
-        ->assertSee('VEML prototype (light-v1)')
-        ->assertSee('changes nothing on it')
+        ->assertSee('light-v1 runs alongside the shown forecast and changes nothing on it.')
+        ->assertSee('data-accuracy-experiment="light-v1"', false)
+        ->assertDontSee('VEML prototype')
         ->getContent();
 
     preg_match('/data-accuracy-chart="days"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);
@@ -140,7 +141,7 @@ it('keeps the shown and base history when the prototype starts later', function 
     }
 
     $html = $this->get(route('forecast'))
-        ->assertSee('VEML prototype (light-v1) runs since 24.9.2026, not long enough for this period.')
+        ->assertSee('light-v1 runs since 24.9.2026, not long enough for this period.')
         ->assertSeeInOrder(['>Today<', '>Yesterday<', '>7 days<', '>30 days<'], false)
         ->getContent();
     preg_match_all('/data-accuracy-chart="([^"]+)"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches, PREG_SET_ORDER);

@@ -11,9 +11,9 @@
                 <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">One horizon at a time. "Shown" is the forecast on the page, "base" the model before this station's correction; the gap between them is what the correction has learnt.</p>
                 @if ($experiment !== null)
                     @if ($experiment['synthetic'])
-                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">Synthetic preview: VEML prototype ({{ $experiment['version'] }}). These graphs compare demonstration forecasts, not measured prototype performance.</p>
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">Synthetic preview: {{ $experiment['version'] }}. These graphs compare demonstration forecasts, not measured experiment performance.</p>
                     @else
-                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">VEML prototype ({{ $experiment['version'] }}) runs alongside the shown forecast and changes nothing on it. Its line starts with its first scored forecast; tooltips show how many hours each line was scored on.</p>
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">{{ $experiment['version'] }} runs alongside the shown forecast and changes nothing on it. Its line starts with its first scored forecast; tooltips show how many hours each line was scored on.</p>
                     @endif
                 @endif
             </div>
@@ -36,7 +36,7 @@
                         <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Temperature->backgroundClass() }}"></span>shown</span>
                         <span class="flex items-center gap-2">{!! $base !!}base</span>
                         @if ($experiment !== null)
-                            <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>VEML prototype</span>
+                            <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>{{ $experiment['version'] }}</span>
                         @endif
                         <span>{{ $score['hours'] }} h ahead</span>
                     </p>
@@ -45,8 +45,9 @@
                     class="rounded-[10px] border border-line bg-screen p-3"
                     data-accuracy-chart="days"
                     data-accuracy-rows="{{ json_encode($score['days']) }}"
+                    data-accuracy-experiment="{{ $experiment['version'] ?? '' }}"
                     role="img"
-                    aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
+                    aria-label="Temperature {{ $score['hours'] }} h ahead by day: how much smaller the miss was than the naive guess's, shown and base{{ $experiment === null ? '' : ' and '.$experiment['version'] }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[260px] w-full"></div>
                 </div>
@@ -60,8 +61,9 @@
                     class="rounded-[10px] border border-line bg-screen p-3"
                     data-accuracy-chart="widths"
                     data-accuracy-rows="{{ json_encode($score['days']) }}"
+                    data-accuracy-experiment="{{ $experiment['version'] ?? '' }}"
                     role="img"
-                    aria-label="Width of the {{ $score['hours'] }} h range by day, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
+                    aria-label="Width of the {{ $score['hours'] }} h range by day, shown and base{{ $experiment === null ? '' : ' and '.$experiment['version'] }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[260px] w-full"></div>
                 </div>
@@ -110,7 +112,7 @@
                     <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Temperature->backgroundClass() }}"></span>shown</span>
                     <span class="flex items-center gap-2">{!! $base !!}base</span>
                     @if ($experiment !== null)
-                        <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>VEML prototype</span>
+                        <span class="flex items-center gap-2"><span class="swatch {{ \App\Enums\Channel::Light->backgroundClass() }}"></span>{{ $experiment['version'] }}</span>
                     @endif
                     <span>{{ $score['hours'] }} h ahead, °C</span>
                 </p>
@@ -118,13 +120,14 @@
                     class="rounded-[10px] border border-line bg-screen p-3"
                     data-accuracy-chart="hours"
                     data-accuracy-rows="{{ json_encode(['today' => $score['today'] ?? [], ...$score['byHour']]) }}"
+                    data-accuracy-experiment="{{ $experiment['version'] ?? '' }}"
                     role="img"
-                    aria-label="Temperature {{ $score['hours'] }} h ahead: today's readings against the forecasts for them, or the reading minus the forecast by hour of the day, shown and base{{ $experiment === null ? '' : ' and VEML prototype' }}"
+                    aria-label="Temperature {{ $score['hours'] }} h ahead: today's readings against the forecasts for them, or the reading minus the forecast by hour of the day, shown and base{{ $experiment === null ? '' : ' and '.$experiment['version'] }}"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[220px] w-full"></div>
                 </div>
                 @if ($experiment !== null)
-                    <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period !== 'today' && ! {{ json_encode($experiment['covers']) }}.includes(period)" x-cloak>VEML prototype ({{ $experiment['version'] }}) runs since {{ \App\ValueObject\LocalTime::of($experiment['since'])->date() }}, not long enough for this period.</p>
+                    <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period !== 'today' && ! {{ json_encode($experiment['covers']) }}.includes(period)" x-cloak>{{ $experiment['version'] }} runs since {{ \App\ValueObject\LocalTime::of($experiment['since'])->date() }}, not long enough for this period.</p>
                 @endif
                 <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period === 'today'">Today's readings since midnight against what each forecast said {{ $score['hours'] }} h before; the band is the shown forecast's 10-90 % range.</p>
                 <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3" x-show="period !== 'today'" x-cloak>Reading minus the forecast's median, by the hour it was for; above zero the balcony read warmer than forecast. After sunrise the sun heats the shield and the reading runs high; the correction learns that from 20-minute solar-time bins.</p>
