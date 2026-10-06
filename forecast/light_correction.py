@@ -1,71 +1,37 @@
-import numpy as np
+"""light-v4: the base model run on the air under the shield, plus the shield's heating carried to the target."""
+
 import pandas as pd
-from sklearn.linear_model import Ridge
 
-from correction import MIN_HISTORY_ROWS, RANGE_COVERAGE, RIDGE_ALPHA, SOLAR_INPUTS, Correction, errors, inputs
 from features import STEPS_PER_HOUR
-from light_gain import LightProfile, availability, current_gain, expected_gain
+from light_gain import LightProfile, clear_lux, gain_now
+from shield import COOLING, drive, heating_rate
 
-EXPERIMENT_VERSION = "light-v3"
-ERROR_INPUT_HOURS = 3
-
-
-def light_inputs(
-    forecast: pd.DataFrame, current: pd.DataFrame, n: int, longitude: float, gains: pd.Series
-) -> pd.DataFrame:
-    frame = inputs(forecast, current, "T", n, longitude)
-    frame[list(SOLAR_INPUTS)] = frame[list(SOLAR_INPUTS)].mul(gains, axis=0)
-    return frame if n <= ERROR_INPUT_HOURS else frame[list(SOLAR_INPUTS)]
+EXPERIMENT_VERSION = "light-v4"
 
 
-def fit(
-    forecast: pd.DataFrame, current: pd.DataFrame, realized: pd.Series, horizons: list[int], longitude: float,
-    since: pd.Timestamp | None, cutoff: pd.Timestamp | None = None,
-) -> dict[str, Correction]:
-    cutoff = current.index[-1] if cutoff is None else cutoff
-    available = availability(current)
-    corrections = {}
-    for n in horizons:
-        target = errors(forecast, current, "T", n)
-        gains_at_target = realized.shift(-n * STEPS_PER_HOUR)
-        known = target.notna() & gains_at_target.notna() & current[["T", "H", "P"]].notna().all(axis=1)
-        known &= forecast.index + pd.Timedelta(hours=n) <= cutoff
-        if since is not None:
-            known &= forecast.index >= since
-        if available is not None:
-            known &= current["received_at"].le(cutoff.timestamp()) & available.shift(-n * STEPS_PER_HOUR).le(cutoff.timestamp())
-        if int(known.sum()) < MIN_HISTORY_ROWS:
-            continue
-        x = light_inputs(forecast, current, n, longitude, gains_at_target).loc[known]
-        ridge = Ridge(alpha=RIDGE_ALPHA).fit(x, target.loc[known])
-        truth = current["T"].shift(-n * STEPS_PER_HOUR).loc[known]
-        moved = ridge.predict(x)
-        outside = np.maximum(
-            forecast.loc[known, f"T_{n}h_low"] + moved - truth,
-            truth - forecast.loc[known, f"T_{n}h_high"] - moved,
-        )
-        level = min(1.0, RANGE_COVERAGE * (1 + 1 / len(outside)))
-        corrections[f"T_{n}h"] = Correction(
-            intercept=float(ridge.intercept_),
-            coefficients={name: float(value) for name, value in zip(x.columns, ridge.coef_, strict=True)},
-            widen=float(np.quantile(outside, level)),
-        )
-    return corrections
+def heating_ahead(
+    current: pd.DataFrame, heated: pd.Series, longitude: float, reference: LightProfile, horizons: list[int],
+) -> dict[int, float]:
+    """Heating at each horizon after the latest window, the sky held at its gain now."""
+    steps = max(horizons) * STEPS_PER_HOUR
+    times = pd.date_range(current.index[-1], periods=steps, freq="10min")
+    rate = heating_rate(times, longitude)
+    push = drive(gain_now(current, reference, longitude) * clear_lux(times, reference.envelope, longitude).to_numpy())
+    push[0] = drive(current["L"].to_numpy(dtype=float)[-1:])[0]
+    level = float(heated.iloc[-1])
+    ahead = {}
+    for step in range(steps):
+        level = level * (1 - COOLING) + rate[step] * push[step]
+        if (step + 1) % STEPS_PER_HOUR == 0:
+            ahead[(step + 1) // STEPS_PER_HOUR] = level
+    return {n: ahead[n] for n in horizons}
 
 
-def apply(
-    corrections: dict[str, Correction], forecast: pd.DataFrame, current: pd.DataFrame,
-    horizons: list[int], longitude: float, reference: LightProfile,
-) -> pd.DataFrame:
-    corrected = forecast.copy()
-    now = current_gain(current, reference)
-    for n in horizons:
-        fitted = corrections.get(f"T_{n}h")
-        if fitted is None:
-            continue
-        moved = fitted.shift(light_inputs(forecast, current, n, longitude, expected_gain(now, reference, n)))
-        mid = forecast[f"T_{n}h_mid"] + moved
-        corrected[f"T_{n}h_mid"] = mid
-        corrected[f"T_{n}h_low"] = (forecast[f"T_{n}h_low"] + moved - fitted.widen).clip(upper=mid)
-        corrected[f"T_{n}h_high"] = (forecast[f"T_{n}h_high"] + moved + fitted.widen).clip(lower=mid)
-    return corrected
+def bands(air_forecast: pd.Series, ahead: dict[int, float]) -> list[dict]:
+    """The air forecast's temperature band moved up by the heating at its horizon."""
+    return [
+        {"hours": n, "temperature": {
+            name: round(float(air_forecast[f"T_{n}h_{name}"]) + heat, 2) for name in ("low", "mid", "high")
+        }}
+        for n, heat in ahead.items()
+    ]

@@ -34,13 +34,12 @@ function lightShown(int $issuedAt): array
     return ['issued_at' => $issuedAt, 'model' => '2026-09-24', 'corrected' => true, 'correction' => 3, 'horizons' => [$horizon]];
 }
 
-/** @return array{model: string, version: string, profile: array{day: string, values: list<?float>, gains: list<?float>}, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>} */
+/** @return array{model: string, version: string, profile: array{day: string, envelope: list<?float>}} */
 function lightFitted(): array
 {
     return [
         'model' => '2026-09-24', 'version' => 'light-v2',
-        'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
-        'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
+        'profile' => ['day' => '2026-10-03', 'envelope' => array_fill(0, 182, 2000.5)],
     ];
 }
 
@@ -127,11 +126,11 @@ it('refits a stale experiment once without refitting the main correction', funct
     Http::assertSentCount(6);
 });
 
-it('stores the main forecast without an experiment when no horizon has been fitted', function (): void {
+it('stores the main forecast without an experiment when the experiment answers no horizon', function (): void {
     $sensor = Sensor::factory()->create();
     $issued = now()->getTimestamp();
     lightReading($sensor, $issued);
-    $fitted = [...lightFitted(), 'targets' => []];
+    $fitted = lightFitted();
     Http::fake([
         'http://forecast.test/correction' => Http::response(['targets' => []]),
         'http://forecast.test/forecast' => Http::response(lightShown($issued)),
@@ -143,7 +142,7 @@ it('stores the main forecast without an experiment when no horizon has been fitt
 
     expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast'
-        && str_contains($request->body(), '"targets":{}'));
+        && $request['experiment'] === $fitted);
 });
 
 it('preserves the main forecast when the experiment connection is refused', function (): void {
@@ -200,7 +199,7 @@ it('skips experimental requests without light or for an old upload', function (s
     Http::assertSentCount(2);
 })->with(['missing', 'old']);
 
-it('caches the calibration per sensor, since and local day of the newest reading', function (): void {
+it('caches the calibration per sensor and local day of the newest reading', function (): void {
     $sensor = Sensor::factory()->create();
     $other = Sensor::factory()->create();
     $calls = 0;
@@ -209,16 +208,15 @@ it('caches the calibration per sensor, since and local day of the newest reading
 
         return lightFitted();
     };
-    CachedFit::lightCorrection($sensor->id, null, '2026-10-03', $fit)->current();
-    CachedFit::lightCorrection($sensor->id, null, '2026-10-03', $fit)->current();
+    CachedFit::lightCorrection($sensor->id, '2026-10-03', $fit)->current();
+    CachedFit::lightCorrection($sensor->id, '2026-10-03', $fit)->current();
     expect($calls)->toBe(1);
-    CachedFit::lightCorrection($other->id, null, '2026-10-03', $fit)->current();
-    CachedFit::lightCorrection($sensor->id, 1, '2026-10-03', $fit)->current();
+    CachedFit::lightCorrection($other->id, '2026-10-03', $fit)->current();
+    expect($calls)->toBe(2);
+
+    CachedFit::lightCorrection($sensor->id, '2026-10-04', $fit)->current();
+
     expect($calls)->toBe(3);
-
-    CachedFit::lightCorrection($sensor->id, 1, '2026-10-04', $fit)->current();
-
-    expect($calls)->toBe(4);
 });
 
 it('refits when the newest reading reaches a new local day, not when the clock does', function (): void {

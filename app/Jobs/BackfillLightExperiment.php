@@ -11,7 +11,6 @@ use App\Queries\ForecastService;
 use App\Queries\LightForecast;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
-use App\ValueObject\HistorySince;
 use App\ValueObject\LocalTime;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
@@ -39,7 +38,7 @@ class BackfillLightExperiment
     public function handle(): int
     {
         $service = ForecastService::fromConfig();
-        $experiment = new LightForecast($service, $this->sensor->id, HistorySince::fromConfig());
+        $experiment = new LightForecast($service, $this->sensor->id);
         $readings = new ServiceReadings($this->sensor->id);
         $lookback = (int) config('forecast.lookback_hours') * 3600;
 

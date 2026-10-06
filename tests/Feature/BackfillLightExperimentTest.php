@@ -30,8 +30,7 @@ function fakeReplayService(array $overrides = []): void
         'http://forecast.test/health' => Http::response(['status' => 'ok', 'model' => REPLAY_MODEL, 'correction' => 3, 'experiment' => 'light-v2']),
         'http://forecast.test/light-correction' => Http::response([
             'model' => REPLAY_MODEL, 'version' => 'light-v2',
-            'profile' => ['day' => '2026-10-02', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
-            'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
+            'profile' => ['day' => '2026-10-02', 'envelope' => array_fill(0, 182, 2000.5)],
         ]),
         'http://forecast.test/light-forecast' => fn (Request $request): PromiseInterface => Http::response([
             'issued_at' => intdiv(max([0, ...array_column($request['readings'], 'timestamp')]), 600) * 600,
@@ -194,8 +193,7 @@ it('reports a day whose fit failed and goes on with the next', function (): void
             ->pushStatus(500)
             ->push([
                 'model' => REPLAY_MODEL, 'version' => 'light-v2',
-                'profile' => ['day' => '2026-10-03', 'values' => array_fill(0, 48, 1000.0), 'gains' => array_fill(0, 48, 0.5)],
-                'targets' => ['T_1h' => ['intercept' => 0.1, 'coefficients' => ['error_same' => 0.2], 'widen' => 0.0]],
+                'profile' => ['day' => '2026-10-03', 'envelope' => array_fill(0, 182, 2000.5)],
             ]),
     ]);
     $sensor = Sensor::factory()->create();

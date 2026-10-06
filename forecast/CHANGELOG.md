@@ -5,6 +5,17 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v4 - 2026-10-06
+
+Model 2026-09-24T08:40:43Z · Server v4.14.0
+
+- Replaces light-v3, which scaled solar-time bins by the light and learnt them from four dim mornings, so the VEML hardly moved it
+- The shield's heating as a first-order model: a rate per sun azimuth (90-160°) for every 1000 lx above 500 lx, 16.9 % shed per 10 minutes (54 min); fitted offline against the air at ČHMÚ Plzeň-Mikulka and, before 10 h, Plzeň-Slovany, 30 September to 6 October 2026; balcony minus Mikulka with no sun averages 0.0 K
+- The base model on the readings with the heating taken out, plus the heating carried to the target with the sky held at its gain now (0.5 in the dark)
+- October mornings only: spring and summer sun rising north of 90° heats nothing in the model yet
+- Walked forward on the balcony, fitted at local midnight, 2 to 6 October 2026 (the heating rates were fitted on these days); temperature for targets 7 to 12 h, mean over 1-6 h: 1.89 °C (base 1.84, shown 2.64, light-v3 1.89); 6 October, clear: 3.09 °C (base 3.89, light-v3 3.96, shown 1.82); whole day 1.31 °C (base 1.23, light-v3 1.22)
+- Tried and dropped: sky held at the 14-day mean (mornings 2.14 °C); a clear-morning guess from the night's temperature, humidity and pressure, trained on 14 ČHMÚ stations 2018-2025 (AUC 0.82 half an hour before sunrise on 2024-2025); on the balcony it read nearly every night as clear and made the mornings 2.18 °C
+
 ## Light experiment light-v3 - 2026-10-05
 
 Model 2026-09-24T08:40:43Z · Server v4.13.0

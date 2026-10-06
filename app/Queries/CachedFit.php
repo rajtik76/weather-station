@@ -48,9 +48,9 @@ final readonly class CachedFit
      * @param  Closure(): LightFitted  $fit
      * @return self<LightFitted>
      */
-    public static function lightCorrection(int $sensorId, ?int $since, string $day, Closure $fit): self
+    public static function lightCorrection(int $sensorId, string $day, Closure $fit): self
     {
-        return new self("light-correction:{$sensorId}", ['since' => $since, 'day' => $day], now()->addDays(self::LIGHT_KEPT_DAYS), $fit);
+        return new self("light-correction:{$sensorId}", ['day' => $day], now()->addDays(self::LIGHT_KEPT_DAYS), $fit);
     }
 
     /**

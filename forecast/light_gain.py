@@ -1,22 +1,26 @@
+"""Light on the balcony: the clear-sky envelope by sun position and the sky's gain against it."""
+
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
+from shield import sun_position
+
 TIMEZONE = "Europe/Prague"
-PHASE_MINUTES = 30
-PHASES = 24 * 60 // PHASE_MINUTES
 HISTORY_DAYS = 14
-REFERENCE_QUANTILE = 0.9
 DAYLIGHT_FLOOR_LUX = 100.0
-GAIN_FADE_HOURS = 6
+ELEVATIONS = 91
+ENVELOPE_SIZE = 2 * ELEVATIONS
+UNKNOWN_SKY_GAIN = 0.5
 
 
 @dataclass(frozen=True)
 class LightProfile:
+    """`envelope`: brightest lx per sun position (`sun_slots`)."""
+
     day: str
-    values: list[float | None]
-    gains: list[float | None]
+    envelope: list[float | None]
 
 
 def local_day(time: pd.Timestamp) -> pd.Timestamp:
@@ -27,16 +31,8 @@ def illumination(current: pd.DataFrame) -> pd.Series:
     return current["L"].rolling(3, min_periods=2).mean()
 
 
-def phases(index: pd.DatetimeIndex) -> np.ndarray:
-    return (index.hour * 60 + index.minute) // PHASE_MINUTES
-
-
 def availability(current: pd.DataFrame) -> pd.Series | None:
     return current["received_at"].rolling(3, min_periods=2).max() if "received_at" in current else None
-
-
-def by_phase(values: pd.Series) -> list[float | None]:
-    return [float(values[i]) if i in values and pd.notna(values[i]) else None for i in range(PHASES)]
 
 
 def before_day(index: pd.DatetimeIndex, available: pd.Series | None, day: pd.Timestamp) -> np.ndarray:
@@ -46,56 +42,41 @@ def before_day(index: pd.DatetimeIndex, available: pd.Series | None, day: pd.Tim
     return before
 
 
-def reference_values(smoothed: pd.Series, available: pd.Series | None, day: pd.Timestamp) -> list[float | None]:
-    before = before_day(smoothed.index, available, day)
-    return by_phase(smoothed[before].groupby(phases(smoothed.index[before])).quantile(REFERENCE_QUANTILE))
+def sun_slots(index: pd.DatetimeIndex, longitude: float) -> np.ndarray:
+    """Envelope slot of each window: whole degrees of elevation, morning 0-90, afternoon 91-181; -1 below the horizon."""
+    elevation, azimuth = sun_position(index, longitude)
+    degrees = np.floor(elevation).astype(int)
+    return np.where(elevation < 0, -1, np.where(azimuth < 180, degrees, ELEVATIONS + degrees))
 
 
-def profile(current: pd.DataFrame, daylight: pd.Series, day: pd.Timestamp) -> LightProfile:
-    available = availability(current)
-    before = before_day(daylight.index, available, day)
-    return LightProfile(
-        day=day.strftime("%Y-%m-%d"),
-        values=reference_values(illumination(current), available, day),
-        gains=by_phase(daylight[before].groupby(phases(daylight.index[before])).mean()),
-    )
+def clear_lux(index: pd.DatetimeIndex, envelope: list[float | None], longitude: float) -> pd.Series:
+    slots = sun_slots(index, longitude)
+    values = np.array([np.nan if value is None else value for value in envelope], dtype=float)
+    return pd.Series(np.where(slots >= 0, values[np.clip(slots, 0, None)], np.nan), index=index)
 
 
-def expected_lux(index: pd.DatetimeIndex, values: list[float | None]) -> pd.Series:
-    return pd.Series(np.array(values, dtype=float)[phases(index)], index=index)
+def sky_gain(current: pd.DataFrame, envelope: list[float | None], longitude: float) -> pd.Series:
+    """Smoothed lux over the clear-sky envelope, 0-1; unknown in the dark or without light."""
+    clear = clear_lux(current.index, envelope, longitude)
+    lux = illumination(current)
+    return (lux / clear).clip(0.0, 1.0).where(clear.ge(DAYLIGHT_FLOOR_LUX) & lux.notna() & current["L"].notna())
 
 
-def daylight_gain(smoothed: pd.Series, raw: pd.Series, values: list[float | None]) -> pd.Series:
-    expected = expected_lux(smoothed.index, values)
-    usable = expected.ge(DAYLIGHT_FLOOR_LUX) & smoothed.notna() & raw.notna()
-    return (smoothed / expected).clip(0.0, 1.0).where(usable)
+def profile(current: pd.DataFrame, day: pd.Timestamp, longitude: float) -> LightProfile:
+    """From the 14 days before `day`, readings that had arrived by then."""
+    before = before_day(current.index, availability(current), day)
+    lux = illumination(current)[before].dropna()
+    slots = sun_slots(lux.index, longitude)
+    lit = slots >= 0
+    brightest = lux[lit].groupby(slots[lit]).max()
+    envelope: list[float | None] = []
+    for branch in (range(ELEVATIONS), range(ELEVATIONS, ENVELOPE_SIZE)):
+        filled = brightest.reindex(branch).astype(float).interpolate(limit_area="inside")
+        envelope += [None if pd.isna(value) else float(value) for value in filled]
+    return LightProfile(day.strftime("%Y-%m-%d"), envelope)
 
 
-def realized_gain(smoothed: pd.Series, raw: pd.Series, values: list[float | None]) -> pd.Series:
-    dark = expected_lux(smoothed.index, values).lt(DAYLIGHT_FLOOR_LUX) & raw.notna()
-    return daylight_gain(smoothed, raw, values).mask(dark, 1.0)
-
-
-def historical_gains(current: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    smoothed = illumination(current)
-    available = availability(current)
-    daylight = pd.Series(np.nan, index=current.index)
-    realized = pd.Series(np.nan, index=current.index)
-    days = current.index.tz_convert(TIMEZONE).normalize()
-    for day in days.unique():
-        today = days == day
-        values = reference_values(smoothed, available, day)
-        daylight.loc[today] = daylight_gain(smoothed[today], current["L"][today], values)
-        realized.loc[today] = realized_gain(smoothed[today], current["L"][today], values)
-    return daylight, realized
-
-
-def current_gain(current: pd.DataFrame, reference: LightProfile) -> pd.Series:
-    return daylight_gain(illumination(current), current["L"], reference.values)
-
-
-def expected_gain(now: pd.Series, reference: LightProfile, n: int) -> pd.Series:
-    targets = now.index + pd.Timedelta(hours=n)
-    usual = pd.Series(np.array(reference.gains, dtype=float)[phases(targets)], index=now.index).fillna(1.0)
-    weight = max(0.0, 1 - n / GAIN_FADE_HOURS)
-    return (weight * now + (1 - weight) * usual).fillna(usual)
+def gain_now(current: pd.DataFrame, reference: LightProfile, longitude: float) -> float:
+    """Sky gain of the latest window; UNKNOWN_SKY_GAIN in the dark or without light."""
+    latest = sky_gain(current.iloc[-3:], reference.envelope, longitude).iloc[-1]
+    return float(latest) if pd.notna(latest) else UNKNOWN_SKY_GAIN

@@ -74,7 +74,7 @@ class ForecastWeather
             ],
         );
 
-        $this->attachExperiment($stored, $service, $forecast, $readings, $since);
+        $this->attachExperiment($stored, $service, $forecast, $readings);
     }
 
     private function isIssuedInWindowOf(int $timestamp): bool
@@ -91,7 +91,7 @@ class ForecastWeather
      * @param  Issued  $forecast
      * @param  list<LitReading>  $readings
      */
-    private function attachExperiment(Forecast $stored, ForecastService $service, array $forecast, array $readings, ?int $since): void
+    private function attachExperiment(Forecast $stored, ForecastService $service, array $forecast, array $readings): void
     {
         $paused = "light-experiment-paused:{$this->sensor->id}";
 
@@ -100,7 +100,7 @@ class ForecastWeather
         }
 
         try {
-            $experiment = new LightForecast($service, $this->sensor->id, $since)->beside($forecast, $readings);
+            $experiment = new LightForecast($service, $this->sensor->id)->beside($forecast, $readings);
         } catch (Throwable $exception) {
             report($exception);
             Cache::put($paused, true, now()->addMinutes(self::EXPERIMENT_PAUSE_MINUTES));

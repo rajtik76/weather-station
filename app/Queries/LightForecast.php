@@ -23,7 +23,7 @@ final readonly class LightForecast
     /** An experiment is issued only this close to its forecast's window. */
     public const int MAX_LAG_SECONDS = 2 * ChartWindow::STEP_SECONDS;
 
-    public function __construct(private ForecastService $service, private int $sensorId, private ?int $since) {}
+    public function __construct(private ForecastService $service, private int $sensorId) {}
 
     /**
      * @param  Issued  $shown
@@ -41,7 +41,6 @@ final readonly class LightForecast
 
         return CachedFit::lightCorrection(
             $this->sensorId,
-            $this->since,
             LocalTime::of($readings[array_key_last($readings)]['timestamp'])->isoDate(),
             fn (): array => $this->fit(new ServiceReadings($this->sensorId)->recent((int) config('forecast.history_days') * 86400, withLight: true)),
         )->issue(fn (array $fitted): array => $this->issue($shown, $readings, $fitted));
@@ -56,11 +55,10 @@ final readonly class LightForecast
      */
     public function fit(array $history): array
     {
-        return $this->service->lightCorrection(array_filter([
+        return $this->service->lightCorrection([
             'longitude' => config('forecast.longitude'),
             'readings' => $history,
-            'since' => $this->since,
-        ], fn (mixed $value): bool => $value !== null));
+        ]);
     }
 
     /**
@@ -78,7 +76,7 @@ final readonly class LightForecast
         $experiment = $this->service->lightForecast([
             'longitude' => config('forecast.longitude'),
             'readings' => $readings,
-            'experiment' => [...$fitted, 'targets' => (object) $fitted['targets']],
+            'experiment' => $fitted,
         ]);
 
         if ($experiment['issued_at'] !== $shown['issued_at'] || $experiment['model'] !== $shown['model']) {

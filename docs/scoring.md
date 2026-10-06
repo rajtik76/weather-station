@@ -30,10 +30,10 @@ Stored for later use, neither scored nor shown: it forecasts air temperature, th
 
 ## Light experiment
 
-A second temperature correction that reads the VEML7700 in the shield. It runs beside the shown forecast and changes nothing on it.
+A second temperature forecast that reads the VEML7700 in the shield: the base model on the air under the shield plus the shield's heating in sun ([`forecast/README.md`](../forecast/README.md#light-experiment)). It runs beside the shown forecast and changes nothing on it.
 
 - After the shown forecast is stored, `ForecastWeather` asks `POST /light-forecast` and stores the answer as `experiment` (`version`, `temperature`) under each horizon it covers
-- Fitted by `POST /light-correction` once per local day of the newest reading, from the last 60 days, and cached per sensor
+- Its light profile comes from `POST /light-correction` once per local day of the newest reading, from the last 60 days, and is cached per sensor
 - A failure is reported and pauses the experiment for an hour; the forecast is already stored
 - The forecast page adds it as one more line to skill by day, range width and the hour-of-day chart, scored on its own forecasts; shown and base stay exactly as without it, tooltips give each line's count. By hour it shows only in a period whose first forecast already carried it, today always
 - `php artisan forecast:backfill-light <Y-m-d>` replays it on forecasts stored without its current version, from the readings the server held when each was issued (`created_at`); unlike the weather model, nothing later leaks in. An older version is replaced where the current one is issued, a forecast it cannot issue keeps the older one; the page scores the latest version only
