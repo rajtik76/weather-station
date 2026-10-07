@@ -11,14 +11,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import joblib
+import pandas as pd
 import pytest
 
 import serve
+import sun_correction
 from conftest import START, Constant, weather_frame
 from correction import CORRECTION_VERSION, INPUTS, apply
 from features import build_features
 from forecast import predict
 from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast, make_light_correction, make_light_forecast
+from sun_correction import EXPERIMENT_VERSION, local_day
 
 LONGITUDE = 13.4
 BAND = {"low", "mid", "high"}
@@ -427,7 +430,7 @@ def test_health_reports_the_model_and_the_correction_and_experiment_versions(ser
     status, answer = request(server, "GET", "/health")
 
     assert status == 200
-    assert answer == {"status": "ok", "model": service["trained_at"], "correction": CORRECTION_VERSION, "experiment": "light-v4"}
+    assert answer == {"status": "ok", "model": service["trained_at"], "correction": CORRECTION_VERSION, "experiment": EXPERIMENT_VERSION}
 
 
 def test_unknown_paths_are_404(server: tuple[str, int]) -> None:
@@ -511,16 +514,39 @@ def test_base_keeps_the_rain_chance_before_the_first_hour_was_capped(
     assert second["rain_probability"] == second["base"]["rain_probability"] == 0.01
 
 
+def lit(history: list[dict]) -> list[dict]:
+    """What ForecastWeather sends to the light endpoints: illuminance, arrival and the in-window extremes."""
+    return [
+        {**reading, "illuminance": 1000.0, "received_at": reading["timestamp"],
+         "temperature_min": reading["temperature"] - 0.1 * (i % 3), "temperature_max": reading["temperature"] + 0.2}
+        for i, reading in enumerate(history)
+    ]
+
+
+def handmade_fit(history: list[dict], **horizon: object) -> dict:
+    """One horizon, one tree: +0.5 K up to a swing of 1 K, +1.5 K above."""
+    newest = pd.Timestamp(history[-1]["timestamp"], unit="s", tz="UTC").floor("10min")
+    return {
+        "model": "2026-09-24T08:40:43+00:00", "version": EXPERIMENT_VERSION,
+        "fit": {"day": local_day(newest), "horizons": [{
+            "hours": 1, "baseline": 0.0, "trees": [[[sun_correction.INPUTS.index("swing"), 1.0, 0, 1, 2], [0.5], [1.5]]], "widen": 0.1,
+            **horizon,
+        }]},
+    }
+
+
 def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(server: tuple[str, int]) -> None:
-    history = [{**reading, "illuminance": 1000.0 if i < 432 else 200.0} for i, reading in enumerate(readings(120))]
+    history = lit(readings(120))
     before = corrected_forecast(history)
-    status, fitted = request(server, "POST", "/light-correction", {"longitude": LONGITUDE, "readings": history})
+    status, fitted = request(server, "POST", "/light-correction", {
+        "longitude": LONGITUDE, "readings": history, "since": history[0]["timestamp"],
+    })
     issued, experiment = request(server, "POST", "/light-forecast", {
         "longitude": LONGITUDE, "readings": history[-336:], "experiment": fitted,
     })
 
     assert status == issued == 200
-    assert experiment["version"] == "light-v4"
+    assert experiment["version"] == EXPERIMENT_VERSION
     assert experiment["issued_at"] == before["issued_at"]
     assert experiment["model"] == before["model"]
     assert [h["hours"] for h in experiment["horizons"]] == [1, 2, 3, 4, 5, 6]
@@ -532,52 +558,87 @@ def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(se
 
 
 def test_light_experiment_agrees_for_recent_and_whole_history(service: dict) -> None:
-    history = [{**reading, "illuminance": 200.0} for reading in readings(120)]
+    history = lit(readings(120))
     fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
     payload = {"longitude": LONGITUDE, "experiment": fitted}
 
     assert make_light_forecast({**payload, "readings": history}) == make_light_forecast({**payload, "readings": history[-336:]})
 
 
-def test_light_experiment_without_light_is_the_base_forecast(service: dict) -> None:
-    history = readings(24)
-    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+def test_a_short_or_unlearnt_history_answers_no_horizon(service: dict) -> None:
+    history = lit(readings(120))
 
-    experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": fitted})
-    base = make_forecast({"longitude": LONGITUDE, "readings": history})
+    short = make_light_correction({"longitude": LONGITUDE, "readings": history[-144:]})
+    unlearnt = make_light_correction({"longitude": LONGITUDE, "readings": history, "since": history[-1]["timestamp"]})
 
-    assert [h["temperature"] for h in experiment["horizons"]] == [h["base"]["temperature"] for h in base["horizons"]]
+    assert short["fit"]["horizons"] == unlearnt["fit"]["horizons"] == []
+    assert make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": short})["horizons"] == []
 
 
-@pytest.mark.parametrize("change", [{"version": "light-v2"}, {"model": "old"}, {"profile": {"day": "2020-01-01", "envelope": [None] * 182}}])
-def test_stale_light_calibration_gets_409(server: tuple[str, int], change: dict) -> None:
-    history = readings(24)
-    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
+def test_a_fitted_horizon_moves_the_base_by_its_trees_by_day(service: dict) -> None:
+    history = lit(readings(12))
+    history[-1] |= {"temperature_min": history[-1]["temperature"] - 2, "temperature_max": history[-1]["temperature"] + 2}
+    base = make_forecast({"longitude": LONGITUDE, "readings": history})["horizons"][0]["base"]["temperature"]
 
-    status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": {**fitted, **change}})
+    experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history)})
+
+    assert experiment["horizons"] == [{"hours": 1, "temperature": {
+        "low": pytest.approx(base["low"] + 1.4, abs=0.011),
+        "mid": pytest.approx(base["mid"] + 1.5, abs=0.011),
+        "high": pytest.approx(base["high"] + 1.6, abs=0.011),
+    }}]
+
+
+def test_night_keeps_the_base_whatever_the_trees(service: dict) -> None:
+    history = lit(readings(24))
+    base = make_forecast({"longitude": LONGITUDE, "readings": history})["horizons"][0]["base"]["temperature"]
+
+    experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history)})
+
+    assert experiment["horizons"] == [{"hours": 1, "temperature": base}]
+
+
+@pytest.mark.parametrize("change", [{"version": "light-v4"}, {"model": "old"}, {"fit": {"day": "2020-01-01", "horizons": []}}])
+def test_stale_light_fit_gets_409(server: tuple[str, int], change: dict) -> None:
+    history = lit(readings(24))
+
+    status, _ = request(server, "POST", "/light-forecast", {
+        "longitude": LONGITUDE, "readings": history, "experiment": {**handmade_fit(history), **change},
+    })
 
     assert status == 409
 
 
-@pytest.mark.parametrize(("key", "series"), [
-    ("envelope", [None] * 181), ("envelope", [-1] * 182), ("envelope", [True] * 182), ("envelope", [float("inf")] * 182),
-    ("envelope", None), ("envelope", ["1"] * 182),
+@pytest.mark.parametrize("horizon", [
+    {"hours": 7}, {"hours": True}, {"hours": 1.0}, {"baseline": "0"}, {"widen": float("inf")}, {"trees": None}, {"trees": [[]]},
+    {"trees": [[[0.5]] * 256]}, {"trees": [[[0, 1.0, 0, 0, 2], [0.5], [1.5]]]}, {"trees": [[[0, 1.0, 0, 1, 3], [0.5], [1.5]]]},
+    {"trees": [[[len(sun_correction.INPUTS), 1.0, 0, 1, 2], [0.5], [1.5]]]}, {"trees": [[[0, "1", 0, 1, 2], [0.5], [1.5]]]},
+    {"trees": [[[0, 1.0, 2, 1, 2], [0.5], [1.5]]]}, {"trees": [[[0, 1.0, 0, True, 2], [0.5], [1.5]]]},
+    {"trees": [[[0, 1.0, 0, 1, 2], [None], [1.5]]]}, {"trees": [[[0, 1.0, 0], [0.5], [1.5]]]},
 ])
-@pytest.mark.parametrize("day", [None, "2020-01-01"])
-def test_invalid_light_profiles_get_422(server: tuple[str, int], key: str, series: list | None, day: str | None) -> None:
-    history = readings(24)
-    fitted = make_light_correction({"longitude": LONGITUDE, "readings": history})
-    fitted["profile"][key] = series
-    fitted["profile"]["day"] = day or fitted["profile"]["day"]
+def test_invalid_light_fits_get_422(server: tuple[str, int], horizon: dict) -> None:
+    history = lit(readings(24))
+
+    status, _ = request(server, "POST", "/light-forecast", {
+        "longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history, **horizon),
+    })
+
+    assert status == 422
+
+
+def test_a_light_fit_answering_a_horizon_twice_gets_422(server: tuple[str, int]) -> None:
+    history = lit(readings(24))
+    fitted = handmade_fit(history)
+    fitted["fit"]["horizons"] *= 2
 
     status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": fitted})
 
     assert status == 422
 
 
-@pytest.mark.parametrize("invalid", [{"illuminance": -1}, {"illuminance": True}, {"illuminance": "100"}, {"received_at": True}, {"received_at": 10**400}])
+@pytest.mark.parametrize("invalid", [{"temperature_min": "1"}, {"temperature_max": True}, {"temperature_max": 1e400}])
 def test_invalid_light_readings_get_422(server: tuple[str, int], invalid: dict) -> None:
-    history = readings(24)
+    history = lit(readings(24))
     history[-1].update(invalid)
 
     status, _ = request(server, "POST", "/light-correction", {"longitude": LONGITUDE, "readings": history})

@@ -18,19 +18,20 @@ POST /forecast  {"longitude", "readings", "correction"?}
 POST /base  {"longitude", "since" (required), "readings"}
   -> {"model", "forecasts": [{"issued_at", "horizons": [{"hours", "temperature", "humidity",
       "rain_probability"}]}]}  - uncorrected, per reading from since on; readings should start 48 h earlier.
-POST /light-correction  {"longitude", "readings" (lit)}
+POST /light-correction  {"longitude", "readings" (lit), "since"?}
   -> {"model": trained_at, "version": EXPERIMENT_VERSION,
-      "profile": {"day": local Y-m-d, "envelope": 182 x lx or null}}
-  profile over the 14 days before the latest local day, readings that had arrived by then: envelope the brightest
-  smoothed lux per sun position (light_gain.sun_slots).
+      "fit": {"day": local Y-m-d of the newest reading,
+              "horizons": [{"hours", "baseline", "trees", "widen"}]}}
+  sun_correction.fit on the readings from "since" on: per horizon a median-loss boosting model of the base
+  forecast's daytime miss, as plain trees (trees.py); a horizon short of history is left out.
 POST /light-forecast  {"longitude", "readings" (lit), "experiment"}
   -> {"issued_at", "model", "version", "horizons": [{"hours": n, "temperature": band}]}
-  "experiment": a /light-correction answer; another model or version, or a profile for another
-  local day -> 409. The base model on the air under the shield plus the shield's heating at the target.
+  "experiment": a /light-correction answer; another model or version, or a fit for another
+  local day -> 409. The base forecast moved by the fitted miss by day, the base at night.
 GET /health -> {"status": "ok", "model", "correction", "experiment": EXPERIMENT_VERSION}
 
-Lit readings add {"illuminance": lx or null, "received_at": unix s the server stored it, default timestamp};
-a reading counts for a past moment only if it had arrived by then.
+Lit readings add {"temperature_min", "temperature_max": °C within the 10-minute window or null}; other keys
+(Laravel sends "illuminance" and "received_at") are ignored.
 """
 import json
 import math
@@ -42,9 +43,8 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-import light_correction
-import light_gain
-import shield
+import sun_correction
+import trees
 from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, INPUTS, Correction, apply, fit
 from features import STEPS_PER_HOUR, build_features, to_grid
 from forecast import QUANTILES, predict
@@ -58,6 +58,7 @@ MAX_SPAN_SECONDS = MAX_SPAN_DAYS * 86_400
 MAX_READINGS = MAX_SPAN_DAYS * 24 * 6
 
 FIELDS = {"temperature": "T", "humidity": "H", "pressure": "P"}
+SWING_FIELDS = {"temperature_min": "Tmin", "temperature_max": "Tmax"}
 NAMES = {column: field for field, column in FIELDS.items()}
 
 
@@ -130,11 +131,7 @@ def readings_frame(readings: object, light: bool = False) -> pd.DataFrame:
         row |= {column: number(reading.get(field)) for field, column in FIELDS.items()}
         row["SRA10M"] = number(reading.get("rain"))
         if light:
-            row["L"] = number(reading.get("illuminance"))
-            if row["L"] < 0:
-                raise InvalidRequest("illuminance must be non-negative")
-            row["received_at"] = epoch(reading.get("received_at", row["time"]), "received_at")
-            timestamp(row["received_at"], "received_at", required=True)
+            row |= {column: number(reading.get(field)) for field, column in SWING_FIELDS.items()}
         rows.append(row)
     oldest = min(row["time"] for row in rows)
     newest = max(row["time"] for row in rows)
@@ -204,36 +201,46 @@ def predict_latest(bundle: dict, current: pd.DataFrame, longitude: float, window
 
 def make_light_correction(payload: dict) -> dict:
     longitude, current = station_history(payload, light=True)
-    reference = light_gain.profile(current, light_gain.local_day(current.index[-1]), longitude)
+    since = timestamp(payload.get("since"), "since", required=False)
+    bundle = model.get()
+    forecast = predict(bundle, build_features(current, longitude), current)
+    fitted = sun_correction.fit(forecast, current, bundle["horizons"], longitude, since)
     return {
-        "model": model.get()["trained_at"],
-        "version": light_correction.EXPERIMENT_VERSION,
-        "profile": asdict(reference),
+        "model": bundle["trained_at"],
+        "version": sun_correction.EXPERIMENT_VERSION,
+        "fit": {"day": sun_correction.local_day(current.index[-1]), "horizons": [asdict(horizon) for horizon in fitted]},
     }
 
 
-def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> light_gain.LightProfile:
+def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> list[sun_correction.Horizon]:
     if not isinstance(value, dict):
         raise InvalidRequest("experiment must be an answer of /light-correction")
-    if value.get("model") != bundle["trained_at"] or value.get("version") != light_correction.EXPERIMENT_VERSION:
+    if value.get("model") != bundle["trained_at"] or value.get("version") != sun_correction.EXPERIMENT_VERSION:
         raise StaleCorrection("experiment was fitted for another model or experiment version")
-    reference = value.get("profile")
-    if not isinstance(reference, dict):
-        raise InvalidRequest("light profile must be an object")
-    envelope = profile_series(reference.get("envelope"), "envelope", light_gain.ENVELOPE_SIZE)
-    day = light_gain.local_day(current.index[-1]).strftime("%Y-%m-%d")
-    if reference.get("day") != day:
-        raise StaleCorrection("light profile was fitted for another day")
-    return light_gain.LightProfile(day, envelope)
+    fit = value.get("fit")
+    if not isinstance(fit, dict) or not isinstance(fit.get("horizons"), list):
+        raise InvalidRequest("light fit needs day and horizons")
+    fitted = [light_horizon(horizon, bundle["horizons"]) for horizon in fit["horizons"]]
+    if len({horizon.hours for horizon in fitted}) != len(fitted):
+        raise InvalidRequest("light fit answers a horizon twice")
+    if fit.get("day") != sun_correction.local_day(current.index[-1]):
+        raise StaleCorrection("light fit was made for another day")
+    return fitted
 
 
-def profile_series(value: object, name: str, size: int) -> list[float | None]:
-    if not isinstance(value, list) or len(value) != size:
-        raise InvalidRequest(f"light profile needs {size} {name}")
-    series = [None if item is None else finite(item, f"light profile {name}") for item in value]
-    if any(item is not None and item < 0 for item in series):
-        raise InvalidRequest(f"light profile {name} must be non-negative")
-    return series
+def light_horizon(value: object, horizons: list[int]) -> sun_correction.Horizon:
+    if not isinstance(value, dict) or type(value.get("hours")) is not int or value["hours"] not in horizons:
+        raise InvalidRequest("light fit horizons need hours the model forecasts")
+    try:
+        fitted_trees = trees.decode(value.get("trees"), len(sun_correction.INPUTS))
+    except ValueError as error:
+        raise InvalidRequest(f"light fit trees: {error}") from None
+    return sun_correction.Horizon(
+        hours=value["hours"],
+        baseline=finite(value.get("baseline"), "light fit baseline"),
+        trees=fitted_trees,
+        widen=finite(value.get("widen"), "light fit widen"),
+    )
 
 
 def make_light_forecast(payload: dict) -> dict:
@@ -241,16 +248,13 @@ def make_light_forecast(payload: dict) -> dict:
     if current[["T", "H", "P"]].iloc[-1].isna().any():
         raise InvalidRequest("the latest reading needs temperature, humidity and pressure")
     bundle = model.get()
-    reference = fitted_light(payload.get("experiment"), bundle, current)
-    heated = shield.heating(current, longitude)
-    cooled = shield.air(current, heated)
-    latest = predict_latest(bundle, cooled, longitude, 1).iloc[-1]
-    ahead = light_correction.heating_ahead(current, heated, longitude, reference, bundle["horizons"])
+    fitted = fitted_light(payload.get("experiment"), bundle, current)
+    forecast = predict_latest(bundle, current, longitude, max(bundle["horizons"]) * STEPS_PER_HOUR + 1)
     return {
-        "issued_at": int(latest.name.timestamp()),
+        "issued_at": int(forecast.index[-1].timestamp()),
         "model": bundle["trained_at"],
-        "version": light_correction.EXPERIMENT_VERSION,
-        "horizons": light_correction.bands(latest, ahead),
+        "version": sun_correction.EXPERIMENT_VERSION,
+        "horizons": sun_correction.bands(fitted, forecast, current, longitude),
     }
 
 
@@ -281,13 +285,10 @@ def correction_of(target: str, fitted: object, known: set[str]) -> Correction:
 
 
 def finite(value: object, name: str) -> float:
-    if not isinstance(value, bool) and isinstance(value, (int, float)):
-        try:
-            if math.isfinite(result := float(value)):
-                return result
-        except OverflowError:
-            pass
-    raise InvalidRequest(f"{name} must be a finite number")
+    try:
+        return trees.number(value, name)
+    except ValueError as error:
+        raise InvalidRequest(str(error)) from None
 
 
 def make_base(payload: dict) -> dict:
@@ -337,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {"error": "not found"})
         self.reply(200, {
             "status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION,
-            "experiment": light_correction.EXPERIMENT_VERSION,
+            "experiment": sun_correction.EXPERIMENT_VERSION,
         })
 
     def do_POST(self) -> None:

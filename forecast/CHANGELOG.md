@@ -5,6 +5,22 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v5 - 2026-10-07
+
+Model 2026-09-24T08:40:43Z · Server v4.15.0
+
+- Replaces light-v4, whose heating model, fitted on six October mornings, lost to the base model at 1-2 h and 5-6 h
+- `sun_correction.py`: per horizon a gradient-boosting model (absolute loss) of the base forecast's miss by day; inputs the temperature swing within each window (sun on the shield, reported since the shield went up), the sun's position at issue and target, the last 1 and 3 h change, the base model's change and its misses verified now; night stays the base
+- Fitted once a day by `POST /light-correction` on every day from `FORECAST_HISTORY_SINCE` (17 September 2026), so also on the two weeks before the VEML7700; illuminance not an input (helped some days, hurt others with a week of light)
+- Band: base band moved with the median, widened to 80 % by out-of-fold misses (four folds by local day); held 82-85 %
+- Issued also from a window without light (light-v4 needed the VEML7700)
+- The east facade by its measured normal, 71.8° (sun in front of it from -18.2° to 161.8°), so spring and summer morning sun counts too
+- Walked forward on the balcony, fitted at local midnight on the days before, temperature 1/2/3/4/5/6 h ahead:
+    - 24 September to 7 October 2026: 0.69/0.96/1.16/1.35/1.49/1.55 °C (shown 0.80/1.17/1.42/1.55/1.60/1.68, base 0.86/1.33/1.70/1.89/1.92/1.89)
+    - 30 September to 7 October: 0.63/0.98/1.27/1.51/1.64/1.74 °C (shown 0.69/1.08/1.43/1.67/1.75/1.86, light-v4 0.80/1.21/1.52/1.72/1.92/2.01, base 0.73/1.18/1.55/1.76/1.83/1.89)
+- Overcast mornings stay its weak spot: before sunrise it expects the sun most mornings had; 3 to 7 October (fog, low cloud) 4 to 6 h ahead it was level with base: 1.62/1.72/1.86 °C (base 1.60/1.72/1.83, light-v4 1.60/1.78/1.94, shown 1.68/1.79/1.96)
+- Tried and dropped: illuminance, pressure tendency, night cooling and the night's humidity rise, yesterday's sun, one model for all horizons, recency weighting (each moved errors between days); quantile models for the band (held 59-77 %)
+
 ## Light experiment light-v4 - 2026-10-06
 
 Model 2026-09-24T08:40:43Z · Server v4.14.0

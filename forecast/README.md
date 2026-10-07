@@ -44,14 +44,14 @@ Temperature, humidity and pressure 1 to 6 hours ahead, and the chance of rain wi
 
 ### Light experiment
 
-`shield.py` models the radiation shield's heating, `light_gain.py` measures the sky, `light_correction.py` issues the experiment; `POST /light-correction` builds the day's light profile, `POST /light-forecast` issues it. Scored beside the shown forecast, never shown as the forecast ([`docs/scoring.md`](../docs/scoring.md#light-experiment)).
+`sun_correction.py` learns the base model's misses on the balcony by day and issues the experiment, `trees.py` carries the fitted models as plain numbers; `POST /light-correction` fits it once a day, `POST /light-forecast` issues it. Scored beside the shown forecast, never shown as the forecast ([`docs/scoring.md`](../docs/scoring.md#light-experiment)).
 
-- The balcony reads the air plus the shield's heating: per 10 minutes the heating grows by a rate for the sun's azimuth (10° bins, 90-160°) for every 1000 lx above 500 lx, and sheds 16.9 % of itself (time constant 54 min); a window without light only cools
-- Only October mornings were seen: spring and summer sun rising north of 90° heats nothing in the model yet
-- Rates fitted offline against the air at ČHMÚ Plzeň-Mikulka (mornings before 10 h also Plzeň-Slovany, meteocentrum.cz), 30 September to 6 October 2026; at inference only the station's own light and the sun's position
-- The base model runs on the readings with the heating taken out (humidity at the same dew point); the heating is then carried to each horizon, the sky held at its gain now and added to the band
-- Sky gain: smoothed lux over the brightest of the 14 days before at the same sun elevation, morning and afternoon apart (0-1); 0.5 in the dark or without light
-- A reading counts for a past moment only once it had arrived (`received_at`), so a buffered upload cannot shape the profile
+- Per horizon a gradient-boosting model of the base forecast's miss with an absolute loss (the median miss, as the page scores the mean absolute miss)
+- Sun on the shield from the temperature swing within each 10-minute window (`temperature_max - temperature_min`, smoothed over 30 min, peak of the hour, slow mean); reported since the shield went up, so every day from `since` on teaches, also those before the VEML7700
+- Also the sun's position at issue and at the target (on the east facade or not), the change of the last 1 and 3 h, the base model's own change and its misses verified now (1 h ahead and the same horizon)
+- Night stays the base forecast: sun lower than 3° below the horizon at issue and at the target
+- Band: the base band moved with the median, widened to hold 4 readings in 5 by misses of models that did not see that day (four folds by local day)
+- Illuminance is accepted but not an input: with a week of light it helped some days and hurt others; a window without light is forecast too
 
 ### Service
 
@@ -165,7 +165,7 @@ POST /forecast
 - `correction`: version of the correction logic (`CORRECTION_VERSION` in `correction.py`, raised with every change, logged in the changelog)
 - `base`: forecast before the correction, for the two corrected variables; pressure is not corrected, so its forecast is the one above
 - `base.rain_probability`: the classifier's value before `nest_rain()` capped the first hour; a capped run shows as `data->0->'base'->>'rain_probability'` above `data->0->>'rain_probability'`
-- `GET /health` answers `{"status": "ok", "model": ..., "correction": 3, "experiment": "light-v4"}`
+- `GET /health` answers `{"status": "ok", "model": ..., "correction": 3, "experiment": "light-v5"}`
 
 ```
 POST /base
@@ -186,33 +186,41 @@ Base forecast for every reading from `since` on, for forecasts stored before the
 
 ```
 POST /light-correction
-{"longitude": 13.40,
+{"longitude": 13.40, "since": 1789596000,
  "readings": [{"timestamp": 1790000000, "temperature": 9.7, "humidity": 76.0, "pressure": 976.6,
+               "temperature_min": 9.62, "temperature_max": 9.81,
                "illuminance": 1830.5, "received_at": 1790000031}, ...]}
 ```
 
-- Readings as for `/correction` plus `illuminance` (lx, null without) and `received_at` (when the server stored it; default `timestamp`)
+- Readings as for `/correction` plus `temperature_min` and `temperature_max` (°C within the window, null without); `illuminance` and `received_at`, which Laravel sends too, are ignored
+- `since` optional: only forecasts issued from then on teach it (Laravel sends `FORECAST_HISTORY_SINCE`)
 
 ```
-{"model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v4",
- "profile": {"day": "2026-10-06", "envelope": [null, ..., 2245.1, ...]}}
+{"model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v5",
+ "fit": {"day": "2026-10-07",
+         "horizons": [{"hours": 1, "baseline": 0.31, "widen": 0.42,
+                       "trees": [[[6, 0.83, 0, 1, 2], [0.12], [-0.05]], ...]}, ...]}}
 ```
 
-- `profile`: the newest reading's local day; `envelope` the brightest smoothed lux per whole degree of sun elevation, morning 0-90 then afternoon 91-181
+- `day`: the newest reading's local day
+- One entry per horizon with 300 verified daytime rows; fewer or none while the history is short
+- `trees`: the fitted model as plain numbers, per tree its nodes; a split `[input, threshold, missing values go left (0/1), left, right]` (inputs in `sun_correction.INPUTS` order, threshold null for +inf), a leaf `[value]`; the miss is `baseline` plus one leaf per tree
+- About 200 KB; Laravel caches it per sensor, local day and `since`, and fits it on readings through the newest of the window it issues from
 
 ```
 POST /light-forecast
 {"longitude": 13.40, "experiment": {...}, "readings": [...]}
 ```
 
-- `experiment`: the `/light-correction` answer as received; another model or version, or a profile for another local day than the newest reading's, gets 409
+- `experiment`: the `/light-correction` answer as received; another model or version, or a fit for another local day than the newest reading's, gets 409; a malformed tree 422
+- Readings as for `/light-correction`; 54 h suffice, as for `/forecast`
 
 ```
-{"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v4",
+{"issued_at": 1790000000, "model": "2026-09-24T08:40:43.136429+00:00", "version": "light-v5",
  "horizons": [{"hours": 1, "temperature": {"low": 12.4, "mid": 13.6, "high": 15.1}}, ...]}
 ```
 
-- Every horizon; without light the base forecast
+- One horizon per fitted horizon; at night the base band
 - `php artisan forecast:backfill-light <Y-m-d>` replays both calls for forecasts stored without the version `/health` reports (`experiment`), each from the readings the server held at the time; an older version is replaced where the current one is issued, a forecast it cannot issue keeps the older one
 
 ## Deploying

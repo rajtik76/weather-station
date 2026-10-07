@@ -16,7 +16,7 @@ FROM python:3.14-slim-trixie AS run
 WORKDIR /app
 
 COPY --from=venv /app/.venv ./.venv
-COPY features.py forecast.py correction.py shield.py light_gain.py light_correction.py serve.py ./
+COPY features.py forecast.py correction.py sun.py trees.py sun_correction.py serve.py ./
 
 # OpenMP start-up per model call outweighs predicting a few rows: 375 ms -> 62 ms for 60 models.
 ENV PATH="/app/.venv/bin:$PATH" \
