@@ -34,12 +34,14 @@ function lightShown(int $issuedAt): array
     return ['issued_at' => $issuedAt, 'model' => '2026-09-24', 'corrected' => true, 'correction' => 3, 'horizons' => [$horizon]];
 }
 
-/** @return array{model: string, version: string, profile: array{day: string, envelope: list<?float>}} */
+/** @return array{model: string, version: string, fit: array{day: string, horizons: list<array{hours: int, baseline: float, trees: list<list<list<int|float|null>>>, widen: float}>}} */
 function lightFitted(): array
 {
     return [
         'model' => '2026-09-24', 'version' => 'light-v2',
-        'profile' => ['day' => '2026-10-03', 'envelope' => array_fill(0, 182, 2000.5)],
+        'fit' => ['day' => '2026-10-03', 'horizons' => [
+            ['hours' => 1, 'baseline' => 0.25, 'trees' => [[[6, null, 0, 1, 2], [0.5], [1.5]]], 'widen' => 0.1],
+        ]],
     ];
 }
 
@@ -85,9 +87,30 @@ it('stores the sensor experiment beside unchanged shown and base bands', functio
     $request = Http::recorded(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast')->sole()[0];
     expect($request['readings'])->toEqual([[
         'timestamp' => $issued, 'temperature' => 12.0, 'humidity' => 60.0, 'pressure' => 970.0,
-        'illuminance' => 123.45, 'received_at' => $issued,
+        'illuminance' => 123.45, 'received_at' => $issued, 'temperature_min' => 11.5, 'temperature_max' => 12.5,
     ]]);
     Http::assertSentCount(4);
+});
+
+it('fits the experiment from the local midnight of FORECAST_HISTORY_SINCE and sends the fit back unchanged', function (): void {
+    config()->set('forecast.history_since', '2026-09-17');
+    $sensor = Sensor::factory()->create();
+    $issued = now()->getTimestamp();
+    lightReading($sensor, $issued);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(['targets' => []]),
+        'http://forecast.test/forecast' => Http::response(lightShown($issued)),
+        'http://forecast.test/light-correction' => Http::response(lightFitted()),
+        'http://forecast.test/light-forecast' => Http::response(lightIssued($issued)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-correction'
+        && $request['since'] === Date::parse('2026-09-16 22:00:00', 'UTC')->getTimestamp()
+        && $request['readings'][0]['temperature_min'] === 11.5);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast'
+        && $request['experiment'] === lightFitted());
 });
 
 it('preserves the main forecast when an experimental request fails', function (string $endpoint): void {
@@ -180,14 +203,10 @@ it('rejects an experiment from a different issue or model', function (array $dif
     Exceptions::assertReported(UnexpectedValueException::class);
 })->with(['another issue' => [['issued_at' => 1]], 'another model' => [['model' => 'old']]]);
 
-it('skips experimental requests without light or for an old upload', function (string $condition): void {
+it('skips experimental requests for an old upload', function (): void {
     $sensor = Sensor::factory()->create();
-    $issued = now()->getTimestamp() - ($condition === 'old' ? 1800 : 0);
-    $data = litWindow(12345, 12000, 13000)->jsonSerialize();
-    if ($condition === 'missing') {
-        unset($data['illuminance'], $data['illuminance_min'], $data['illuminance_max']);
-    }
-    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $issued, 'data' => json_encode($data, JSON_THROW_ON_ERROR)]);
+    $issued = now()->getTimestamp() - 1800;
+    lightReading($sensor, $issued);
     Http::fake([
         'http://forecast.test/correction' => Http::response(['targets' => []]),
         'http://forecast.test/forecast' => Http::response(lightShown($issued)),
@@ -197,9 +216,29 @@ it('skips experimental requests without light or for an old upload', function (s
 
     expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
     Http::assertSentCount(2);
-})->with(['missing', 'old']);
+});
 
-it('caches the calibration per sensor and local day of the newest reading', function (): void {
+it('issues the experiment from a window without light', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = now()->getTimestamp();
+    $data = litWindow(12345, 12000, 13000)->jsonSerialize();
+    unset($data['illuminance'], $data['illuminance_min'], $data['illuminance_max']);
+    Measurement::factory()->for($sensor)->v4()->create(['timestamp' => $issued, 'data' => json_encode($data, JSON_THROW_ON_ERROR), 'created_at' => now()]);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(['targets' => []]),
+        'http://forecast.test/forecast' => Http::response(lightShown($issued)),
+        'http://forecast.test/light-correction' => Http::response(lightFitted()),
+        'http://forecast.test/light-forecast' => Http::response(lightIssued($issued)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast'
+        && $request['readings'][0]['illuminance'] === null);
+});
+
+it('caches the calibration per sensor, local day of the newest reading and history start', function (): void {
     $sensor = Sensor::factory()->create();
     $other = Sensor::factory()->create();
     $calls = 0;
@@ -208,15 +247,18 @@ it('caches the calibration per sensor and local day of the newest reading', func
 
         return lightFitted();
     };
-    CachedFit::lightCorrection($sensor->id, '2026-10-03', $fit)->current();
-    CachedFit::lightCorrection($sensor->id, '2026-10-03', $fit)->current();
+    CachedFit::lightCorrection($sensor->id, '2026-10-03', null, $fit)->current();
+    CachedFit::lightCorrection($sensor->id, '2026-10-03', null, $fit)->current();
     expect($calls)->toBe(1);
-    CachedFit::lightCorrection($other->id, '2026-10-03', $fit)->current();
+    CachedFit::lightCorrection($other->id, '2026-10-03', null, $fit)->current();
     expect($calls)->toBe(2);
 
-    CachedFit::lightCorrection($sensor->id, '2026-10-04', $fit)->current();
-
+    CachedFit::lightCorrection($sensor->id, '2026-10-04', null, $fit)->current();
     expect($calls)->toBe(3);
+
+    CachedFit::lightCorrection($sensor->id, '2026-10-04', 1789596000, $fit)->current();
+
+    expect($calls)->toBe(4);
 });
 
 it('refits when the newest reading reaches a new local day, not when the clock does', function (): void {
@@ -240,6 +282,27 @@ it('refits when the newest reading reaches a new local day, not when the clock d
         ->values()
         ->all();
     expect($fits)->toBe([$slots[0] + 570, $slots[2] + 570]);
+});
+
+it('fits through the newest reading of the window it issues from, not one that arrived since', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = now()->getTimestamp();
+    lightReading($sensor, $issued);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(['targets' => []]),
+        'http://forecast.test/forecast' => function () use ($sensor, $issued): PromiseInterface {
+            lightReading($sensor, $issued + 600);
+
+            return Http::response(lightShown($issued));
+        },
+        'http://forecast.test/light-correction' => Http::response(lightFitted()),
+        'http://forecast.test/light-forecast' => Http::response(lightIssued($issued)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    $fit = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/light-correction'))->sole()[0];
+    expect(array_column($fit['readings'], 'timestamp'))->toBe([$issued]);
 });
 
 it('stores the main forecast before the experiment is fitted', function (): void {

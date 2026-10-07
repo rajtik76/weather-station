@@ -42,15 +42,15 @@ final readonly class CachedFit
     }
 
     /**
-     * Per local day of the newest reading: the light profile belongs to that day.
+     * Per local day of the newest reading and history start: the service refuses a fit made for another day.
      *
      * @param  string  $day  Y-m-d
      * @param  Closure(): LightFitted  $fit
      * @return self<LightFitted>
      */
-    public static function lightCorrection(int $sensorId, string $day, Closure $fit): self
+    public static function lightCorrection(int $sensorId, string $day, ?int $since, Closure $fit): self
     {
-        return new self("light-correction:{$sensorId}", ['day' => $day], now()->addDays(self::LIGHT_KEPT_DAYS), $fit);
+        return new self("light-correction:{$sensorId}", ['day' => $day, 'since' => $since], now()->addDays(self::LIGHT_KEPT_DAYS), $fit);
     }
 
     /**

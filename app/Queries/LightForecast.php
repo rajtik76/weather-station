@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\HistorySince;
 use App\ValueObject\LocalTime;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -35,30 +36,38 @@ final readonly class LightForecast
      */
     public function beside(array $shown, array $readings): ?array
     {
-        if (abs(now()->getTimestamp() - $shown['issued_at']) > self::MAX_LAG_SECONDS || ! self::isLit($readings)) {
+        if ($readings === [] || abs(now()->getTimestamp() - $shown['issued_at']) > self::MAX_LAG_SECONDS) {
             return null;
         }
 
+        $newest = $readings[array_key_last($readings)]['timestamp'];
+        $since = HistorySince::fromConfig();
+
         return CachedFit::lightCorrection(
             $this->sensorId,
-            LocalTime::of($readings[array_key_last($readings)]['timestamp'])->isoDate(),
-            fn (): array => $this->fit(new ServiceReadings($this->sensorId)->recent((int) config('forecast.history_days') * 86400, withLight: true)),
+            LocalTime::of($newest)->isoDate(),
+            $since,
+            fn (): array => $this->fit(
+                new ServiceReadings($this->sensorId)->between($newest - (int) config('forecast.history_days') * 86400, $newest, withLight: true),
+                $since,
+            ),
         )->issue(fn (array $fitted): array => $this->issue($shown, $readings, $fitted));
     }
 
     /**
-     * @param  list<LitReading>  $history
+     * @param  list<LitReading>  $history  through the newest reading of the window it will issue from
      * @return LightFitted
      *
      * @throws ConnectionException
      * @throws RequestException
      */
-    public function fit(array $history): array
+    public function fit(array $history, ?int $since): array
     {
-        return $this->service->lightCorrection([
+        return $this->service->lightCorrection(array_filter([
             'longitude' => config('forecast.longitude'),
             'readings' => $history,
-        ]);
+            'since' => $since,
+        ], fn (mixed $value): bool => $value !== null));
     }
 
     /**
@@ -109,15 +118,5 @@ final readonly class LightForecast
             },
             $horizons,
         );
-    }
-
-    /**
-     * @param  list<LitReading>  $readings
-     *
-     * @phpstan-assert-if-true non-empty-list<LitReading> $readings
-     */
-    public static function isLit(array $readings): bool
-    {
-        return array_filter($readings, fn (array $reading): bool => $reading['illuminance'] !== null) !== [];
     }
 }

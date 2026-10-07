@@ -11,9 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Readings in the forecast service's units (°C, %, hPa, lx); reads protocol keys directly, so a renamed field must change this too.
+ * Lit readings add the in-window temperature extremes (null when not reported).
  *
  * @phpstan-type Reading array{timestamp: int, temperature: float, humidity: float, pressure: float}
- * @phpstan-type LitReading array{timestamp: int, temperature: float, humidity: float, pressure: float, illuminance: ?float, received_at: int}
+ * @phpstan-type LitReading array{timestamp: int, temperature: float, humidity: float, pressure: float, illuminance: ?float, received_at: int, temperature_min: ?float, temperature_max: ?float}
  */
 final readonly class ServiceReadings
 {
@@ -63,7 +64,7 @@ final readonly class ServiceReadings
      */
     public function between(int $from, ?int $until = null, bool $withLight = false): array
     {
-        /** @var list<object{timestamp: int, temperature: int, humidity: int, pressure: int, illuminance: ?int, received_at: int}> $rows */
+        /** @var list<object{timestamp: int, temperature: int, humidity: int, pressure: int, illuminance: ?int, received_at: int, temperature_min: ?int, temperature_max: ?int}> $rows */
         $rows = DB::table('measurements')
             ->where('sensor_id', $this->sensorId)
             ->where('timestamp', '>=', $from)
@@ -75,7 +76,9 @@ final readonly class ServiceReadings
             ->selectRaw("(data->>'pressure')::int AS pressure")
             ->when($withLight, fn (Builder $query): Builder => $query
                 ->selectRaw("(data->>'illuminance')::bigint AS illuminance")
-                ->selectRaw("FLOOR(EXTRACT(EPOCH FROM created_at AT TIME ZONE 'UTC'))::bigint AS received_at"))
+                ->selectRaw("FLOOR(EXTRACT(EPOCH FROM created_at AT TIME ZONE 'UTC'))::bigint AS received_at")
+                ->selectRaw("(data->>'temperature_min')::int AS temperature_min")
+                ->selectRaw("(data->>'temperature_max')::int AS temperature_max"))
             ->get()
             ->all();
 
@@ -87,6 +90,8 @@ final readonly class ServiceReadings
             ...($withLight ? [
                 'illuminance' => $row->illuminance === null ? null : $row->illuminance / 100,
                 'received_at' => (int) $row->received_at,
+                'temperature_min' => $row->temperature_min === null ? null : $row->temperature_min / 100,
+                'temperature_max' => $row->temperature_max === null ? null : $row->temperature_max / 100,
             ] : []),
         ], $rows);
     }

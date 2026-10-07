@@ -11,6 +11,7 @@ use App\Queries\ForecastService;
 use App\Queries\LightForecast;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\HistorySince;
 use App\ValueObject\LocalTime;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
@@ -41,6 +42,7 @@ class BackfillLightExperiment
         $experiment = new LightForecast($service, $this->sensor->id);
         $readings = new ServiceReadings($this->sensor->id);
         $lookback = (int) config('forecast.lookback_hours') * 3600;
+        $historySince = HistorySince::fromConfig();
 
         $health = $service->health();
         $version = $health['experiment'] ?? throw new UnexpectedValueException('The forecast service does not report its experiment version');
@@ -67,15 +69,10 @@ class BackfillLightExperiment
             }
 
             $window = $readings->arrivedBy($issuedAt - $lookback, $issuedAt);
-
-            if (! LightForecast::isLit($window)) {
-                continue;
-            }
-
             $day = LocalTime::of($forecast->issued_at)->midnight()->timestamp;
 
             if (! array_key_exists($day, $fits)) {
-                $fits[$day] = $this->fitOn($experiment, $readings, $day, $windowEnd);
+                $fits[$day] = $this->fitOn($experiment, $readings, $day, $windowEnd, $historySince);
             }
 
             $fitted = $fits[$day];
@@ -112,7 +109,7 @@ class BackfillLightExperiment
      *
      * @return LightFitted|null
      */
-    private function fitOn(LightForecast $experiment, ServiceReadings $readings, int $midnight, int $windowEnd): ?array
+    private function fitOn(LightForecast $experiment, ServiceReadings $readings, int $midnight, int $windowEnd, ?int $historySince): ?array
     {
         $firstUpload = $readings->firstArrival($midnight, $windowEnd);
 
@@ -121,7 +118,7 @@ class BackfillLightExperiment
         }
 
         try {
-            return $experiment->fit($readings->arrivedBy($firstUpload - (int) config('forecast.history_days') * 86400, $firstUpload));
+            return $experiment->fit($readings->arrivedBy($firstUpload - (int) config('forecast.history_days') * 86400, $firstUpload), $historySince);
         } catch (ConnectionException|RequestException $exception) {
             report($exception);
 

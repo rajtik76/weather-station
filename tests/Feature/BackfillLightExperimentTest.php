@@ -30,7 +30,7 @@ function fakeReplayService(array $overrides = []): void
         'http://forecast.test/health' => Http::response(['status' => 'ok', 'model' => REPLAY_MODEL, 'correction' => 3, 'experiment' => 'light-v2']),
         'http://forecast.test/light-correction' => Http::response([
             'model' => REPLAY_MODEL, 'version' => 'light-v2',
-            'profile' => ['day' => '2026-10-02', 'envelope' => array_fill(0, 182, 2000.5)],
+            'fit' => ['day' => '2026-10-02', 'horizons' => [['hours' => 1, 'baseline' => 0.2, 'trees' => [[[0.5]]], 'widen' => 0.1]]],
         ]),
         'http://forecast.test/light-forecast' => fn (Request $request): PromiseInterface => Http::response([
             'issued_at' => intdiv(max([0, ...array_column($request['readings'], 'timestamp')]), 600) * 600,
@@ -115,6 +115,36 @@ it('skips a forecast whose upload came too late for the experiment', function ()
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/light-'));
 });
 
+it('replays a forecast whose readings carry no light', function (): void {
+    fakeReplayService();
+    $sensor = Sensor::factory()->create();
+    $data = litWindow(12345, 12000, 13000)->jsonSerialize();
+    unset($data['illuminance'], $data['illuminance_min'], $data['illuminance_max']);
+    Measurement::factory()->for($sensor)->v4()->create([
+        'timestamp' => Date::parse('2026-10-02 08:01:00', 'UTC')->getTimestamp(),
+        'data' => json_encode($data, JSON_THROW_ON_ERROR),
+        'created_at' => Date::parse('2026-10-02 08:02:00', 'UTC'),
+    ]);
+    $dark = replayedForecast($sensor, '2026-10-02 08:00:00');
+
+    expect(Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']))->toBe(0);
+
+    expect($dark->refresh()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+});
+
+it('fits each day from the local midnight of FORECAST_HISTORY_SINCE', function (): void {
+    config()->set('forecast.history_since', '2026-09-17');
+    fakeReplayService();
+    $sensor = Sensor::factory()->create();
+    arrivedReading($sensor, '2026-10-02 08:01:00', '2026-10-02 08:02:00');
+    replayedForecast($sensor, '2026-10-02 08:00:00');
+
+    Artisan::call('forecast:backfill-light', ['from' => '2026-10-02']);
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/light-correction')
+        && $request['since'] === Date::parse('2026-09-16 22:00:00', 'UTC')->getTimestamp());
+});
+
 it('refuses a date that is not Y-m-d', function (): void {
     expect(Artisan::call('forecast:backfill-light', ['from' => '2026-17-09']))->toBe(1);
 
@@ -193,7 +223,7 @@ it('reports a day whose fit failed and goes on with the next', function (): void
             ->pushStatus(500)
             ->push([
                 'model' => REPLAY_MODEL, 'version' => 'light-v2',
-                'profile' => ['day' => '2026-10-03', 'envelope' => array_fill(0, 182, 2000.5)],
+                'fit' => ['day' => '2026-10-03', 'horizons' => [['hours' => 1, 'baseline' => 0.2, 'trees' => [[[0.5]]], 'widen' => 0.1]]],
             ]),
     ]);
     $sensor = Sensor::factory()->create();
