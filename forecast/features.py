@@ -7,6 +7,8 @@ Gaps stay NaN. Pressure enters only as changes: its level is station-specific.
 import numpy as np
 import pandas as pd
 
+from sun import solar_hour
+
 STEPS_PER_HOUR = 6
 HORIZONS = range(1, 7)
 RAIN_THRESHOLD_MM = 0.1
@@ -74,9 +76,9 @@ def build_features(frame: pd.DataFrame, longitude: float) -> pd.DataFrame:
 
     # Solar time, not UTC: stations span six degrees of longitude.
     index = frame.index
-    solar_hour = (index.hour + index.minute / 60 + longitude / 15) % 24
-    features["hour_sin"] = np.sin(2 * np.pi * solar_hour / 24)
-    features["hour_cos"] = np.cos(2 * np.pi * solar_hour / 24)
+    solar = solar_hour(index, longitude)
+    features["hour_sin"] = np.sin(2 * np.pi * solar / 24)
+    features["hour_cos"] = np.cos(2 * np.pi * solar / 24)
     features["doy_sin"] = np.sin(2 * np.pi * index.dayofyear / 365.25)
     features["doy_cos"] = np.cos(2 * np.pi * index.dayofyear / 365.25)
 

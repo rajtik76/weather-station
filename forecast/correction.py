@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from features import STEPS_PER_HOUR
+from sun import solar_hour
 
 MIN_HISTORY_ROWS = 3 * 24 * STEPS_PER_HOUR
 RIDGE_ALPHA = 10.0
@@ -51,8 +52,7 @@ def errors(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int)
 
 def inputs(forecast: pd.DataFrame, current: pd.DataFrame, variable: str, n: int, longitude: float) -> pd.DataFrame:
     target_time = forecast.index + pd.Timedelta(hours=n)
-    solar = (target_time.hour + target_time.minute / 60 + longitude / 15) % 24
-    bins = np.digitize(solar, SOLAR_BIN_EDGES)
+    bins = np.digitize(solar_hour(target_time, longitude), SOLAR_BIN_EDGES)
     frame = pd.DataFrame(
         {
             **{name: (bins == b).astype(float) for b, name in enumerate(SOLAR_INPUTS)},
