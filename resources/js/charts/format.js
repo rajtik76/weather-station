@@ -14,6 +14,27 @@ export function formatNumber(value, decimals) {
     return numberFormats.get(decimals).format(value);
 }
 
+const MINUS = "\u2212";
+
+/** As Figure::signed(): the sign follows the value, not its rounding, and zero takes a plus. */
+export function formatSigned(value, decimals) {
+    const sign = value < 0 ? MINUS : "+";
+
+    return `${sign}${formatNumber(Math.abs(value), decimals)}`;
+}
+
+/** As Figure::format(): the true minus. */
+export function formatWithMinus(value, decimals) {
+    return `${value < 0 ? MINUS : ""}${formatNumber(Math.abs(value), decimals)}`;
+}
+
+/** As Figure::range(): a hyphen would read as a minus beside a negative end. */
+export function formatRange(low, high, decimals) {
+    const separator = low < 0 || high < 0 ? " to " : "-";
+
+    return `${formatWithMinus(low, decimals)}${separator}${formatWithMinus(high, decimals)}`;
+}
+
 export function formatValue(value, channel) {
     return value === null ? "n/a" : `${formatNumber(value, channel.decimals)} ${channel.unit}`;
 }

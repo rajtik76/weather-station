@@ -2,7 +2,7 @@ import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
-import { formatNumber } from "./charts/format";
+import { dayTooltipHtml, hourTooltipHtml, slotTooltipHtml } from "./charts/accuracy-tooltip";
 import {
     DEFAULT_PERIOD,
     hasValues,
@@ -27,8 +27,6 @@ const SKILL_FLOOR = -100;
 
 /** Hour row: `count`, `inRange`, `error`, `worst`, `bias` in °C (null with none scored), `base` and `experiment` the same for those or null. */
 
-const celsius = { format: (value) => formatNumber(value, 1) };
-
 const tick = new Intl.NumberFormat("cs-CZ", {
     maximumFractionDigits: 1,
     signDisplay: "exceptZero",
@@ -46,134 +44,6 @@ function palette() {
 }
 
 const pad = (hour) => String(hour).padStart(2, "0");
-
-const forecastHours = (count) => (count === 1 ? "1 forecast hour" : `${count} forecast hours`);
-
-function versus(skill) {
-    if (skill === null) {
-        return "no guess to beat";
-    }
-
-    return skill === 0
-        ? "as good as the guess"
-        : `${Math.abs(skill)} % ${skill > 0 ? "better" : "worse"}`;
-}
-
-/** Short lines, one fact each: a phone is 320 px wide. */
-function dayTooltipHtml(row, version) {
-    const { shown, base, experiment } = row;
-    const tookOver =
-        (row.modelTookOver === null ? "" : `<br>model trained ${row.modelTookOver} took over`) +
-        (row.correctionTookOver === null
-            ? ""
-            : `<br>correction ${row.correctionTookOver} took over`);
-
-    if (shown === null) {
-        return `${row.date}<br>no forecast scored${tookOver}`;
-    }
-
-    const lines = [row.date, `<strong>with correction ${versus(shown.skill)}</strong>`];
-
-    if (base !== null) {
-        lines.push(`base model ${versus(base.skill)}`);
-    }
-
-    // Skill and miss need a naive guess.
-    if (shown.error !== null) {
-        const baseError =
-            base !== null && base.error !== null ? `, base ${celsius.format(base.error)}` : "";
-        lines.push(
-            `off by ${celsius.format(shown.error)}${baseError}, guess ${celsius.format(shown.naive)} °C`,
-        );
-    }
-
-    lines.push(`${shown.inRange} % in range${base !== null ? `, base ${base.inRange} %` : ""}`);
-    lines.push(
-        `${celsius.format(shown.width)}${base !== null ? `, base ${celsius.format(base.width)}` : ""} °C wide`,
-    );
-    lines.push(forecastHours(shown.count));
-
-    if (experiment !== null) {
-        lines.push(`${version} ${versus(experiment.skill)}`);
-        lines.push(
-            `${version} off by ${experiment.error === null ? "n/a" : celsius.format(experiment.error)} °C`,
-        );
-        lines.push(`${experiment.inRange} % in range, ${celsius.format(experiment.width)} °C wide`);
-        lines.push(`${version}: ${forecastHours(experiment.count)}`);
-    }
-
-    return lines.join("<br>") + tookOver;
-}
-
-function hourTooltipHtml(hour, row, version) {
-    const span = `${pad(hour)}:00-${pad((hour + 1) % 24)}:00`;
-
-    if (row.inRange === null) {
-        return `${span}<br>no forecast scored`;
-    }
-
-    // Judged as printed: 0.04 would read "0,0 °C warmer".
-    const side =
-        Math.round(row.bias * 10) === 0
-            ? "as forecast on average"
-            : `${celsius.format(Math.abs(row.bias))} °C ${row.bias > 0 ? "warmer" : "colder"} on average`;
-
-    return (
-        `${span}<br><strong>${side}</strong>` +
-        `<br>off by ${celsius.format(row.error)} °C on average` +
-        `<br>off by ${celsius.format(row.worst)} °C at most` +
-        `<br>${row.inRange} % in range<br>${forecastHours(row.count)}` +
-        baseHourHtml(row.base) +
-        experimentHourHtml(row.experiment, version)
-    );
-}
-
-function baseHourHtml(base) {
-    if (base === null || base.count === 0) {
-        return "";
-    }
-
-    return `<br>base: bias ${signedDegrees(base.bias)}, off by ${celsius.format(base.error)} °C on average`;
-}
-
-function slotTooltipHtml(slot, version) {
-    const degrees = (value) => (value === null ? "n/a" : `${celsius.format(value)} °C`);
-    const lines = [slot.clock, `<strong>measured ${degrees(slot.measured)}</strong>`];
-
-    if (slot.shown === null) {
-        lines.push("no forecast for this slot");
-    } else {
-        lines.push(
-            `shown ${degrees(slot.shown.mid)}, range ${celsius.format(slot.shown.low)}-${celsius.format(slot.shown.high)} °C`,
-        );
-    }
-
-    if (slot.base !== null) {
-        lines.push(`base ${degrees(slot.base)}`);
-    }
-
-    if (slot.experiment !== null) {
-        lines.push(`${version} ${degrees(slot.experiment)}`);
-    }
-
-    return lines.join("<br>");
-}
-
-function experimentHourHtml(experiment, version) {
-    if (experiment === null) {
-        return "";
-    }
-
-    if (experiment.count === 0) {
-        return `<br><strong>${version}</strong>: no forecast scored`;
-    }
-
-    return (
-        `<br><strong>${version}</strong>: bias ${signedDegrees(experiment.bias)}` +
-        `<br>off by ${celsius.format(experiment.error)} °C on average` +
-        `<br>${experiment.inRange} % in range<br>${version}: ${forecastHours(experiment.count)}`
-    );
-}
 
 const TOOLTIP_GAP = 12;
 const SCREEN_EDGE = 8;
@@ -228,7 +98,7 @@ function tooltip(colours, canvas, formatter) {
         borderColor: colours.border,
         extraCssText:
             "backdrop-filter: blur(12px); border-radius: 12px; box-shadow: 0 8px 24px rgb(15 28 46 / 0.14);",
-        textStyle: { color: colours.text, fontFamily: CHART_FONT, fontSize: 11 },
+        textStyle: { color: colours.text, fontFamily: CHART_FONT, fontSize: 12 },
         formatter: ([point]) => formatter(point.dataIndex),
     };
 }
@@ -289,7 +159,9 @@ function daysOption(rows, canvas, version) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index], version)),
+        tooltip: tooltip(colours, canvas, (index) =>
+            dayTooltipHtml(rows[index], version, colours, "skill"),
+        ),
         series: [
             {
                 name: "base",
@@ -409,7 +281,9 @@ function todayOption(slots, canvas, version) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => slotTooltipHtml(slots[index], version)),
+        tooltip: tooltip(colours, canvas, (index) =>
+            slotTooltipHtml(slots[index], version, colours),
+        ),
         series: [
             { ...band, name: "shown range low", data: series.shownLow },
             {
@@ -467,7 +341,9 @@ function biasOption(rows, canvas, version) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => hourTooltipHtml(index, rows[index], version)),
+        tooltip: tooltip(colours, canvas, (index) =>
+            hourTooltipHtml(index, rows[index], version, colours),
+        ),
         series: [
             {
                 name: "base",
@@ -535,7 +411,9 @@ function widthsOption(rows, canvas, version) {
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
-        tooltip: tooltip(colours, canvas, (index) => dayTooltipHtml(rows[index], version)),
+        tooltip: tooltip(colours, canvas, (index) =>
+            dayTooltipHtml(rows[index], version, colours, "width"),
+        ),
         series: [
             {
                 name: "base",
