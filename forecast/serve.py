@@ -21,17 +21,21 @@ POST /base  {"longitude", "since" (required), "readings"}
 POST /light-correction  {"longitude", "readings" (lit), "since"?}
   -> {"model": trained_at, "version": EXPERIMENT_VERSION,
       "fit": {"day": local Y-m-d of the newest reading,
-              "horizons": [{"hours", "baseline", "trees", "widen"}]}}
-  sun_correction.fit on the readings from "since" on: per horizon a median-loss boosting model of the base
-  forecast's daytime miss, as plain trees (trees.py); a horizon short of history is left out.
+              "horizons": [{"hours", "baseline", "trees", "widen"}],
+              "gate": {"envelope": [lx or null per UTC 10-minute clock slot],
+                       "horizons": [{"hours", "factors": {state: factor}, "widen"}]}}}
+  sky_gate.fit on the readings from "since" on: light-v5's horizons (sun_correction: per horizon a median-loss
+  boosting model of the base forecast's daytime miss, as plain trees, trees.py) and light-v6's factors on them per
+  sky state; a horizon short of history is left out.
 POST /light-forecast  {"longitude", "readings" (lit), "experiment"}
-  -> {"issued_at", "model", "version", "horizons": [{"hours": n, "temperature": band}]}
+  -> {"issued_at", "model", "version": EXPERIMENT_VERSION,
+      "versions": {"light-v5": [{"hours": n, "temperature": band}], "light-v6": [...]}}
   "experiment": a /light-correction answer; another model or version, or a fit for another
-  local day -> 409. The base forecast moved by the fitted miss by day, the base at night.
+  local day -> 409. The base forecast moved by the fitted miss by day (light-v6: times its sky factor), the base at night.
 GET /health -> {"status": "ok", "model", "correction", "experiment": EXPERIMENT_VERSION}
 
-Lit readings add {"temperature_min", "temperature_max": °C within the 10-minute window or null}; other keys
-(Laravel sends "illuminance" and "received_at") are ignored.
+Lit readings add {"temperature_min", "temperature_max": °C within the 10-minute window or null,
+"illuminance": lx or null}; other keys (Laravel sends "received_at") are ignored.
 """
 import json
 import math
@@ -43,6 +47,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
+import sky_gate
 import sun_correction
 import trees
 from correction import CORRECTED_VARIABLES, CORRECTION_VERSION, INPUTS, Correction, apply, fit
@@ -58,7 +63,7 @@ MAX_SPAN_SECONDS = MAX_SPAN_DAYS * 86_400
 MAX_READINGS = MAX_SPAN_DAYS * 24 * 6
 
 FIELDS = {"temperature": "T", "humidity": "H", "pressure": "P"}
-SWING_FIELDS = {"temperature_min": "Tmin", "temperature_max": "Tmax"}
+LIGHT_FIELDS = {"temperature_min": "Tmin", "temperature_max": "Tmax", "illuminance": "L"}
 NAMES = {column: field for field, column in FIELDS.items()}
 
 
@@ -131,7 +136,7 @@ def readings_frame(readings: object, light: bool = False) -> pd.DataFrame:
         row |= {column: number(reading.get(field)) for field, column in FIELDS.items()}
         row["SRA10M"] = number(reading.get("rain"))
         if light:
-            row |= {column: number(reading.get(field)) for field, column in SWING_FIELDS.items()}
+            row |= {column: number(reading.get(field)) for field, column in LIGHT_FIELDS.items()}
         rows.append(row)
     oldest = min(row["time"] for row in rows)
     newest = max(row["time"] for row in rows)
@@ -204,28 +209,62 @@ def make_light_correction(payload: dict) -> dict:
     since = timestamp(payload.get("since"), "since", required=False)
     bundle = model.get()
     forecast = predict(bundle, build_features(current, longitude), current)
-    fitted = sun_correction.fit(forecast, current, bundle["horizons"], longitude, since)
+    fitted, gate = sky_gate.fit(forecast, current, bundle["horizons"], longitude, since)
     return {
         "model": bundle["trained_at"],
-        "version": sun_correction.EXPERIMENT_VERSION,
-        "fit": {"day": sun_correction.local_day(current.index[-1]), "horizons": [asdict(horizon) for horizon in fitted]},
+        "version": sky_gate.EXPERIMENT_VERSION,
+        "fit": {
+            "day": sun_correction.local_day(current.index[-1]),
+            "horizons": [asdict(horizon) for horizon in fitted],
+            "gate": asdict(gate),
+        },
     }
 
 
-def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> list[sun_correction.Horizon]:
+def fitted_light(value: object, bundle: dict, current: pd.DataFrame) -> tuple[list[sun_correction.Horizon], sky_gate.Gate]:
     if not isinstance(value, dict):
         raise InvalidRequest("experiment must be an answer of /light-correction")
-    if value.get("model") != bundle["trained_at"] or value.get("version") != sun_correction.EXPERIMENT_VERSION:
+    if value.get("model") != bundle["trained_at"] or value.get("version") != sky_gate.EXPERIMENT_VERSION:
         raise StaleCorrection("experiment was fitted for another model or experiment version")
     fit = value.get("fit")
-    if not isinstance(fit, dict) or not isinstance(fit.get("horizons"), list):
-        raise InvalidRequest("light fit needs day and horizons")
+    if not isinstance(fit, dict) or not isinstance(fit.get("horizons"), list) or not isinstance(fit.get("gate"), dict):
+        raise InvalidRequest("light fit needs day, horizons and gate")
     fitted = [light_horizon(horizon, bundle["horizons"]) for horizon in fit["horizons"]]
     if len({horizon.hours for horizon in fitted}) != len(fitted):
         raise InvalidRequest("light fit answers a horizon twice")
+    gate = light_gate(fit["gate"], bundle["horizons"])
     if fit.get("day") != sun_correction.local_day(current.index[-1]):
         raise StaleCorrection("light fit was made for another day")
-    return fitted
+    return fitted, gate
+
+
+def light_gate(value: dict, horizons: list[int]) -> sky_gate.Gate:
+    envelope = value.get("envelope")
+    if not isinstance(envelope, list) or len(envelope) != sky_gate.SLOTS:
+        raise InvalidRequest(f"light gate envelope needs {sky_gate.SLOTS} slots")
+    bright = [None if lux is None else finite(lux, "light gate envelope") for lux in envelope]
+    if not isinstance(value.get("horizons"), list):
+        raise InvalidRequest("light gate needs horizons")
+    gated = [gate_horizon(horizon, horizons) for horizon in value["horizons"]]
+    if len({horizon.hours for horizon in gated}) != len(gated):
+        raise InvalidRequest("light gate answers a horizon twice")
+    return sky_gate.Gate(bright, gated)
+
+
+def gate_horizon(value: object, horizons: list[int]) -> sky_gate.GateHorizon:
+    if not isinstance(value, dict) or type(value.get("hours")) is not int or value["hours"] not in horizons:
+        raise InvalidRequest("light gate horizons need hours the model forecasts")
+    factors = value.get("factors")
+    # PHP sends an empty object back as an empty list.
+    if factors == []:
+        factors = {}
+    if not isinstance(factors, dict) or not set(factors) <= set(sky_gate.STATES):
+        raise InvalidRequest("light gate factors need known sky states")
+    return sky_gate.GateHorizon(
+        hours=value["hours"],
+        factors={state: finite(factor, "light gate factor") for state, factor in factors.items()},
+        widen=finite(value.get("widen"), "light gate widen"),
+    )
 
 
 def light_horizon(value: object, horizons: list[int]) -> sun_correction.Horizon:
@@ -248,13 +287,16 @@ def make_light_forecast(payload: dict) -> dict:
     if current[["T", "H", "P"]].iloc[-1].isna().any():
         raise InvalidRequest("the latest reading needs temperature, humidity and pressure")
     bundle = model.get()
-    fitted = fitted_light(payload.get("experiment"), bundle, current)
+    fitted, gate = fitted_light(payload.get("experiment"), bundle, current)
     forecast = predict_latest(bundle, current, longitude, max(bundle["horizons"]) * STEPS_PER_HOUR + 1)
     return {
         "issued_at": int(forecast.index[-1].timestamp()),
         "model": bundle["trained_at"],
-        "version": sun_correction.EXPERIMENT_VERSION,
-        "horizons": sun_correction.bands(fitted, forecast, current, longitude),
+        "version": sky_gate.EXPERIMENT_VERSION,
+        "versions": {
+            sun_correction.EXPERIMENT_VERSION: sun_correction.bands(fitted, forecast, current, longitude),
+            sky_gate.EXPERIMENT_VERSION: sky_gate.bands(fitted, gate, forecast, current, longitude),
+        },
     }
 
 
@@ -338,7 +380,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {"error": "not found"})
         self.reply(200, {
             "status": "ok", "model": model.get()["trained_at"], "correction": CORRECTION_VERSION,
-            "experiment": sun_correction.EXPERIMENT_VERSION,
+            "experiment": sky_gate.EXPERIMENT_VERSION,
         })
 
     def do_POST(self) -> None:

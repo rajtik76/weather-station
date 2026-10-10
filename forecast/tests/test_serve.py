@@ -15,13 +15,15 @@ import pandas as pd
 import pytest
 
 import serve
+import sky_gate
 import sun_correction
 from conftest import START, Constant, weather_frame
 from correction import CORRECTION_VERSION, INPUTS, apply
 from features import build_features
 from forecast import predict
 from serve import InvalidRequest, StaleCorrection, make_base, make_correction, make_forecast, make_light_correction, make_light_forecast
-from sun_correction import EXPERIMENT_VERSION, local_day
+from sky_gate import EXPERIMENT_VERSION
+from sun_correction import local_day
 
 LONGITUDE = 13.4
 BAND = {"low", "mid", "high"}
@@ -523,16 +525,26 @@ def lit(history: list[dict]) -> list[dict]:
     ]
 
 
-def handmade_fit(history: list[dict], **horizon: object) -> dict:
-    """One horizon, one tree: +0.5 K up to a swing of 1 K, +1.5 K above."""
+def handmade_fit(history: list[dict], gate: dict | None = None, **horizon: object) -> dict:
+    """One horizon, one tree: +0.5 K up to a swing of 1 K, +1.5 K above; no sky factor, no envelope."""
     newest = pd.Timestamp(history[-1]["timestamp"], unit="s", tz="UTC").floor("10min")
     return {
         "model": "2026-09-24T08:40:43+00:00", "version": EXPERIMENT_VERSION,
-        "fit": {"day": local_day(newest), "horizons": [{
-            "hours": 1, "baseline": 0.0, "trees": [[[sun_correction.INPUTS.index("swing"), 1.0, 0, 1, 2], [0.5], [1.5]]], "widen": 0.1,
-            **horizon,
-        }]},
+        "fit": {
+            "day": local_day(newest),
+            "horizons": [{
+                "hours": 1, "baseline": 0.0, "trees": [[[sun_correction.INPUTS.index("swing"), 1.0, 0, 1, 2], [0.5], [1.5]]],
+                "widen": 0.1, **horizon,
+            }],
+            "gate": {"envelope": [None] * sky_gate.SLOTS, "horizons": [{"hours": 1, "factors": {}, "widen": 0.1}], **(gate or {})},
+        },
     }
+
+
+def swinging_by_day(history: list[dict]) -> list[dict]:
+    """The newest window swings 4 K: the handmade tree moves the base +1.5 K."""
+    history[-1] |= {"temperature_min": history[-1]["temperature"] - 2, "temperature_max": history[-1]["temperature"] + 2}
+    return history
 
 
 def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(server: tuple[str, int]) -> None:
@@ -549,10 +561,12 @@ def test_light_experiment_roundtrips_over_http_without_changing_main_forecast(se
     assert experiment["version"] == EXPERIMENT_VERSION
     assert experiment["issued_at"] == before["issued_at"]
     assert experiment["model"] == before["model"]
-    assert [h["hours"] for h in experiment["horizons"]] == [1, 2, 3, 4, 5, 6]
-    for horizon in experiment["horizons"]:
-        assert set(horizon) == {"hours", "temperature"}
-        assert horizon["temperature"]["low"] <= horizon["temperature"]["mid"] <= horizon["temperature"]["high"]
+    assert set(experiment["versions"]) == {"light-v5", "light-v6"}
+    for answered in experiment["versions"].values():
+        assert [h["hours"] for h in answered] == [1, 2, 3, 4, 5, 6]
+        for horizon in answered:
+            assert set(horizon) == {"hours", "temperature"}
+            assert horizon["temperature"]["low"] <= horizon["temperature"]["mid"] <= horizon["temperature"]["high"]
     assert corrected_forecast(history) == before
     assert make_forecast({"longitude": LONGITUDE, "readings": history}) == make_forecast({"longitude": LONGITUDE, "readings": readings(120)})
 
@@ -572,20 +586,38 @@ def test_a_short_or_unlearnt_history_answers_no_horizon(service: dict) -> None:
     unlearnt = make_light_correction({"longitude": LONGITUDE, "readings": history, "since": history[-1]["timestamp"]})
 
     assert short["fit"]["horizons"] == unlearnt["fit"]["horizons"] == []
-    assert make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": short})["horizons"] == []
+    assert short["fit"]["gate"]["horizons"] == unlearnt["fit"]["gate"]["horizons"] == []
+    assert make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": short})["versions"] == {
+        "light-v5": [], "light-v6": [],
+    }
 
 
 def test_a_fitted_horizon_moves_the_base_by_its_trees_by_day(service: dict) -> None:
-    history = lit(readings(12))
-    history[-1] |= {"temperature_min": history[-1]["temperature"] - 2, "temperature_max": history[-1]["temperature"] + 2}
+    history = swinging_by_day(lit(readings(12)))
     base = make_forecast({"longitude": LONGITUDE, "readings": history})["horizons"][0]["base"]["temperature"]
 
     experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history)})
 
-    assert experiment["horizons"] == [{"hours": 1, "temperature": {
+    moved = [{"hours": 1, "temperature": {
         "low": pytest.approx(base["low"] + 1.4, abs=0.011),
         "mid": pytest.approx(base["mid"] + 1.5, abs=0.011),
         "high": pytest.approx(base["high"] + 1.6, abs=0.011),
+    }}]
+    assert experiment["versions"] == {"light-v5": moved, "light-v6": moved}
+
+
+def test_light_v6_scales_the_shift_by_the_factor_of_the_sky_now(service: dict) -> None:
+    history = swinging_by_day(lit(readings(12)))
+    base = make_forecast({"longitude": LONGITUDE, "readings": history})["horizons"][0]["base"]["temperature"]
+    dim = {"envelope": [10_000.0] * sky_gate.SLOTS, "horizons": [{"hours": 1, "factors": {"day:overcast": 0.2}, "widen": 0.3}]}
+
+    experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history, gate=dim)})
+
+    assert experiment["versions"]["light-v5"][0]["temperature"]["mid"] == pytest.approx(base["mid"] + 1.5, abs=0.011)
+    assert experiment["versions"]["light-v6"] == [{"hours": 1, "temperature": {
+        "low": pytest.approx(base["low"] + 0.3 - 0.3, abs=0.011),
+        "mid": pytest.approx(base["mid"] + 0.3, abs=0.011),
+        "high": pytest.approx(base["high"] + 0.3 + 0.3, abs=0.011),
     }}]
 
 
@@ -595,16 +627,17 @@ def test_night_keeps_the_base_whatever_the_trees(service: dict) -> None:
 
     experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history)})
 
-    assert experiment["horizons"] == [{"hours": 1, "temperature": base}]
+    assert experiment["versions"] == {"light-v5": [{"hours": 1, "temperature": base}], "light-v6": [{"hours": 1, "temperature": base}]}
 
 
-@pytest.mark.parametrize("change", [{"version": "light-v4"}, {"model": "old"}, {"fit": {"day": "2020-01-01", "horizons": []}}])
+@pytest.mark.parametrize("change", [{"version": "light-v5"}, {"model": "old"}, {"day": "2020-01-01"}])
 def test_stale_light_fit_gets_409(server: tuple[str, int], change: dict) -> None:
     history = lit(readings(24))
+    fitted = handmade_fit(history)
+    fitted |= {key: value for key, value in change.items() if key != "day"}
+    fitted["fit"] |= {key: value for key, value in change.items() if key == "day"}
 
-    status, _ = request(server, "POST", "/light-forecast", {
-        "longitude": LONGITUDE, "readings": history, "experiment": {**handmade_fit(history), **change},
-    })
+    status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": fitted})
 
     assert status == 409
 
@@ -626,6 +659,41 @@ def test_invalid_light_fits_get_422(server: tuple[str, int], horizon: dict) -> N
     assert status == 422
 
 
+@pytest.mark.parametrize("gate", [
+    {"envelope": [None] * 143}, {"envelope": ["1"] * 144}, {"envelope": [math.inf] * 144}, {"horizons": None},
+    {"horizons": [{"hours": 7, "factors": {}, "widen": 0.1}]}, {"horizons": [{"hours": 1, "factors": {"dusk:clear": 1.0}, "widen": 0.1}]},
+    {"horizons": [{"hours": 1, "factors": {"day:clear": None}, "widen": 0.1}]}, {"horizons": [{"hours": 1, "factors": ["day:clear"], "widen": 0.1}]},
+    {"horizons": [{"hours": 1, "factors": {}, "widen": None}]}, {"horizons": [{"hours": 1, "factors": {}, "widen": 0.1}] * 2},
+])
+def test_invalid_light_gates_get_422(server: tuple[str, int], gate: dict) -> None:
+    history = lit(readings(24))
+
+    status, _ = request(server, "POST", "/light-forecast", {
+        "longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history, gate=gate),
+    })
+
+    assert status == 422
+
+
+def test_a_gate_without_factors_comes_back_from_php_as_a_list_and_keeps_light_v5(service: dict) -> None:
+    history = swinging_by_day(lit(readings(12)))
+    roundtripped = {"envelope": [10_000.0] * sky_gate.SLOTS, "horizons": [{"hours": 1, "factors": [], "widen": 0.1}]}
+
+    experiment = make_light_forecast({"longitude": LONGITUDE, "readings": history, "experiment": handmade_fit(history, gate=roundtripped)})
+
+    assert experiment["versions"]["light-v6"] == experiment["versions"]["light-v5"]
+
+
+def test_a_light_fit_without_a_gate_gets_422(server: tuple[str, int]) -> None:
+    history = lit(readings(24))
+    fitted = handmade_fit(history)
+    del fitted["fit"]["gate"]
+
+    status, _ = request(server, "POST", "/light-forecast", {"longitude": LONGITUDE, "readings": history, "experiment": fitted})
+
+    assert status == 422
+
+
 def test_a_light_fit_answering_a_horizon_twice_gets_422(server: tuple[str, int]) -> None:
     history = lit(readings(24))
     fitted = handmade_fit(history)
@@ -636,7 +704,7 @@ def test_a_light_fit_answering_a_horizon_twice_gets_422(server: tuple[str, int])
     assert status == 422
 
 
-@pytest.mark.parametrize("invalid", [{"temperature_min": "1"}, {"temperature_max": True}, {"temperature_max": 1e400}])
+@pytest.mark.parametrize("invalid", [{"temperature_min": "1"}, {"temperature_max": True}, {"temperature_max": 1e400}, {"illuminance": "1"}])
 def test_invalid_light_readings_get_422(server: tuple[str, int], invalid: dict) -> None:
     history = lit(readings(24))
     history[-1].update(invalid)

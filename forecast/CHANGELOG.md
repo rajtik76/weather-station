@@ -5,6 +5,20 @@
 - Scores: 2025, held-out ČHMÚ stations ([README](README.md#results)), mean absolute error 6 h ahead vs persistence unless stated
 - A change to the correction's logic (`correction.py`) gets an entry `Correction <n>` (`CORRECTION_VERSION`, reported as `correction`, stored per row; rows before it was kept are version 1); scores on the balcony, walked forward day by day
 
+## Light experiment light-v6 - 2026-10-10
+
+Model 2026-09-24T08:40:43Z · Server v4.17.0
+
+- Beside light-v5, not instead of it: both enter the model race that now picks the shown temperature per part of the day ([`docs/scoring.md`](../docs/scoring.md#model-race)); light-v6 is the page's experiment line
+- `sky_gate.py`: light-v5's shift times a factor per horizon and sky state. The sky from the VEML7700 alone: illuminance over the brightest reading at the same clock slot in the 14 days before the issue's day; in daylight (sun above 8°) the last hour, otherwise the daylight of the last 24 h; overcast below 0.45, clear above 0.8. Factor: the shift-weighted median of the miss over light-v5's out-of-fold shift, 0 to 1.5; a state without 40 training rows, or no light, keeps light-v5
+- Band: light-v5's moved by the scaled shift, widened by its own out-of-fold misses
+- Walked forward on the balcony, fitted at local midnight on the days before, temperature 1/2/3/4/5/6 h ahead:
+    - 24 September to 10 October 2026: 0.69/0.99/1.24/1.39/1.56/1.62 °C (light-v5 0.69/1.00/1.26/1.45/1.61/1.69, shown 0.80/1.18/1.44/1.60/1.67/1.75, base 0.81/1.27/1.62/1.82/1.88/1.88)
+    - 1 to 10 October, targets 7 to 17 h: 1.00/1.45/1.93/1.99/2.22/2.14 °C (light-v5 1.00/1.52/2.05/2.24/2.50/2.54, base 1.09/1.70/2.18/2.34/2.39/2.31)
+- Overcast days gain most, mean over 1-6 h for targets 7 to 17 h: 9 October 1.29 °C (light-v5 2.00, base 1.22), 10 October 1.65 °C (2.37, 1.18), 5 October 1.79 °C (2.83, 1.61)
+- Clear mornings forecast before sunrise are its weak spot: the night reads yesterday's sky; 6 October 2.49 °C (light-v5 1.74), 7 October 2.51 °C (1.65)
+- Tried and dropped: illuminance and humidity straight into light-v5's trees (gained little), a sky state from a classifier trained on ČHMÚ Plzeň-Mikulka sunshine (79 % of windows right leaving each day out, no better as a gate than the illuminance ratio)
+
 ## Light experiment light-v5 - 2026-10-07
 
 Model 2026-09-24T08:40:43Z · Server v4.15.0
