@@ -51,7 +51,7 @@
                     data-accuracy-rows="{{ json_encode(['entrants' => \App\ValueObject\RaceEntrants::NAMES, 'days' => $race->days]) }}"
                     data-accuracy-experiment=""
                     role="img"
-                    aria-label="Points of every model by day over the last {{ \App\Queries\CachedModelRace::RACE_DAYS }} days, mean miss in °C, lower is better"
+                    aria-label="Points of every model by day over the last {{ \App\Queries\CachedModelRace::RACE_DAYS }} days, lower is better"
                 >
                     <div wire:ignore data-accuracy-canvas class="h-[260px] w-full"></div>
                 </div>
@@ -70,7 +70,6 @@
                                     <tr>
                                         <th scope="col">Model</th>
                                         <th scope="col">Points</th>
-                                        <th scope="col">Days won</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -78,13 +77,12 @@
                                         <tr @class(['font-semibold' => $loop->first && $standing['total'] !== null])>
                                             <td>{{ $standing['name'] }}@if ($loop->first && $standing['total'] !== null) <span class="font-normal text-ink-3">· shown</span>@endif</td>
                                             <td>{{ $standing['total'] === null ? 'n/a' : \App\ValueObject\Figure::format($standing['total'], 2) }}</td>
-                                            <td>{{ $standing['wins'] }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
                             </table>
                         </div>
-                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">{{ $block->label() }}: forecasts for {{ $block->hours() }}. Points are summed over the days every model forecast; a day's winner has the fewest.</p>
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">{{ $block->label() }}: forecasts for {{ $block->hours() }}. Points are summed over the days every model forecast.</p>
                     </div>
                 @endforeach
             </div>

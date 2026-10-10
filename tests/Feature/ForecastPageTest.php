@@ -221,7 +221,7 @@ it('ranks the race by each part of the day and charts every model\'s points', fu
     racedForecast($sensor, '2026-09-23 06:00:00', 1, ['correction' => 13.0, 'light-v6' => 12.5, 'light-v5' => 11.0, 'base' => 14.0]);
 
     $html = $this->get(route('forecast'))
-        ->assertSeeInOrder(['Model race', 'Morning', 'Points by day', 'Standings', 'light-v6', '· shown', '0,50', '1', 'correction', '1,00', 'light-v5', '1,00', 'base', '2,00'])
+        ->assertSeeInOrder(['Model race', 'Morning', 'Points by day', 'Standings', 'light-v6', '· shown', '0,50', 'correction', '1,00', 'light-v5', '1,00', 'base', '2,00'])
         ->getContent();
 
     preg_match('/data-accuracy-chart="race"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);

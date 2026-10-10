@@ -12,7 +12,7 @@ use App\Models\Forecast;
  *
  * @phpstan-import-type Horizon from Forecast
  *
- * @phpstan-type Standing array{name: string, total: ?float, wins: int}
+ * @phpstan-type Standing array{name: string, total: ?float}
  */
 final readonly class RaceStandings
 {
@@ -29,17 +29,10 @@ final readonly class RaceStandings
     public function table(RaceBlock $block): array
     {
         $totals = [];
-        $wins = array_fill_keys(RaceEntrants::NAMES, 0);
 
         foreach ($this->days as $day) {
             foreach ($day->points[$block->value] ?? [] as $name => $points) {
                 $totals[$name] = ($totals[$name] ?? 0.0) + $points;
-            }
-
-            $winner = $day->winner($block);
-
-            if ($winner !== null) {
-                $wins[$winner] = ($wins[$winner] ?? 0) + 1;
             }
         }
 
@@ -47,10 +40,10 @@ final readonly class RaceStandings
         $rank = fn (string $name): array => isset($totals[$name])
             ? [$totals[$name], $order[$name] ?? PHP_INT_MAX]
             : [INF, $name === RaceEntrants::FALLBACK ? -1 : $order[$name] ?? PHP_INT_MAX];
-        $names = array_keys([...$wins, ...$totals]);
+        $names = array_keys([...array_fill_keys(RaceEntrants::NAMES, null), ...$totals]);
         usort($names, fn (string $a, string $b): int => $rank($a) <=> $rank($b));
 
-        return array_map(fn (string $name): array => ['name' => $name, 'total' => $totals[$name] ?? null, 'wins' => $wins[$name] ?? 0], $names);
+        return array_map(fn (string $name): array => ['name' => $name, 'total' => $totals[$name] ?? null], $names);
     }
 
     /**

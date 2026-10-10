@@ -48,4 +48,4 @@ Picks the shown temperature for each part of the day from the model that has for
 - Standings: points summed over the 14 local days before today, worked out once a day after midnight and cached per sensor (`CachedModelRace`); the fewest lead, a tie goes to the simpler model in the order above (at night light-v5 and light-v6 answer the base band), a part of the day without points keeps the correction
 - Every new forecast shows per horizon the band of the leader of its target's part of the day, or of the next entrant when the leader did not answer it; `shown_by` names it. Humidity and rain stay the correction's
 - A stored forecast keeps what it showed; the race never re-picks history
-- The forecast page charts every entrant's points by day for the chosen part of the day, lists the standings with the days each won, and names each hour of the current forecast by the model shown on the horizon nearest to it
+- The forecast page charts every entrant's points by day for the chosen part of the day, lists the standings, and names each hour of the current forecast by the model shown on the horizon nearest to it

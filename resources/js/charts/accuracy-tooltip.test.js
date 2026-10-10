@@ -159,7 +159,7 @@ describe("raceTooltipHtml", () => {
             "correction",
             "light-v5",
         ]);
-        expect(cells(html)).toEqual(expect.arrayContaining(["1,20 °C", "1,23 °C"]));
+        expect(cells(html)).toEqual(expect.arrayContaining(["1,20 pts", "1,23 pts"]));
     });
 
     it("says so for a block nothing was scored in", () => {

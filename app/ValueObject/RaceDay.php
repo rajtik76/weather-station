@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
-use App\Enums\RaceBlock;
 use JsonSerializable;
 
 /**
@@ -22,22 +21,6 @@ final readonly class RaceDay implements JsonSerializable
         public string $date,
         public array $points = [],
     ) {}
-
-    /** Fewest points that day; a tie goes to the earlier of RaceEntrants::NAMES. */
-    public function winner(RaceBlock $block): ?string
-    {
-        $points = $this->points[$block->value] ?? [];
-
-        if ($points === []) {
-            return null;
-        }
-
-        $order = array_flip(RaceEntrants::NAMES);
-        $names = array_keys($points);
-        usort($names, fn (string $a, string $b): int => [$points[$a], $order[$a] ?? PHP_INT_MAX] <=> [$points[$b], $order[$b] ?? PHP_INT_MAX]);
-
-        return $names[0];
-    }
 
     /**
      * @return DayRow

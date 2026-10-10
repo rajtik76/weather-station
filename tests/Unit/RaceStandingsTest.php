@@ -29,17 +29,17 @@ function racedHorizon(int $hours, array $mids): array
 /** 07:00 UTC, 09:00 in Plzeň: +1 h is a morning target, +4 h an afternoon one. */
 const RACE_ISSUED = 1791615600;
 
-it('ranks the entrants by their summed points and counts the days each won', function (): void {
+it('ranks the entrants by their summed points', function (): void {
     $standings = new RaceStandings([
         new RaceDay('8.10.2026', ['morning' => ['correction' => 2.0, 'light-v6' => 1.0, 'light-v5' => 1.5, 'base' => 3.0]]),
         new RaceDay('9.10.2026', ['morning' => ['correction' => 1.0, 'light-v6' => 1.4, 'light-v5' => 1.5, 'base' => 3.0]]),
     ]);
 
     expect($standings->table(RaceBlock::Morning))->toBe([
-        ['name' => 'light-v6', 'total' => 2.4, 'wins' => 1],
-        ['name' => 'correction', 'total' => 3.0, 'wins' => 1],
-        ['name' => 'light-v5', 'total' => 3.0, 'wins' => 0],
-        ['name' => 'base', 'total' => 6.0, 'wins' => 0],
+        ['name' => 'light-v6', 'total' => 2.4],
+        ['name' => 'correction', 'total' => 3.0],
+        ['name' => 'light-v5', 'total' => 3.0],
+        ['name' => 'base', 'total' => 6.0],
     ]);
 });
 
@@ -47,10 +47,10 @@ it('gives a tie to the simpler model, as light-v5 and light-v6 answer the base b
     $standings = new RaceStandings([new RaceDay('9.10.2026', ['night' => ['base' => 0.9, 'correction' => 1.2, 'light-v5' => 0.9, 'light-v6' => 0.9]])]);
 
     expect($standings->table(RaceBlock::Night))->toBe([
-        ['name' => 'base', 'total' => 0.9, 'wins' => 1],
-        ['name' => 'light-v5', 'total' => 0.9, 'wins' => 0],
-        ['name' => 'light-v6', 'total' => 0.9, 'wins' => 0],
-        ['name' => 'correction', 'total' => 1.2, 'wins' => 0],
+        ['name' => 'base', 'total' => 0.9],
+        ['name' => 'light-v5', 'total' => 0.9],
+        ['name' => 'light-v6', 'total' => 0.9],
+        ['name' => 'correction', 'total' => 1.2],
     ]);
 });
 
@@ -58,10 +58,10 @@ it('lists a block without points in the fallback order, correction first', funct
     $standings = new RaceStandings([new RaceDay('9.10.2026', ['day' => ['correction' => 1.2, 'light-v6' => 0.9, 'light-v5' => 0.9, 'base' => 1.0]])]);
 
     expect($standings->table(RaceBlock::Night))->toBe([
-        ['name' => 'correction', 'total' => null, 'wins' => 0],
-        ['name' => 'base', 'total' => null, 'wins' => 0],
-        ['name' => 'light-v5', 'total' => null, 'wins' => 0],
-        ['name' => 'light-v6', 'total' => null, 'wins' => 0],
+        ['name' => 'correction', 'total' => null],
+        ['name' => 'base', 'total' => null],
+        ['name' => 'light-v5', 'total' => null],
+        ['name' => 'light-v6', 'total' => null],
     ]);
 });
 

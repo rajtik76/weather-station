@@ -11,7 +11,7 @@ const percent = known((value) => `${formatNumber(value, 0)} %`);
 const signedDegrees = known((value) => `${formatSigned(value, 1)} °C`);
 const signedPercent = known((value) => `${formatSigned(value, 0)} %`);
 const hours = (count) => `${count} h`;
-const points = known((value) => `${formatNumber(value, 2)} °C`);
+const points = known((value) => `${formatNumber(value, 2)} pts`);
 
 const DAY_FIGURES = [
     { key: "skill", label: "skill", value: (figures) => signedPercent(figures.skill) },
@@ -226,6 +226,6 @@ export function raceTooltipHtml(day, block, entrants, colours) {
     return (
         heading(day.date, colours) +
         `<table style="border-collapse:collapse;font-variant-numeric:tabular-nums"><tbody>${rows}</tbody></table>` +
-        notes(["points: mean miss, the fewest win the day"], colours)
+        notes(["lower is better"], colours)
     );
 }

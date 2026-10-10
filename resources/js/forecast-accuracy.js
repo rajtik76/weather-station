@@ -462,7 +462,7 @@ function raceEntrants(names, colours) {
     }));
 }
 
-/** Payload: `entrants` in tie order, `days` with `date` and `points` by block, then entrant, in °C. */
+/** Payload: `entrants` in tie order, `days` with `date` and `points` by block, then entrant. */
 function raceOption({ entrants: names, days }, canvas) {
     const colours = palette();
     const entrants = raceEntrants(names, colours);
@@ -492,7 +492,7 @@ function raceOption({ entrants: names, days }, canvas) {
                 color: colours.label,
                 fontFamily: CHART_FONT,
                 fontSize: 10,
-                formatter: (value) => `${width.format(value)} °C`,
+                formatter: (value) => width.format(value),
             },
             splitLine: { lineStyle: { color: colours.grid } },
         },
