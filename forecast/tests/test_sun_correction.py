@@ -2,18 +2,12 @@ import pandas as pd
 import pytest
 
 import sun_correction as sun
-from conftest import weather_frame
+from conftest import swinging, weather_frame
 from features import build_features
 from forecast import predict
 
 LONGITUDE = 13.4
 DAYS = 6
-
-
-def swinging(frame: pd.DataFrame) -> pd.DataFrame:
-    """In-window minimum and maximum, wider while the reading rises."""
-    swing = 0.2 + frame["T"].diff().clip(lower=0).fillna(0)
-    return frame.assign(Tmin=frame["T"] - swing / 2, Tmax=frame["T"] + swing / 2)
 
 
 @pytest.fixture

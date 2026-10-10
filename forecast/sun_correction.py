@@ -105,42 +105,71 @@ def out_of_fold(x: pd.DataFrame, residual: pd.Series) -> np.ndarray:
     return predicted
 
 
+@dataclass(frozen=True)
+class Fitted:
+    """A fitted horizon with its training rows: the out-of-fold shift is what another model may build on."""
+
+    horizon: Horizon
+    index: pd.DatetimeIndex
+    truth: pd.Series
+    residual: pd.Series
+    shift: np.ndarray
+
+
+def widen(forecast: pd.DataFrame, truth: pd.Series, shift: np.ndarray, n: int) -> float:
+    """How far the moved base band must widen to hold RANGE_COVERAGE of the truth."""
+    distance = outside(forecast, truth, shift, n)
+    level = min(1.0, RANGE_COVERAGE * (1 + 1 / len(distance)))
+    return float(np.quantile(distance, level))
+
+
+def fit_horizon(
+    forecast: pd.DataFrame, current: pd.DataFrame, n: int, longitude: float, since: pd.Timestamp | None,
+) -> Fitted | None:
+    """None without MIN_TRAINING_ROWS verified daytime rows from `since` on."""
+    x = inputs(current, forecast, n, longitude)
+    truth = current["T"].shift(-n * STEPS_PER_HOUR).reindex(forecast.index)
+    residual = truth - forecast[f"T_{n}h_mid"]
+    rows = residual.notna().to_numpy() & daytime(forecast.index, n, longitude)
+    if since is not None:
+        rows &= forecast.index >= since
+    if rows.sum() < MIN_TRAINING_ROWS:
+        return None
+    model = HistGradientBoostingRegressor(**BOOSTING).fit(x[rows], residual[rows])
+    shift = out_of_fold(x[rows], residual[rows])
+    horizon = Horizon(n, *trees.encode(model), widen(forecast[rows], truth[rows], shift, n))
+    return Fitted(horizon, forecast.index[rows], truth[rows], residual[rows], shift)
+
+
 def fit(
     forecast: pd.DataFrame, current: pd.DataFrame, horizons: list[int], longitude: float,
     since: pd.Timestamp | None = None,
 ) -> list[Horizon]:
     """One Horizon per horizon with MIN_TRAINING_ROWS verified daytime rows from `since` on."""
-    fitted = []
-    for n in horizons:
-        x = inputs(current, forecast, n, longitude)
-        truth = current["T"].shift(-n * STEPS_PER_HOUR).reindex(forecast.index)
-        residual = truth - forecast[f"T_{n}h_mid"]
-        rows = residual.notna().to_numpy() & daytime(forecast.index, n, longitude)
-        if since is not None:
-            rows &= forecast.index >= since
-        if rows.sum() < MIN_TRAINING_ROWS:
-            continue
-        model = HistGradientBoostingRegressor(**BOOSTING).fit(x[rows], residual[rows])
-        distance = outside(forecast[rows], truth[rows], out_of_fold(x[rows], residual[rows]), n)
-        level = min(1.0, RANGE_COVERAGE * (1 + 1 / len(distance)))
-        fitted.append(Horizon(n, *trees.encode(model), float(np.quantile(distance, level))))
-    return fitted
+    fitted = (fit_horizon(forecast, current, n, longitude, since) for n in horizons)
+    return [one.horizon for one in fitted if one is not None]
+
+
+def latest_shift(horizon: Horizon, forecast: pd.DataFrame, current: pd.DataFrame, longitude: float) -> float | None:
+    """The fitted miss of the latest window; None at night."""
+    if not daytime(forecast.index[-1:], horizon.hours, longitude)[0]:
+        return None
+    return float(horizon.shift(inputs(current, forecast, horizon.hours, longitude).iloc[-1:])[0])
+
+
+def moved_band(forecast: pd.DataFrame, n: int, shift: float | None, widen: float) -> dict:
+    """The latest base band moved by `shift` and widened; the base band itself for None."""
+    latest = forecast.iloc[-1]
+    shift, widen = (0.0, 0.0) if shift is None else (shift, widen)
+    mid = float(latest[f"T_{n}h_mid"]) + shift
+    low = min(float(latest[f"T_{n}h_low"]) + shift - widen, mid)
+    high = max(float(latest[f"T_{n}h_high"]) + shift + widen, mid)
+    return {"hours": n, "temperature": {"low": round(low, 2), "mid": round(mid, 2), "high": round(high, 2)}}
 
 
 def bands(fitted: list[Horizon], forecast: pd.DataFrame, current: pd.DataFrame, longitude: float) -> list[dict]:
     """Temperature band of the latest window per fitted horizon; the base band at night."""
-    latest = forecast.iloc[-1]
-    answered = []
-    for horizon in fitted:
-        n = horizon.hours
-        shift, widen = 0.0, 0.0
-        if daytime(forecast.index[-1:], n, longitude)[0]:
-            shift = float(horizon.shift(inputs(current, forecast, n, longitude).iloc[-1:])[0])
-            widen = horizon.widen
-        mid = float(latest[f"T_{n}h_mid"]) + shift
-        low = min(float(latest[f"T_{n}h_low"]) + shift - widen, mid)
-        high = max(float(latest[f"T_{n}h_high"]) + shift + widen, mid)
-        answered.append({"hours": n, "temperature": {
-            "low": round(low, 2), "mid": round(mid, 2), "high": round(high, 2),
-        }})
-    return answered
+    return [
+        moved_band(forecast, horizon.hours, latest_shift(horizon, forecast, current, longitude), horizon.widen)
+        for horizon in fitted
+    ]
