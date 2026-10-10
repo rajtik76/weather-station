@@ -2,6 +2,8 @@
 
 use App\ValueObject\DayScore;
 use App\ValueObject\HourOfDayScore;
+use App\ValueObject\RaceDay;
+use App\ValueObject\RaceStandings;
 use App\ValueObject\ScoreFigures;
 use App\ValueObject\TodaySlot;
 use Illuminate\Support\Str;
@@ -140,6 +142,8 @@ return [
         HourOfDayScore::class,
         TodaySlot::class,
         ScoreFigures::class,
+        RaceStandings::class,
+        RaceDay::class,
     ],
 
 ];

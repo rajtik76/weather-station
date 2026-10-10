@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Models\Forecast;
+use App\Models\Measurement;
+use App\Models\Sensor;
 use App\ValueObject\LightWindow;
+use App\ValueObject\MeasurementDataV1;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Date;
 use Tests\TestCase;
 
 use function Pest\Laravel\withHeader;
@@ -144,7 +149,7 @@ function chartEvents(string $html): array
 }
 
 /**
- * @return array<string, mixed>
+ * @return array{hours: int, temperature: array{low: float, mid: float, high: float}, humidity: array{low: float, mid: float, high: float}, pressure: array{low: float, mid: float, high: float}, rain_probability: float}
  */
 function forecastHorizon(int $hours, float $temperature, float $humidity, float $rain): array
 {
@@ -155,6 +160,44 @@ function forecastHorizon(int $hours, float $temperature, float $humidity, float 
         'pressure' => ['low' => 976.0, 'mid' => 976.47, 'high' => 977.1],
         'rain_probability' => $rain,
     ];
+}
+
+/**
+ * Horizons as stored when the service's corrected band is shown: the correction joins the race candidates and shows.
+ *
+ * @param  list<array<string, mixed>>  $horizons
+ * @return list<array<string, mixed>>
+ */
+function shownByCorrection(array $horizons): array
+{
+    return array_map(fn (array $horizon): array => [
+        ...$horizon,
+        'candidates' => ['correction' => $horizon['temperature'], ...$horizon['candidates'] ?? []],
+        'shown_by' => 'correction',
+    ], $horizons);
+}
+
+/**
+ * @param  array<string, float>  $mids  by entrant; `base` becomes the base band, a missing entrant did not forecast
+ */
+function racedForecast(Sensor $sensor, string $issued, int $hours, array $mids): void
+{
+    $band = fn (float $mid): array => ['low' => $mid - 1, 'mid' => $mid, 'high' => $mid + 1];
+    $horizon = [...forecastHorizon($hours, $mids['correction'] ?? 0.0, 70.0, 0.0), 'candidates' => array_map($band, array_diff_key($mids, ['base' => true]))];
+
+    if (isset($mids['base'])) {
+        $horizon['base'] = ['temperature' => $band($mids['base']), 'humidity' => $horizon['humidity']];
+    }
+
+    Forecast::factory()->for($sensor)->create(['issued_at' => Date::parse($issued, 'UTC')->getTimestamp(), 'data' => [$horizon]]);
+}
+
+function racedReading(Sensor $sensor, string $stamped, int $temperature): void
+{
+    Measurement::factory()->for($sensor)->create([
+        'timestamp' => Date::parse($stamped, 'UTC')->getTimestamp(),
+        'data' => (string) new MeasurementDataV1(temperature: $temperature, humidity: 6000, pressure: 97000),
+    ]);
 }
 
 /** A V3 window with the given 8 kHz level and 1 kHz ring over its neighbours, in dB. */

@@ -107,7 +107,7 @@ it('fits the correction on the last sixty days and forecasts from the last 56 ho
         ->and($forecast->corrected)->toBeTrue()
         ->and($forecast->correction)->toBe(2)
         // toEqual: jsonb reorders keys and stores 976.0 as 976.
-        ->and($forecast->data)->toEqual(serviceForecast($recent)['horizons']);
+        ->and($forecast->data)->toEqual(shownByCorrection(serviceForecast($recent)['horizons']));
 });
 
 it('fits the correction from the local midnight of FORECAST_HISTORY_SINCE', function (): void {
@@ -350,7 +350,7 @@ it('stores the forecast without the weather model when the model fails', functio
     dispatch_sync(new ForecastWeather($sensor));
 
     Exceptions::assertReported(RequestException::class);
-    expect(Forecast::query()->sole()->data)->toEqual(serviceForecast($recent)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(serviceForecast($recent)['horizons']));
 });
 
 it('asks the weather model nothing for a forecast issued from a late batch', function (): void {

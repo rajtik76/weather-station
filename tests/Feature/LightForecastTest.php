@@ -34,14 +34,16 @@ function lightShown(int $issuedAt): array
     return ['issued_at' => $issuedAt, 'model' => '2026-09-24', 'corrected' => true, 'correction' => 3, 'horizons' => [$horizon]];
 }
 
-/** @return array{model: string, version: string, fit: array{day: string, horizons: list<array{hours: int, baseline: float, trees: list<list<list<int|float|null>>>, widen: float}>}} */
+/** @return array{model: string, version: string, fit: array{day: string, horizons: list<array{hours: int, baseline: float, trees: list<list<list<int|float|null>>>, widen: float}>, gate: array{envelope: list<float|null>, horizons: list<array{hours: int, factors: array<string, float>, widen: float}>}}} */
 function lightFitted(): array
 {
     return [
-        'model' => '2026-09-24', 'version' => 'light-v2',
-        'fit' => ['day' => '2026-10-03', 'horizons' => [
-            ['hours' => 1, 'baseline' => 0.25, 'trees' => [[[6, null, 0, 1, 2], [0.5], [1.5]]], 'widen' => 0.1],
-        ]],
+        'model' => '2026-09-24', 'version' => 'light-v6',
+        'fit' => [
+            'day' => '2026-10-03',
+            'horizons' => [['hours' => 1, 'baseline' => 0.25, 'trees' => [[[6, null, 0, 1, 2], [0.5], [1.5]]], 'widen' => 0.1]],
+            'gate' => ['envelope' => array_fill(0, 144, 2000.5), 'horizons' => [['hours' => 1, 'factors' => ['day:overcast' => 0.4], 'widen' => 0.2]]],
+        ],
     ];
 }
 
@@ -49,8 +51,11 @@ function lightFitted(): array
 function lightIssued(int $issuedAt): array
 {
     return [
-        'issued_at' => $issuedAt, 'model' => '2026-09-24', 'version' => 'light-v2',
-        'horizons' => [['hours' => 1, 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0]]],
+        'issued_at' => $issuedAt, 'model' => '2026-09-24', 'version' => 'light-v6',
+        'versions' => [
+            'light-v5' => [['hours' => 1, 'temperature' => ['low' => 12.4, 'mid' => 13.5, 'high' => 14.6]]],
+            'light-v6' => [['hours' => 1, 'temperature' => ['low' => 12.0, 'mid' => 12.8, 'high' => 14.0]]],
+        ],
     ];
 }
 
@@ -80,9 +85,17 @@ it('stores the sensor experiment beside unchanged shown and base bands', functio
     dispatch_sync(new ForecastWeather($sensor));
 
     $stored = Forecast::query()->sole();
-    expect($stored->data)->toEqual([[...$shown['horizons'][0], 'experiment' => [
-        'version' => 'light-v2', 'temperature' => lightIssued($issued)['horizons'][0]['temperature'],
-    ]]]);
+    $versions = lightIssued($issued)['versions'];
+    expect($stored->data)->toEqual([[
+        ...$shown['horizons'][0],
+        'candidates' => [
+            'correction' => $shown['horizons'][0]['temperature'],
+            'light-v5' => $versions['light-v5'][0]['temperature'],
+            'light-v6' => $versions['light-v6'][0]['temperature'],
+        ],
+        'experiment' => ['version' => 'light-v6', 'temperature' => $versions['light-v6'][0]['temperature']],
+        'shown_by' => 'correction',
+    ]]);
     expect($stored->model)->toBe($shown['model']);
     $request = Http::recorded(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast')->sole()[0];
     expect($request['readings'])->toEqual([[
@@ -90,6 +103,28 @@ it('stores the sensor experiment beside unchanged shown and base bands', functio
         'illuminance' => 123.45, 'received_at' => $issued, 'temperature_min' => 11.5, 'temperature_max' => 12.5,
     ]]);
     Http::assertSentCount(4);
+});
+
+it('shows the band of the model leading the race for the target\'s part of the day and names it', function (): void {
+    $sensor = Sensor::factory()->create();
+    racedReading($sensor, '2026-10-02 12:00:00', 1280);
+    racedForecast($sensor, '2026-10-02 11:00:00', 1, ['correction' => 13.0, 'light-v6' => 12.8, 'light-v5' => 13.5, 'base' => 12.0]);
+    $issued = now()->getTimestamp();
+    lightReading($sensor, $issued);
+    $shown = lightShown($issued);
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(['targets' => []]),
+        'http://forecast.test/forecast' => Http::response($shown),
+        'http://forecast.test/light-correction' => Http::response(lightFitted()),
+        'http://forecast.test/light-forecast' => Http::response(lightIssued($issued)),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    $horizon = Forecast::query()->where('issued_at', $issued)->sole()->data[0];
+    expect($horizon['shown_by'] ?? null)->toBe('light-v6')
+        ->and($horizon['temperature'])->toEqual(lightIssued($issued)['versions']['light-v6'][0]['temperature'])
+        ->and($horizon['candidates']['correction'] ?? null)->toEqual($shown['horizons'][0]['temperature']);
 });
 
 it('fits the experiment from the local midnight of FORECAST_HISTORY_SINCE and sends the fit back unchanged', function (): void {
@@ -128,7 +163,7 @@ it('preserves the main forecast when an experimental request fails', function (s
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
     Exceptions::assertReported(RequestException::class);
 })->with(['fit failure' => 'light-correction', 'forecast failure' => 'light-forecast']);
 
@@ -145,7 +180,7 @@ it('refits a stale experiment once without refitting the main correction', funct
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v6');
     Http::assertSentCount(6);
 });
 
@@ -158,12 +193,12 @@ it('stores the main forecast without an experiment when the experiment answers n
         'http://forecast.test/correction' => Http::response(['targets' => []]),
         'http://forecast.test/forecast' => Http::response(lightShown($issued)),
         'http://forecast.test/light-correction' => Http::response($fitted),
-        'http://forecast.test/light-forecast' => Http::response([...lightIssued($issued), 'horizons' => []]),
+        'http://forecast.test/light-forecast' => Http::response([...lightIssued($issued), 'versions' => ['light-v5' => [], 'light-v6' => []]]),
     ]);
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
     Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast'
         && $request['experiment'] === $fitted);
 });
@@ -181,7 +216,7 @@ it('preserves the main forecast when the experiment connection is refused', func
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
     Exceptions::assertReported(ConnectionException::class);
 });
 
@@ -199,9 +234,30 @@ it('rejects an experiment from a different issue or model', function (array $dif
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
     Exceptions::assertReported(UnexpectedValueException::class);
 })->with(['another issue' => [['issued_at' => 1]], 'another model' => [['model' => 'old']]]);
+
+it('keeps the forecast and its race pick when the service answers in the shape before light-v6', function (): void {
+    $sensor = Sensor::factory()->create();
+    $issued = now()->getTimestamp();
+    lightReading($sensor, $issued);
+    Exceptions::fake();
+    Http::fake([
+        'http://forecast.test/correction' => Http::response(['targets' => []]),
+        'http://forecast.test/forecast' => Http::response(lightShown($issued)),
+        'http://forecast.test/light-correction' => Http::response(lightFitted()),
+        'http://forecast.test/light-forecast' => Http::response([
+            'issued_at' => $issued, 'model' => '2026-09-24', 'version' => 'light-v5',
+            'horizons' => [['hours' => 1, 'temperature' => ['low' => 12.4, 'mid' => 13.5, 'high' => 14.6]]],
+        ]),
+    ]);
+
+    dispatch_sync(new ForecastWeather($sensor));
+
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
+    Exceptions::assertReported(UnexpectedValueException::class);
+});
 
 it('skips experimental requests for an old upload', function (): void {
     $sensor = Sensor::factory()->create();
@@ -214,7 +270,7 @@ it('skips experimental requests for an old upload', function (): void {
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data)->toEqual(lightShown($issued)['horizons']);
+    expect(Forecast::query()->sole()->data)->toEqual(shownByCorrection(lightShown($issued)['horizons']));
     Http::assertSentCount(2);
 });
 
@@ -233,7 +289,7 @@ it('issues the experiment from a window without light', function (): void {
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v6');
     Http::assertSent(fn (Request $request): bool => $request->url() === 'http://forecast.test/light-forecast'
         && $request['readings'][0]['illuminance'] === null);
 });
@@ -320,7 +376,7 @@ it('stores the main forecast before the experiment is fitted', function (): void
 
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+    expect(Forecast::query()->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v6');
 });
 
 it('pauses the experiment for an hour after it fails', function (): void {
@@ -349,5 +405,5 @@ it('pauses the experiment for an hour after it fails', function (): void {
     lightReading($sensor, $issued + 3600);
     dispatch_sync(new ForecastWeather($sensor));
 
-    expect(Forecast::query()->where('issued_at', $issued + 3600)->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v2');
+    expect(Forecast::query()->where('issued_at', $issued + 3600)->sole()->data[0]['experiment']['version'] ?? null)->toBe('light-v6');
 });

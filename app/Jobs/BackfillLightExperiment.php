@@ -7,12 +7,14 @@ namespace App\Jobs;
 use App\Models\Forecast;
 use App\Models\Sensor;
 use App\Queries\CachedForecastAccuracy;
+use App\Queries\CachedModelRace;
 use App\Queries\ForecastService;
 use App\Queries\LightForecast;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\HistorySince;
 use App\ValueObject\LocalTime;
+use App\ValueObject\RaceEntrants;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -23,6 +25,7 @@ use UnexpectedValueException;
  * Fitted once per local day from the readings held at the day's first upload, issued from those held at the forecast's upload.
  * Only forecasts of the model `/health` reports with no horizon of the experiment version it reports.
  * An older version is replaced where the current one is issued; a forecast it cannot issue keeps the older one.
+ * The shown band of a forecast from before the model race joins its race candidates as the correction's.
  *
  * @phpstan-import-type LightFitted from ForecastService
  */
@@ -89,16 +92,17 @@ class BackfillLightExperiment
                 continue;
             }
 
-            if ($issued['horizons'] === []) {
+            if (LightForecast::answersNothing($issued)) {
                 continue;
             }
 
-            $forecast->update(['data' => LightForecast::onto($forecast->data, $issued)]);
+            $forecast->update(['data' => LightForecast::onto(RaceEntrants::withCorrection($forecast->data), $issued)]);
             $filled++;
         }
 
         if ($filled > 0) {
             new CachedForecastAccuracy($this->sensor->id)->forget();
+            new CachedModelRace($this->sensor->id)->forget();
         }
 
         return $filled;

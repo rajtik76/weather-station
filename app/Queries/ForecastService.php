@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Models\Forecast;
 use Illuminate\Support\Facades\Http;
+use UnexpectedValueException;
 
 /**
  * The forecast service (forecast/serve.py) over HTTP; every call throws on an error status or refused connection.
@@ -18,8 +19,9 @@ use Illuminate\Support\Facades\Http;
  * @phpstan-type BaseAnswer array{model: string, forecasts: list<array{issued_at: int, horizons: list<BaseHorizon>}>}
  * @phpstan-type Fitted array{model: string, correction: int, targets: array<string, array{intercept: float, coefficients: array<string, float>, widen: float}>}
  * @phpstan-type LightHorizon array{hours: int, baseline: float, trees: list<list<list<int|float|null>>>, widen: float}
- * @phpstan-type LightFitted array{model: string, version: string, fit: array{day: string, horizons: list<LightHorizon>}}
- * @phpstan-type LightIssued array{issued_at: int, model: string, version: string, horizons: list<array{hours: int, temperature: Band}>}
+ * @phpstan-type LightGate array{envelope: list<float|null>, horizons: list<array{hours: int, factors: array<string, float>, widen: float}>}
+ * @phpstan-type LightFitted array{model: string, version: string, fit: array{day: string, horizons: list<LightHorizon>, gate: LightGate}}
+ * @phpstan-type LightIssued array{issued_at: int, model: string, version: string, versions: array<string, list<array{hours: int, temperature: Band}>>}
  */
 final readonly class ForecastService
 {
@@ -84,13 +86,23 @@ final readonly class ForecastService
     }
 
     /**
+     * A service from before light-v6 answers without `versions`.
+     *
      * @param  array<string, mixed>  $payload
      * @return LightIssued
+     *
+     * @throws UnexpectedValueException
      */
     public function lightForecast(array $payload, int $timeout = 30): array
     {
+        $response = Http::timeout($timeout)->post($this->endpoint('light-forecast'), $payload)->throw();
+
+        if (! is_array($response->json('versions'))) {
+            throw new UnexpectedValueException('Light experiment answer carries no versions');
+        }
+
         /** @var LightIssued */
-        return Http::timeout($timeout)->post($this->endpoint('light-forecast'), $payload)->throw()->json();
+        return $response->json();
     }
 
     private function endpoint(string $path): string

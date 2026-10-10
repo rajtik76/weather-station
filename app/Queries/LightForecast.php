@@ -96,7 +96,16 @@ final readonly class LightForecast
     }
 
     /**
-     * A horizon the experiment does not answer loses any experiment it held.
+     * @param  LightIssued  $experiment
+     */
+    public static function answersNothing(array $experiment): bool
+    {
+        return ($experiment['versions'][$experiment['version']] ?? []) === [];
+    }
+
+    /**
+     * The newest version is a horizon's experiment and every version that answers it one of its race candidates;
+     * a horizon a version does not answer loses what that version held.
      *
      * @param  list<Horizon>  $horizons
      * @param  LightIssued  $experiment
@@ -104,15 +113,26 @@ final readonly class LightForecast
      */
     public static function onto(array $horizons, array $experiment): array
     {
-        $bands = array_column($experiment['horizons'], 'temperature', 'hours');
+        $bands = array_map(fn (array $answered): array => array_column($answered, 'temperature', 'hours'), $experiment['versions']);
+        $newest = $bands[$experiment['version']] ?? [];
 
         return array_map(
-            function (array $horizon) use ($bands, $experiment): array {
-                if (isset($bands[$horizon['hours']])) {
-                    return [...$horizon, 'experiment' => ['version' => $experiment['version'], 'temperature' => $bands[$horizon['hours']]]];
+            function (array $horizon) use ($bands, $newest, $experiment): array {
+                $hours = $horizon['hours'];
+
+                foreach ($bands as $version => $byHours) {
+                    if (isset($byHours[$hours])) {
+                        $horizon['candidates'][$version] = $byHours[$hours];
+                    } else {
+                        unset($horizon['candidates'][$version]);
+                    }
                 }
 
-                unset($horizon['experiment']);
+                if (isset($newest[$hours])) {
+                    $horizon['experiment'] = ['version' => $experiment['version'], 'temperature' => $newest[$hours]];
+                } else {
+                    unset($horizon['experiment']);
+                }
 
                 return $horizon;
             },

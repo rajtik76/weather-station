@@ -15,9 +15,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * One forecast service run; T, H and P are 10-90 % ranges around the median (°C, %, hPa).
  * `base` is the forecast before station correction; its `rain_probability` is uncapped by nest_rain(), absent on older rows.
  * `nwp` is the numerical weather model's temperature (°C) for the same window, fetched at issue time.
+ * `candidates` are the model race's temperature bands besides `base`; `shown_by` names the entrant whose band is `temperature`, absent before the race.
  *
  * @phpstan-type Band array{low: float, mid: float, high: float}
- * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}, nwp?: array{temperature: float}, experiment?: array{version: string, temperature: Band, synthetic?: bool}}
+ * @phpstan-type Horizon array{hours: int, temperature: Band, humidity: Band, pressure: Band, rain_probability: float, base?: array{temperature: Band, humidity: Band, rain_probability?: float}, nwp?: array{temperature: float}, experiment?: array{version: string, temperature: Band, synthetic?: bool}, candidates?: array<string, Band>, shown_by?: string}
  *
  * @property int $sensor_id
  * @property int $issued_at

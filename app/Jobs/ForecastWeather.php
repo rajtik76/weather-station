@@ -7,12 +7,14 @@ namespace App\Jobs;
 use App\Models\Forecast;
 use App\Models\Sensor;
 use App\Queries\CachedFit;
+use App\Queries\CachedModelRace;
 use App\Queries\ForecastService;
 use App\Queries\LightForecast;
 use App\Queries\OpenMeteoForecast;
 use App\Queries\ServiceReadings;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\HistorySince;
+use App\ValueObject\RaceEntrants;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -21,6 +23,7 @@ use Throwable;
 
 /**
  * After every upload, asks the forecast service (forecast/serve.py) for the next six hours with the station correction and stores the answer with the NWP temperature beside it.
+ * The light experiment joins the race candidates; the shown temperature is then the model race's pick per horizon.
  *
  * @phpstan-import-type Horizon from Forecast
  * @phpstan-import-type Issued from ForecastService
@@ -70,11 +73,14 @@ class ForecastWeather
                 'model' => $forecast['model'],
                 'corrected' => $forecast['corrected'],
                 'correction' => $forecast['correction'] ?? null,
-                'data' => $this->withNwp($forecast['issued_at'], $forecast['horizons']),
+                'data' => RaceEntrants::withCorrection($this->withNwp($forecast['issued_at'], $forecast['horizons'])),
             ],
         );
 
-        $this->attachExperiment($stored, $service, $forecast, $readings);
+        $stored->update(['data' => new CachedModelRace($this->sensor->id)->standings()->pick(
+            $this->withExperiment($stored->data, $service, $forecast, $readings),
+            $stored->issued_at,
+        )]);
     }
 
     private function isIssuedInWindowOf(int $timestamp): bool
@@ -86,17 +92,19 @@ class ForecastWeather
     }
 
     /**
-     * Runs after the forecast is stored; a failure pauses the experiment for EXPERIMENT_PAUSE_MINUTES.
+     * Runs after the forecast is stored; a failure pauses the experiment for EXPERIMENT_PAUSE_MINUTES and leaves the horizons as they are.
      *
+     * @param  list<Horizon>  $horizons
      * @param  Issued  $forecast
      * @param  list<LitReading>  $readings
+     * @return list<Horizon>
      */
-    private function attachExperiment(Forecast $stored, ForecastService $service, array $forecast, array $readings): void
+    private function withExperiment(array $horizons, ForecastService $service, array $forecast, array $readings): array
     {
         $paused = "light-experiment-paused:{$this->sensor->id}";
 
         if (Cache::has($paused)) {
-            return;
+            return $horizons;
         }
 
         try {
@@ -105,12 +113,10 @@ class ForecastWeather
             report($exception);
             Cache::put($paused, true, now()->addMinutes(self::EXPERIMENT_PAUSE_MINUTES));
 
-            return;
+            return $horizons;
         }
 
-        if ($experiment !== null) {
-            $stored->update(['data' => LightForecast::onto($stored->data, $experiment)]);
-        }
+        return $experiment === null ? $horizons : LightForecast::onto($horizons, $experiment);
     }
 
     /**
