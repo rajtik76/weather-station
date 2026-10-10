@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\ValueObject;
 
 /**
- * One whole hour of the shown forecast: temperatures in °C, rain chance in whole percent.
+ * One whole hour of the shown forecast: temperatures in °C, rain chance in whole percent, `model` the race entrant shown (null before the model race).
  */
 final readonly class ForecastHour
 {
@@ -21,5 +21,6 @@ final readonly class ForecastHour
         public float $tLow,
         public float $tHigh,
         public int $rain,
+        public ?string $model = null,
     ) {}
 }

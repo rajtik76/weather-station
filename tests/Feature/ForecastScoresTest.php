@@ -173,7 +173,7 @@ it('says when the forecast is not yet fitted to the station', function (): void 
 
     $this->get(route('forecast'))
         ->assertOk()
-        ->assertSee('not yet fitted to this station');
+        ->assertSee('correction not yet fitted to this station');
 });
 
 it('dates the forecast by when it arrived, not by the window it starts from', function (): void {

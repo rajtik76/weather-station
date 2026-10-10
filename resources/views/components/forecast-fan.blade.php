@@ -1,6 +1,7 @@
 @props([
     'chart',
     'horizons',
+    'showModel' => false,
 ])
 
 @php($temperatureChannel = \App\Enums\Channel::Temperature)
@@ -51,6 +52,9 @@
                 <p class="m-0 font-mono text-[13px] text-ink-3">{{ $hour->clock }}</p>
                 <p class="num m-0 mt-1 font-mono text-[20px] leading-tight font-medium">{{ \App\ValueObject\Figure::format($hour->t, 1) }}<span class="text-[14px] font-normal text-ink-3"> °C</span></p>
                 <p class="num m-0 font-mono text-[13px] text-ink-3">{{ \App\ValueObject\Figure::range($hour->tLow, $hour->tHigh, 1) }}</p>
+                @if ($showModel && $hour->model !== null)
+                    <p class="m-0 mt-1 font-mono text-[12px] text-ink-3">by <span class="text-ink-2">{{ $hour->model }}</span></p>
+                @endif
                 <div class="mt-3">
                     <p class="num m-0 flex items-center gap-1.5 font-mono text-[13px] text-ink-2">{!! $drop !!}<span class="sr-only">rain chance </span>{{ $hour->rain }} %<span class="text-ink-3">rain</span></p>
                     <span class="mt-1.5 block h-1 rounded-full bg-line"><span class="block h-full rounded-full bg-ch2" style="width: {{ min(100, $hour->rain) }}%"></span></span>

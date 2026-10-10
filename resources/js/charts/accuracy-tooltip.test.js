@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { dayTooltipHtml, hourTooltipHtml, slotTooltipHtml } from "./accuracy-tooltip";
+import {
+    dayTooltipHtml,
+    hourTooltipHtml,
+    raceTooltipHtml,
+    slotTooltipHtml,
+} from "./accuracy-tooltip";
 
 const colours = { temperature: "#d00", experiment: "#0a0", label: "#888", text: "#111" };
 
@@ -124,5 +129,42 @@ describe("slotTooltipHtml", () => {
 
         expect(cells(html)).toEqual(expect.arrayContaining(["−1,2 °C", "−3,0 to 0,4 °C"]));
         expect(html).not.toContain("base");
+    });
+});
+
+describe("raceTooltipHtml", () => {
+    const entrants = ["base", "correction", "light-v5", "light-v6"].map((name) => ({
+        name,
+        colour: "#000",
+        dashed: name === "base",
+    }));
+
+    it("ranks the block's points, fewest first, ties in entrant order", () => {
+        const html = raceTooltipHtml(
+            {
+                date: "9.10.2026",
+                points: {
+                    morning: { correction: 1.8, "light-v6": 1.2, "light-v5": 1.8, base: 1.234 },
+                    day: { correction: 0.1, "light-v6": 0.2, "light-v5": 0.3, base: 0.4 },
+                },
+            },
+            "morning",
+            entrants,
+            colours,
+        );
+
+        expect(rowLabels(html).map((label) => label.replace(/<span[^>]*><\/span>/, ""))).toEqual([
+            "light-v6",
+            "base",
+            "correction",
+            "light-v5",
+        ]);
+        expect(cells(html)).toEqual(expect.arrayContaining(["1,20 °C", "1,23 °C"]));
+    });
+
+    it("says so for a block nothing was scored in", () => {
+        const html = raceTooltipHtml({ date: "9.10.2026", points: [] }, "night", entrants, colours);
+
+        expect(html).toContain("no forecast scored");
     });
 });

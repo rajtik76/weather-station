@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
+use App\Queries\CachedModelRace;
 use App\Queries\ForecastAccuracy;
 use App\Queries\ForecastChanges;
+use App\ValueObject\RaceStandings;
 use App\ValueObject\Scoreboard;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -21,6 +23,7 @@ use Livewire\Attributes\Title;
  * @property-read list<Row> $scoreboard
  * @property-read Score|null $score
  * @property-read list<Change> $changes
+ * @property-read RaceStandings $race
  */
 #[Title('Balcony Station Forecast')]
 class Forecast extends StationPage
@@ -61,6 +64,13 @@ class Forecast extends StationPage
 
         return array_find($scores, fn (array $score): bool => $score['hours'] === $this->horizon)
             ?? ($scores === [] ? null : $scores[count($scores) - 1]);
+    }
+
+    /** The standings today's forecasts are picked by. */
+    #[Computed]
+    public function race(): RaceStandings
+    {
+        return new CachedModelRace($this->selectedSensor?->id)->standings();
     }
 
     /**

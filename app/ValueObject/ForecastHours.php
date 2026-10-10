@@ -7,6 +7,7 @@ namespace App\ValueObject;
 /**
  * One clock hour's forecasts as the pages list them: temperature and rain on whole hours.
  * The median is the newest forecast's; the range and the rain chance are the widest any forecast of the hour gave.
+ * The model is the entrant the newest forecast showed on the horizon nearest the hour, the one its median leans on most.
  *
  * @phpstan-type Reading array{at: int, t: float}
  * @phpstan-type Point array{at: int, values: list<float>}
@@ -53,6 +54,7 @@ final readonly class ForecastHours
                 tLow: round(min(array_column($estimates, 'low')), 1),
                 tHigh: round(max(array_column($estimates, 'high')), 1),
                 rain: (int) round(max(array_column($estimates, 'rain')) * 100),
+                model: self::shownBy($forecasts[array_key_last($forecasts)], $at),
             );
         }, $ahead));
     }
@@ -82,6 +84,15 @@ final readonly class ForecastHours
         ], $horizons), $at);
 
         return ['low' => $low, 'mid' => $mid, 'high' => $high, 'rain' => $rain];
+    }
+
+    private static function shownBy(IssuedForecast $forecast, int $at): ?string
+    {
+        $distance = fn (array $horizon): int => abs($forecast->issuedAt + $horizon['hours'] * self::HOUR_SECONDS - $at);
+        $horizons = $forecast->horizons;
+        usort($horizons, fn (array $a, array $b): int => $distance($a) <=> $distance($b));
+
+        return $horizons[0]['shown_by'] ?? null;
     }
 
     /**

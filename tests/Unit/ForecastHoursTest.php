@@ -87,3 +87,13 @@ it('has no hours without a forecast', function (): void {
 it('refuses a forecast without horizons', function (): void {
     new IssuedForecast(hoursUtc('2026-09-24 08:00:00'), []);
 })->throws(InvalidArgumentException::class);
+
+it('names each hour by the model shown on the horizon nearest to it', function (): void {
+    $forecast = forecastIssuedAt('2026-10-10 08:50:00', [
+        [...forecastHoursHorizon(1, 12.0), 'shown_by' => 'light-v6'],
+        [...forecastHoursHorizon(2, 13.0), 'shown_by' => 'light-v5'],
+        [...forecastHoursHorizon(3, 14.0), 'shown_by' => 'base'],
+    ]);
+
+    expect(array_column(ForecastHours::of([$forecast], []), 'model', 'clock'))->toBe(['11:00' => 'light-v6', '12:00' => 'light-v6', '13:00' => 'light-v5']);
+});

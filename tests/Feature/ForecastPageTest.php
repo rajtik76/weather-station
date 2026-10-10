@@ -113,7 +113,7 @@ it('names the light experiment by its version in the comparison graphs', functio
     ]);
 
     $html = $this->get(route('forecast'))
-        ->assertSee('light-v1 runs alongside the shown forecast and changes nothing on it.')
+        ->assertSee('light-v1 is the newest light experiment; it is shown wherever it leads the model race.')
         ->assertSee('data-accuracy-experiment="light-v1"', false)
         ->assertDontSee('VEML prototype')
         ->getContent();
@@ -201,6 +201,44 @@ it('draws the current forecast while it starts from the newest reading', functio
         // 10:05 UTC is 12:05 in Prague in September; 13:00 is 55 of the 60 minutes from the reading to the first horizon.
         ->assertSeeInOrder(['Current forecast', 'made 24.9.2026 12:05', 'range this hour', '13:00', '13,7', '12,4-15,1'])
         ->assertDontSee('No forecast from the current readings yet');
+});
+
+it('names the model behind each hour of the current forecast', function (): void {
+    $sensor = Sensor::factory()->create();
+    pageReading($sensor, now()->getTimestamp(), 1300);
+    Forecast::factory()->for($sensor)->create([
+        'issued_at' => now()->getTimestamp(),
+        'data' => [[...pageHorizon(1, 12.3, 13.8, 15.3), 'shown_by' => 'light-v6']],
+    ]);
+
+    $this->get(route('forecast'))
+        ->assertSeeInOrder(['Current forecast', '13:00', '13,7', 'by', 'light-v6', 'Model race']);
+});
+
+it('ranks the race by each part of the day and charts every model\'s points', function (): void {
+    $sensor = Sensor::factory()->create();
+    racedReading($sensor, '2026-09-23 07:00:00', 1200);
+    racedForecast($sensor, '2026-09-23 06:00:00', 1, ['correction' => 13.0, 'light-v6' => 12.5, 'light-v5' => 11.0, 'base' => 14.0]);
+
+    $html = $this->get(route('forecast'))
+        ->assertSeeInOrder(['Model race', 'Morning', 'Points by day', 'Standings', 'light-v6', '· shown', '0,50', '1', 'correction', '1,00', 'light-v5', '1,00', 'base', '2,00'])
+        ->getContent();
+
+    preg_match('/data-accuracy-chart="race"\s+data-accuracy-rows="([^"]*)"/', $html ?: '', $matches);
+    $payload = json_decode(html_entity_decode($matches[1] ?? '{}'), true, flags: JSON_THROW_ON_ERROR);
+    expect($payload['entrants'])->toBe(['base', 'correction', 'light-v5', 'light-v6'])
+        ->and($payload['days'])->toHaveCount(14)
+        ->and($payload['days'][13])->toEqual(['date' => '23.9.2026', 'points' => ['morning' => ['correction' => 1.0, 'light-v6' => 0.5, 'light-v5' => 1.0, 'base' => 2.0]]]);
+});
+
+it('waits for a whole scored day before it charts the race', function (): void {
+    $sensor = Sensor::factory()->create();
+    racedReading($sensor, '2026-09-24 07:00:00', 1200);
+    racedForecast($sensor, '2026-09-24 06:00:00', 1, ['correction' => 13.0, 'light-v6' => 12.5, 'light-v5' => 11.0, 'base' => 14.0]);
+
+    $this->get(route('forecast'))
+        ->assertSee('No day scored yet')
+        ->assertDontSee('data-accuracy-chart="race"', false);
 });
 
 it('lists every change of model and correction, newest first, a switch back included', function (): void {

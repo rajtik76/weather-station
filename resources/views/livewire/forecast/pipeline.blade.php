@@ -6,7 +6,7 @@
             ['ČHMÚ data', '10-minute records from 32 professional stations below 700 m, 2018-2024. About 1,7 million hourly examples.'],
             ['Training', 'Gradient boosting per horizon, 1 to 6 h. Quantiles at 10, 50 and 90 % give a range meant to hold 8 readings in 10. Rain is a classifier: the chance of at least 0,1 mm.'],
             ['Station correction', 'A ridge regression learns this balcony\'s own error by solar time and from recent verified misses, refitted once a day. It widens or narrows the range until it holds 80 % of the readings.'],
-            ['Score', 'Once its hour has passed, every forecast is compared with the reading and with the naive guess. "Base" is the model alone, "shown" is after the correction.'],
+            ['Score', 'Once its hour has passed, every forecast is compared with the reading and with the naive guess. "Base" is the model alone; "shown" comes from whichever model leads the model race for that part of the day.'],
         ] as [$step, $text])
             <li class="relative border-l border-line-2 pl-5 lg:border-l-0 lg:pt-6 lg:pl-0">
                 <span class="absolute top-1.5 -left-[5px] size-[9px] rounded-full bg-ink lg:-top-[4px] lg:left-0" aria-hidden="true"></span>

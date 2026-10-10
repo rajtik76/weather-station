@@ -8,12 +8,12 @@
         <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
             <div class="max-w-[60ch]">
                 <h2 id="detail-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Day by day</h2>
-                <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">One horizon at a time. "Shown" is the forecast on the page, "base" the model before this station's correction; the gap between them is what the correction has learnt.</p>
+                <p class="m-0 mt-3 text-[16px] leading-relaxed text-ink-2">One horizon at a time. "Shown" is the forecast on the page, taken from the model leading the model race for that part of the day; "base" is the model before anything learnt on this station.</p>
                 @if ($experiment !== null)
                     @if ($experiment['synthetic'])
                         <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">Synthetic preview: {{ $experiment['version'] }}. These graphs compare demonstration forecasts, not measured experiment performance.</p>
                     @else
-                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">{{ $experiment['version'] }} runs alongside the shown forecast and changes nothing on it. Its line starts with its first scored forecast; tooltips show how many hours each line was scored on.</p>
+                        <p class="m-0 mt-3 text-[15px] leading-relaxed text-ink-3">{{ $experiment['version'] }} is the newest light experiment; it is shown wherever it leads the model race. Its line starts with its first scored forecast; tooltips show how many hours each line was scored on.</p>
                     @endif
                 @endif
             </div>

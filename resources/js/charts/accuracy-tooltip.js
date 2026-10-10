@@ -11,6 +11,7 @@ const percent = known((value) => `${formatNumber(value, 0)} %`);
 const signedDegrees = known((value) => `${formatSigned(value, 1)} °C`);
 const signedPercent = known((value) => `${formatSigned(value, 0)} %`);
 const hours = (count) => `${count} h`;
+const points = known((value) => `${formatNumber(value, 2)} °C`);
 
 const DAY_FIGURES = [
     { key: "skill", label: "skill", value: (figures) => signedPercent(figures.skill) },
@@ -196,5 +197,35 @@ export function slotTooltipHtml(slot, version, colours) {
     return (
         heading(slot.clock, colours) +
         `<table style="border-collapse:collapse;font-variant-numeric:tabular-nums"><tbody>${rows}</tbody></table>`
+    );
+}
+
+/** A race day's points in `block`, fewest first; `entrants`: `{ name, colour, dashed }` in tie order. */
+export function raceTooltipHtml(day, block, entrants, colours) {
+    const scored = day.points[block] ?? {};
+    const ranked = entrants
+        .filter((entrant) => scored[entrant.name] !== undefined)
+        .sort((a, b) => scored[a.name] - scored[b.name]);
+
+    if (ranked.length === 0) {
+        return heading(day.date, colours) + notes(["no forecast scored"], colours);
+    }
+
+    const rows = ranked
+        .map((entrant, place) => {
+            const weight = place === 0 ? "font-weight:500;" : "";
+
+            return (
+                `<tr><td style="${LABEL_CELL};${weight}color:${colours.label}">` +
+                `${swatch(entrant.colour, entrant.dashed)}${entrant.name}</td>` +
+                `<td style="${CELL};${weight}color:${colours.text}">${points(scored[entrant.name])}</td></tr>`
+            );
+        })
+        .join("");
+
+    return (
+        heading(day.date, colours) +
+        `<table style="border-collapse:collapse;font-variant-numeric:tabular-nums"><tbody>${rows}</tbody></table>` +
+        notes(["points: mean miss, the fewest win the day"], colours)
     );
 }

@@ -2,7 +2,12 @@ import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import { GridComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
-import { dayTooltipHtml, hourTooltipHtml, slotTooltipHtml } from "./charts/accuracy-tooltip";
+import {
+    dayTooltipHtml,
+    hourTooltipHtml,
+    raceTooltipHtml,
+    slotTooltipHtml,
+} from "./charts/accuracy-tooltip";
 import {
     DEFAULT_PERIOD,
     hasValues,
@@ -15,10 +20,18 @@ import { BAND_OPACITY, CHART_FONT, basePalette, token } from "./charts/theme";
 
 echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer]);
 
-/** Forecast page accuracy charts (`data-accuracy-chart`: days, hours, widths). Not strips: no time axis, zoom or crosshair. */
+/** Forecast page accuracy charts (`data-accuracy-chart`: days, hours, widths, race). Not strips: no time axis, zoom or crosshair. */
 
 /** Chosen through the `accuracy-period` window event the period buttons dispatch. */
 let hoursPeriod = DEFAULT_PERIOD;
+
+const DEFAULT_RACE_BLOCK = "morning";
+
+/** Chosen through the `race-block` window event the race's block buttons dispatch. */
+let raceBlock = DEFAULT_RACE_BLOCK;
+
+/** Race entrants with a channel colour; any other entrant (the base model) is drawn dashed. */
+const RACE_TOKENS = { correction: "--ch1", "light-v6": "--aux", "light-v5": "--ch3" };
 
 /** Day row: `shown`, `base` and `experiment` figures (skill in %, misses and widths in °C) or null, `modelTookOver`, `correctionTookOver`. */
 
@@ -441,7 +454,74 @@ function widthsOption(rows, canvas, version) {
     };
 }
 
-const OPTIONS = { days: daysOption, hours: hoursOption, widths: widthsOption };
+function raceEntrants(names, colours) {
+    return names.map((name) => ({
+        name,
+        colour: RACE_TOKENS[name] === undefined ? colours.label : token(RACE_TOKENS[name]),
+        dashed: RACE_TOKENS[name] === undefined,
+    }));
+}
+
+/** Payload: `entrants` in tie order, `days` with `date` and `points` by block, then entrant, in °C. */
+function raceOption({ entrants: names, days }, canvas) {
+    const colours = palette();
+    const entrants = raceEntrants(names, colours);
+
+    return {
+        animation: false,
+        grid: { left: 44, right: 8, top: 20, bottom: 22 },
+        xAxis: {
+            type: "category",
+            data: days.map((day) => day.date),
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: colours.axis } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: colours.axis } },
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                hideOverlap: true,
+                formatter: dayTick,
+            },
+        },
+        yAxis: {
+            type: "value",
+            min: 0,
+            splitNumber: 3,
+            axisLabel: {
+                color: colours.label,
+                fontFamily: CHART_FONT,
+                fontSize: 10,
+                formatter: (value) => `${width.format(value)} °C`,
+            },
+            splitLine: { lineStyle: { color: colours.grid } },
+        },
+        tooltip: tooltip(colours, canvas, (index) =>
+            raceTooltipHtml(days[index], raceBlock, entrants, colours),
+        ),
+        series: entrants.map((entrant) => ({
+            name: entrant.name,
+            type: "line",
+            connectNulls: false,
+            symbol: "circle",
+            symbolSize: 6,
+            lineStyle: {
+                color: entrant.colour,
+                width: entrant.dashed ? 1.5 : 2,
+                type: entrant.dashed ? "dashed" : "solid",
+            },
+            itemStyle: { color: entrant.colour },
+            data: days.map((day) => day.points[raceBlock]?.[entrant.name] ?? null),
+        })),
+    };
+}
+
+const OPTIONS = { days: daysOption, hours: hoursOption, widths: widthsOption, race: raceOption };
+
+/** What besides the rows a chart is painted from. */
+function choice(key) {
+    return { hours: hoursPeriod, race: raceBlock }[key] ?? "";
+}
 
 function dispose(key) {
     painted.delete(key);
@@ -474,7 +554,7 @@ function mount(force = false) {
         }
 
         const version = element.dataset.accuracyExperiment;
-        const payload = `${key === "hours" ? hoursPeriod : ""}${version}${element.dataset.accuracyRows}`;
+        const payload = `${choice(key)}${version}${element.dataset.accuracyRows}`;
 
         if (!force && painted.get(key) === payload) {
             return;
@@ -506,10 +586,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("livewire:navigated", () => {
     hoursPeriod = DEFAULT_PERIOD;
+    raceBlock = DEFAULT_RACE_BLOCK;
     mount(true);
 });
 
 window.addEventListener("accuracy-period", (event) => {
     hoursPeriod = event.detail.period;
+    mount();
+});
+
+window.addEventListener("race-block", (event) => {
+    raceBlock = event.detail.block;
     mount();
 });

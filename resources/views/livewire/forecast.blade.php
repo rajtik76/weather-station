@@ -6,6 +6,7 @@
         @include('livewire.forecast.question')
         @include('livewire.forecast.pipeline')
         @include('livewire.forecast.current')
+        @include('livewire.forecast.race')
         @include('livewire.forecast.horizons')
         @include('livewire.forecast.detail')
         @include('livewire.forecast.held-out')
