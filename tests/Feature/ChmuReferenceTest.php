@@ -8,6 +8,7 @@ use App\ValueObject\ChmuTemperatures;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\assertDatabaseCount;
@@ -99,4 +100,30 @@ it('does not replace references with an unsuccessful download', function (): voi
     assertDatabaseCount('reference_temperatures', 1);
     expect(ReferenceTemperature::query()->sole()->temperature)->toBe(12.0);
     Http::assertSentCount(1);
+});
+
+it('does not fail the scheduled import while the current day file is not published yet', function (): void {
+    Http::preventStrayRequests();
+    $this->travelTo(Date::parse('2026-10-15 00:15:00', 'UTC'));
+    Http::fake([
+        '*20261014.json' => Http::response(chmuDocument([[ChmuTemperatures::STATION, 'T', '2026-10-14T23:50:00Z', 10.0, '', 5.0]])),
+        '*20261015.json' => Http::response('', 404),
+    ]);
+
+    $exitCode = Artisan::call('temperature:import-reference');
+
+    expect($exitCode)->toBe(0);
+    assertDatabaseCount('reference_temperatures', 1);
+});
+
+it('still fails the scheduled import when yesterday file is missing', function (): void {
+    Http::preventStrayRequests();
+    $this->travelTo(Date::parse('2026-10-15 12:15:00', 'UTC'));
+    Http::fake([
+        '*20261014.json' => Http::response('', 404),
+        '*20261015.json' => Http::response(chmuDocument([[ChmuTemperatures::STATION, 'T', '2026-10-15T11:50:00Z', 10.0, '', 5.0]])),
+    ]);
+
+    expect(Artisan::call('temperature:import-reference'))->toBe(1);
+    assertDatabaseCount('reference_temperatures', 1);
 });

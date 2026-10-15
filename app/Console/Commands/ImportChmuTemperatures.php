@@ -8,6 +8,7 @@ use App\Queries\ChmuReference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
@@ -46,13 +47,23 @@ class ImportChmuTemperatures extends Command
                 $count = $reference->download($this->option('date'));
             } else {
                 $failed = false;
+                $today = Date::now('UTC')->format('Y-m-d');
 
-                foreach ([Date::now('UTC')->subDay(), Date::now('UTC')] as $date) {
+                foreach ([Date::now('UTC')->subDay()->format('Y-m-d'), $today] as $date) {
                     try {
-                        $count += $reference->download($date->format('Y-m-d'));
+                        $count += $reference->download($date);
+                    } catch (RequestException $exception) {
+                        if ($date === $today && $exception->response->status() === 404) {
+                            $this->line($date.': not published yet.');
+
+                            continue;
+                        }
+
+                        $failed = true;
+                        $this->error($date.': '.$exception->getMessage());
                     } catch (Throwable $exception) {
                         $failed = true;
-                        $this->error($date->format('Y-m-d').': '.$exception->getMessage());
+                        $this->error($date.': '.$exception->getMessage());
                     }
                 }
 
