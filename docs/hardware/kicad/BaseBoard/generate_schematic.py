@@ -48,6 +48,8 @@ SYMBOLS = {
             ("7", "D26/SCK", "output", 15.24, -2.54, 180, 2.54),
             ("8", "D25/WS", "output", 15.24, -7.62, 180, 2.54),
             ("9", "D33/SD", "input", 15.24, -12.7, 180, 2.54),
+            ("30", "D23/TX", "output", -15.24, -5.08, 0, 2.54),
+            ("21", "D16/RX", "input", -15.24, -7.62, 0, 2.54),
         ],
         "graphics": [rect(-12.7, 17.78, 12.7, -15.24)],
         "ref": (0, 20.32, None),
@@ -87,6 +89,22 @@ SYMBOLS = {
         "value": (-2.54, -13.97, "left"),
         "prefix": "J",
         "footprint": "PinHeader_1x09",
+    },
+    "SPS30_7_Pins": {
+        "pins": [
+            ("7", "5V", "passive", -5.08, 7.62, 0, 2.54),
+            ("3", "RX", "passive", -5.08, 5.08, 0, 2.54),
+            ("5", "TX", "passive", -5.08, 2.54, 0, 2.54),
+            ("2", "GND", "passive", -5.08, 0, 0, 2.54),
+            ("4", "GND", "passive", -5.08, -2.54, 0, 2.54),
+            ("6", "GND", "passive", -5.08, -5.08, 0, 2.54),
+            ("1", "DRAIN", "passive", -5.08, -7.62, 0, 2.54),
+        ],
+        "graphics": [rect(-2.54, 10.16, 5.08, -10.16)],
+        "ref": (-2.54, 11.43, "left"),
+        "value": (-2.54, -11.43, "left"),
+        "prefix": "J",
+        "footprint": "PinHeader_1x07",
     },
     "Power_In_5V": {
         "pins": [
@@ -347,6 +365,25 @@ def draw(sheet):
     sheet.junction((193.04, drain[1]))
     sheet.symbol("GND", None, "GND", 193.04, drain[1])
 
+    # SPS30 UART2 through net labels
+    for pin, signal in (("D23/TX", "SPS_RX"), ("D16/RX", "SPS_TX")):
+        sheet.wire(u1(pin), (38.1, u1(pin)[1]))
+        sheet.label(signal, 38.1, u1(pin)[1])
+
+    sheet.symbol("SPS30_7_Pins", "J3", "SPS30 cable", 200.66, 132.08)
+    j3 = lambda name: sheet.pin("J3", name)
+    sheet.wire(j3("5V"), (193.04, j3("5V")[1]))
+    sheet.symbol("+5V", None, "+5V", 193.04, j3("5V")[1])
+    for signal, pin in (("SPS_RX", "RX"), ("SPS_TX", "TX")):
+        sheet.wire(j3(pin), (182.88, j3(pin)[1]))
+        sheet.label(signal, 182.88, j3(pin)[1])
+    sheet.wire(j3("2"), (193.04, j3("2")[1]), (193.04, j3("DRAIN")[1]), j3("DRAIN"))
+    for pin in ("4", "6"):
+        sheet.wire(j3(pin), (193.04, j3(pin)[1]))
+        sheet.junction((193.04, j3(pin)[1]))
+    sheet.junction((193.04, j3("DRAIN")[1]))
+    sheet.symbol("GND", None, "GND", 193.04, j3("DRAIN")[1])
+
     for ref, name, value, x in (("C1", "C", "100n", 78.74), ("C2", "C_Polarized", "10u", 93.98)):
         sheet.symbol(name, ref, value, x, 132.08)
         sheet.symbol("+3V3", None, "+3V3", *sheet.pin(ref, "1"))
@@ -362,9 +399,11 @@ def draw(sheet):
         "Board: 60 x 80 mm perfboard, 22 x 27 holes; layout in BaseBoard.kicad_pcb.",
         "U1 sits in two 1x15 female headers. Its GND pins 2 and 17 meet on the DevKit.",
         "U2 plugs into a 1x6 female header. R1 and R2 plug into one 1x4 female header.",
-        "Runs on the board are 0R links and solder bridges; they are wiring, not parts, and stay off this sheet.",
+        "Runs on the board are solder bridges plus one 0R link; they are wiring, not parts, and stay off this sheet.",
         "J1: 4 m FTP cable to the shield hub. Pin order on the board: GND SCK WS SD 3V3 GND drain SDA SCL.",
         "Drain grounded here only; the shield hub end is cut back.",
+        "J3: 4 m FTP cable to the SPS30 in the second shield. Pin order on the board: drain GND RX GND TX GND 5V.",
+        "SPS30 UART2 at 115200: GPIO23 to sensor RX, sensor TX to GPIO16; SEL left open (UART). Drain grounded here only.",
     ]
     for index, note in enumerate(notes):
         sheet.text(note, 25.4, 152.4 + index * 5.08)
@@ -377,7 +416,7 @@ def main():
     content = "\n".join([
         '(kicad_sch (version 20250114) (generator "eeschema") (generator_version "9.0")',
         f'  (uuid "{ROOT}") (paper "A4")',
-        '  (title_block (title "ESP32 base board on 60 x 80 mm perfboard") (date "2026-09-30") (rev "1"))',
+        '  (title_block (title "ESP32 base board on 60 x 80 mm perfboard") (date "2026-10-15") (rev "2"))',
         "  (lib_symbols",
         lib,
         "  )",

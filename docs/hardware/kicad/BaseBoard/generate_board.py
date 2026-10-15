@@ -1,7 +1,7 @@
 """Build the base board layout (60 x 80 mm perfboard) from layout.py.
 
-Run with KiCad's bundled Python 3.9 after generate_models.py. Runs are 0 ohm links (JP*, board-only,
-absent from the schematic) on the component side and solder bridges (B.Cu tracks) on the solder side.
+Run with KiCad's bundled Python 3.9 after generate_models.py. Runs are solder bridges (B.Cu tracks) on the solder side;
+a crossing is a 0 ohm link (JP*, board-only, absent from the schematic) on the component side.
 """
 
 from pathlib import Path
@@ -119,7 +119,7 @@ footprint(
     circles=[(1.27, 0, 2.5, "F.SilkS"), (1.27, 0, 2.5, "F.Fab"), (1.27, 0, 2.5, "F.CrtYd")],
     models=[(f"{STOCK}/Capacitor_THT.3dshapes/CP_Radial_D5.0mm_P2.00mm.step", (0.27, 0, 0), (0, 0, 0))],
     value="CP")
-for count in (2, 9):
+for count in (2, 7, 9):
     footprint(
         f"PinHeader_1x{count:02d}",
         lines=outline(-1.27, -1.27, 1.27, count * PITCH - 1.27),
@@ -147,8 +147,8 @@ hole_net = check()
 board = pcb.BOARD()
 block = pcb.TITLE_BLOCK()
 block.SetTitle("ESP32 base board, 60 x 80 mm perfboard")
-block.SetRevision("1")
-block.SetDate("2026-09-30")
+block.SetRevision("2")
+block.SetDate("2026-10-15")
 board.SetTitleBlock(block)
 board.GetDesignSettings().SetCopperLayerCount(2)
 
@@ -287,8 +287,8 @@ def at(ref, number):
 jp1 = links[0]
 NOTES = [
     "COMPONENT SIDE, upright. Rows A-Z(+A) from the bottom up, columns 22-01 left to right.",
-    "JP* = 0R links on the component side, body flat on the board.",
     "B.Cu = solder bridges between neighbouring pads on the solder side.",
+    "JP1 = 0R link on the component side, body flat on the board, where 3V3 crosses GND.",
     f"U1: two 1x15 female headers {at('U1', '1')}-{at('U1', '15')} and {at('U1', '16')}-{at('U1', '30')}, USB to the left.",
     f"U2: 1x6 female header {at('U2', '6')}-{at('U2', '1')}; BMP280 pins SDO..VCC left to right,",
     "    chip side up, breakout towards the bottom edge.",
@@ -298,6 +298,8 @@ NOTES = [
     f"J1 {at('J1', '1')}-{at('J1', '9')}: GND SCK WS SD 3V3 GND drain SDA SCL.",
     f"J2 {at('J2', '1')} = 5V, {at('J2', '2')} = GND.",
     f"Drain on GND through the {at('J1', '6')}-{at('J1', '7')} bridge; leave it open to float.",
+    f"J3 {at('J3', '1')}-{at('J3', '7')}: drain GND RX GND TX GND 5V (SPS30 side), drain bridged to GND.",
+    "SPS30 UART2: GPIO23 -> sensor RX, sensor TX -> GPIO16.",
 ]
 for index, note in enumerate(NOTES):
     text(note, BOARD_X + BOARD_W + 6, BOARD_Y + 2 + index * 1.8, pcb.Cmts_User, 1.0, "left")

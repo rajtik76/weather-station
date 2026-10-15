@@ -1,4 +1,4 @@
-"""Build STEP models (BMP280 breakout, 0 ohm links, perfboard rings, solder bridges); needs CadQuery, run before generate_board.py.
+"""Build STEP models (BMP280 breakout, 0 ohm link, perfboard rings, solder bridges); needs CadQuery, run before generate_board.py.
 
 The DevKit model is a downloaded file (models/DOIT_ESP32_DevKit_V1-SOURCE.md). 3D Y is opposite 2D footprint Y.
 """

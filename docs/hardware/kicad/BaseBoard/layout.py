@@ -3,7 +3,7 @@
 Perfboard 22 x 27 holes, plated. Printed labels, component side upright: columns 22..01 left to right,
 rows A-Z then A bottom-up (A22 bottom left). Holes here are (column, row) from 1, top left, as KiCad draws them.
 Rows 1 and 27 are both printed A, so the layout keeps them empty.
-Runs: 0 ohm links over straight free stretches (component side), solder bridges elsewhere (solder side).
+Runs: solder bridges between neighbouring holes (solder side); 0 ohm links only where a run crosses another net.
 """
 
 PITCH = 2.54
@@ -39,6 +39,7 @@ FOOTPRINT_PADS = {
     "C_Disc_P2.54": [("1", 0.0, 0.0), ("2", PITCH, 0.0)],
     "CP_Radial_D5.0mm_P2.54": [("1", 0.0, 0.0), ("2", PITCH, 0.0)],
     "PinHeader_1x02": strip(2),
+    "PinHeader_1x07": strip(7),
     "PinHeader_1x09": strip(9),
 }
 
@@ -46,6 +47,7 @@ NETS = {
     "5V": "+5V", "3V3": "+3V3", "GND": "GND",
     "SDA": "/SDA", "SCL": "/SCL", "SD": "/SD",
     "SCK": "/SCK", "WS": "/WS", "SCK_CABLE": "/SCK_CABLE", "WS_CABLE": "/WS_CABLE",
+    "SPS_RX": "/SPS_RX", "SPS_TX": "/SPS_TX",
 }
 
 # Parts: reference, footprint, value, origin hole, orientation, pad nets.
@@ -54,7 +56,7 @@ PARTS = [
     # USB port to the left edge, antenna to the right
     ("U1", "DOIT_ESP32_DevKit_V1_Socketed", "ESP32 DevKit V1", (20, 3), -90,
      {"1": "5V", "2": "GND", "7": "SCK", "8": "WS", "9": "SD",
-      "16": "3V3", "17": "GND", "26": "SDA", "29": "SCL"}),
+      "16": "3V3", "17": "GND", "21": "SPS_TX", "26": "SDA", "29": "SCL", "30": "SPS_RX"}),
     # Pins read SDO..VCC from the left, chip side up
     ("U2", "BMP280_Module_Socketed", "BMP280 0x76", (12, 23), -90,
      {"1": "3V3", "2": "GND", "3": "SCL", "4": "SDA", "5": "3V3", "6": "GND"}),
@@ -68,12 +70,16 @@ PARTS = [
      {"1": "GND", "2": "SCK_CABLE", "3": "WS_CABLE", "4": "SD", "5": "3V3",
       "6": "GND", "7": "GND", "8": "SDA", "9": "SCL"}),
     ("J2", "PinHeader_1x02", "5V in", (1, 2), 0, {"1": "5V", "2": "GND"}),
+    # SPS30 side names: RX takes GPIO23, TX drives GPIO16
+    ("J3", "PinHeader_1x07", "SPS30 cable", (16, 24), 90,
+     {"1": "GND", "2": "GND", "3": "SPS_RX", "4": "GND", "5": "SPS_TX", "6": "GND", "7": "5V"}),
 ]
 # Expected pad holes, checked by the board script
 EXPECTED = {("U1", "1"): (6, 3), ("U1", "15"): (20, 3), ("U1", "16"): (6, 13), ("U1", "30"): (20, 13),
             ("U2", "6"): (7, 23), ("R2", "2"): (9, 21), ("R1", "2"): (10, 21),
             ("R3", "2"): (8, 5), ("C2", "2"): (7, 19),
-            ("J1", "9"): (10, 17), ("J2", "2"): (1, 3)}
+            ("J1", "9"): (10, 17), ("J2", "2"): (1, 3),
+            ("U1", "21"): (11, 13), ("J3", "1"): (16, 24), ("J3", "7"): (22, 24)}
 # DevKit joins its two GND pins internally
 INTERNAL_LINKS = [(("U1", "2"), ("U1", "17"))]
 
@@ -95,11 +101,18 @@ ROUTES = [
     ("SDA", [(16, 13), (16, 15), (9, 15), (9, 23)]),
     ("SCL", [(19, 13), (19, 16), (10, 16), (10, 23)]),
     ("3V3", [(11, 21), (12, 21), (12, 24)]),
+    ("5V", [(6, 2), (22, 2), (22, 24)]),
+    ("SPS_TX", [(11, 13), (11, 11), (21, 11), (21, 23), (20, 23), (20, 24)]),
+    ("SPS_RX", [(20, 13), (20, 22), (18, 22), (18, 24)]),
+    ("GND", [(11, 25), (21, 25), (21, 24)]),
+    ("GND", [(17, 25), (17, 24)]),
+    ("GND", [(19, 25), (19, 24)]),
+    ("GND", [(16, 24), (17, 24)]),
 ]
 # Hand-placed 0 ohm links (crossings): holes under the body stay free for other nets' bridges.
 CROSSINGS = [("3V3", (8, 24), (12, 24))]
-# Link lengths in holes: 3 fits the 6.3 mm body, 8 is the comfortable lead reach
-LINK_SPANS = {span: f"R_Jumper_P{span * PITCH:.2f}" for span in range(3, 9)}
+LINK_SPANS = {span: f"R_Jumper_P{span * PITCH:.2f}"
+              for span in sorted({abs(b[0] - a[0]) + abs(b[1] - a[1]) for _, a, b in CROSSINGS})}
 FOOTPRINT_PADS.update({name: [("1", 0.0, 0.0), ("2", span * PITCH, 0.0)] for span, name in LINK_SPANS.items()})
 
 
@@ -194,56 +207,13 @@ def check():
 
 
 def wiring():
-    """Split runs into (links, bridges): links (net, first, last), bridges (net, hole, neighbour). Fewest bridges, then fewest links."""
-    parts = occupied()
-    crossed = {spot for _, a, b in CROSSINGS for spot in between(a, b)}
-    uses = {}
-    for _, nodes in ROUTES:
-        for spot in set(expand(nodes)):
-            uses[spot] = uses.get(spot, 0) + 1
-    legs = {spot for _, a, b in CROSSINGS for spot in (a, b)}
-    branches = {spot for spot, count in uses.items() if count > 1}
-    no_leg = set(parts) | crossed | legs
-    no_body = no_leg | branches
-    links = [(signal, a, b) for signal, a, b in CROSSINGS]
-    bridges = []
+    """Return (links, bridges): links are the crossings (net, first, last), bridges (net, hole, neighbour)."""
+    bridges = {}
     for signal, nodes in ROUTES:
         run = expand(nodes)
-        steps = len(run) - 1
-
-        def straight(i, j):
-            dc, dr = run[i + 1][0] - run[i][0], run[i + 1][1] - run[i][1]
-            return all((run[k + 1][0] - run[k][0], run[k + 1][1] - run[k][1]) == (dc, dr) for k in range(i, j))
-
-        def usable(i, j):
-            return (straight(i, j) and run[i] not in no_leg and run[j] not in no_leg
-                    and not any(run[k] in no_body for k in range(i + 1, j)))
-
-        # cost[i] = (bridges, links) to wire run[0..i]; a link may not start where the last one ended
-        best = {(0, False): ((0, 0), [])}
-        for i in range(steps + 1):
-            for ended in (False, True):
-                if (i, ended) not in best:
-                    continue
-                (bridge_count, link_count), plan = best[(i, ended)]
-                options = []
-                if i < steps:
-                    options.append(((i + 1, False), (bridge_count + 1, link_count), plan + [("bridge", i, i + 1)]))
-                if not ended:
-                    for span in LINK_SPANS:
-                        j = i + span
-                        if j <= steps and usable(i, j):
-                            options.append(((j, True), (bridge_count, link_count + 1), plan + [("link", i, j)]))
-                for state, cost, new_plan in options:
-                    if state not in best or cost < best[state][0]:
-                        best[state] = (cost, new_plan)
-        final = min((best[state] for state in ((steps, False), (steps, True)) if state in best), key=lambda entry: entry[0])
-        for kind, i, j in final[1]:
-            (links if kind == "link" else bridges).append((signal, run[i], run[j]))
-            if kind == "link":
-                # A branch hole now carries a leg: later runs must bridge to it
-                no_leg.update((run[i], run[j]))
-    return links, bridges
+        for a, b in zip(run, run[1:]):
+            bridges.setdefault(tuple(sorted((a, b))), (signal, a, b))
+    return list(CROSSINGS), list(bridges.values())
 
 
 def free_holes():

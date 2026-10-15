@@ -67,11 +67,11 @@ python generate_assembly.py          # perforated 3D assembly, needs CadQuery
 [`docs/hardware/kicad/BaseBoard`](../docs/hardware/kicad/BaseBoard): 60 x 80 mm perfboard, DevKit and BMP280 in female headers. [Schematic](../docs/hardware/kicad/BaseBoard/BaseBoard_schematic.svg), [3D preview](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_preview.png), [solder side](../docs/hardware/kicad/BaseBoard/BaseBoard_3D_solder_side.png).
 
 - `layout.py` holds parts and runs for both generators; refuses a short or a split net
-- A run is a 0 Ω link on the component side plus solder bridges between neighbouring pads below
+- A run is solder bridges between neighbouring pads on the solder side; the one crossing is a 0 Ω link on the component side
 
 ```
 cd docs/hardware/kicad/BaseBoard
-python generate_models.py            # BMP280, 0 Ω links, rings and bridges; needs CadQuery
+python generate_models.py            # BMP280, 0 Ω link, rings and bridges; needs CadQuery
 python3 generate_schematic.py        # schematic and symbols, plain Python
 /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/bin/python3 generate_board.py
 ```
