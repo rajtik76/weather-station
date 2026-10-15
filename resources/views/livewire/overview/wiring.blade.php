@@ -1,9 +1,8 @@
-{{-- SMIL, hidden under reduced motion. --}}
 @php($report = $this->stationReport)
 <figure class="m-0 mt-12">
     <div class="overflow-x-auto rounded-[10px] border border-line">
         <svg class="sch block w-full min-w-[860px]" viewBox="0 0 1000 440" role="img" aria-labelledby="sch-title">
-          <title id="sch-title">How the station is wired: SHT4x, VEML7700 and BMP280 on I2C, INMP441 on I2S, all wired to the ESP32-WROOM-32, which uploads over HTTPS to the Laravel API, PostgreSQL, the forecast service and this page.</title>
+          <title id="sch-title">How the station is wired: SHT4x, VEML7700 and BMP280 on I2C, INMP441 on I2S, all wired to the ESP32-WROOM-32, which uploads over HTTPS to the Laravel API, PostgreSQL and this page.</title>
           <defs>
             <pattern id="sch-minor" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" class="g-minor" stroke-width="0.6"/></pattern>
             <pattern id="sch-major" width="50" height="50" patternUnits="userSpaceOnUse"><rect width="50" height="50" fill="url(#sch-minor)"/><path d="M50 0H0V50" fill="none" class="g-major" stroke-width="0.8"/></pattern>
@@ -11,8 +10,6 @@
           </defs>
           <rect width="1000" height="440" class="sheet"/>
           <rect width="1000" height="440" fill="url(#sch-major)"/>
-
-          <!-- Outdoor: radiation shield -->
           <rect x="20" y="40" width="280" height="370" class="bound"/>
           <text x="20" y="28" class="t-note">RADIATION SHIELD · OUTDOOR</text>
 
@@ -33,8 +30,6 @@
           <text x="58" y="347" class="t-fn">MEMS microphone</text>
           <text x="212" y="326" text-anchor="end" class="t-ch s-{{ \App\Enums\Channel::Noise->colour() }}">{{ \App\Enums\Channel::Noise->code() }}</text>
           <path d="M168 345 q4 -8 8 0 t8 0 t8 0 t8 0 t8 0" class="sine s-{{ \App\Enums\Channel::Noise->colour() }}"/>
-
-          <!-- Indoor: base board -->
           <rect x="320" y="40" width="420" height="370" class="bound"/>
           <text x="320" y="28" class="t-note">BASE BOARD · INDOOR</text>
 
@@ -54,8 +49,6 @@
           <text x="554" y="236" class="t-note">sample every 30 s</text>
           <text x="554" y="256" class="t-note">fold into 10 min</text>
           <path d="M554 280 q5 -9 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" class="sine s-{{ \App\Enums\Channel::Temperature->colour() }}"/>
-
-          <!-- Buses -->
           <path d="M224 100H262M224 190H262" class="sch-wire"/>
           <path d="M262 100V190M262 145H540" class="bus"/>
           <path d="M430 145V205" class="sch-wire"/>
@@ -64,8 +57,6 @@
           <text x="276" y="136" class="t-net">I2C · SDA 21 · SCL 22</text>
           <path d="M224 330H540" class="bus"/>
           <text x="240" y="321" class="t-net">I2S · SCK 26 · WS 25 · SD 33</text>
-
-          <!-- Server -->
           <rect x="780" y="40" width="200" height="370" class="bound"/>
           <text x="780" y="28" class="t-note">SERVER</text>
           <path d="M720 165H798" class="sch-wire" marker-end="url(#sch-arrow)"/>
@@ -77,21 +68,14 @@
 
           <rect x="800" y="220" width="160" height="50" class="box"/>
           <text x="814" y="242" class="t-part">PostgreSQL</text>
-          <text x="814" y="260" class="t-fn">readings, forecasts</text>
+          <text x="814" y="260" class="t-fn">readings, events</text>
 
-          <rect x="800" y="300" width="160" height="50" class="box"/>
-          <text x="814" y="322" class="t-part">Forecast</text>
-          <text x="814" y="340" class="t-fn">Python, after each upload</text>
+          <rect x="800" y="300" width="160" height="50" class="box box-soft"/>
+          <text x="814" y="322" class="t-part">Dashboard</text>
+          <text x="814" y="340" class="t-fn">Livewire, this page</text>
 
           <path d="M880 190V218" class="sch-wire" marker-end="url(#sch-arrow)"/>
-          <path d="M880 272V298" class="sch-wire" marker-start="url(#sch-arrow)" marker-end="url(#sch-arrow)"/>
-
-          <rect x="800" y="70" width="160" height="44" class="box box-soft"/>
-          <text x="814" y="90" class="t-part">Dashboard</text>
-          <text x="814" y="106" class="t-fn">Livewire, this page</text>
-          <path d="M960 245H970V92H962" class="sch-wire" marker-end="url(#sch-arrow)"/>
-
-          <!-- Electrons: one bead per reading; I2C beads share one speed and are staggered, one bead leaves the ESP32 per upload -->
+          <path d="M880 272V298" class="sch-wire" marker-end="url(#sch-arrow)"/>
           <g class="bead b-{{ \App\Enums\Channel::Temperature->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-0.2s" dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
           <g class="bead b-{{ \App\Enums\Channel::Humidity->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion dur="3s" repeatCount="indefinite" path="M224 100H262V145H540"/></g>
           <g class="bead b-{{ \App\Enums\Channel::Light->colour() }}"><circle r="9" class="bead-halo"/><circle r="5" class="bead-core"/><animateMotion begin="-1.6s" dur="3s" repeatCount="indefinite" path="M224 190H262V145H540"/></g>

@@ -17,7 +17,6 @@ it('reports when the station last transmitted', function (): void {
 
     $this->get(route('overview'))
         ->assertOk()
-        // 11:48 UTC is 12:48 in Prague, which is still on CET in mid-March.
         ->assertSeeInOrder(['RUN', '15.3.2026 12:48']);
 });
 
@@ -126,7 +125,7 @@ it('carries the chosen sensor into the other pages', function (): void {
 
     Livewire::test(Charts::class)
         ->set('sensor', $second->slug)
-        ->assertSeeHtml('href="'.route('forecast', ['sensor' => $second->slug]).'"');
+        ->assertSeeHtml('href="'.route('overview', ['sensor' => $second->slug]).'"');
 });
 
 it('falls back to the first sensor when the link names one that is gone', function (): void {

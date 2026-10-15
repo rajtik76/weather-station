@@ -12,9 +12,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
- * One station, created by the first upload under a new `name`. `slug` is set
- * once so `?sensor=` links keep working.
- *
  * @property int $id
  * @property string $name
  * @property string $slug
@@ -33,7 +30,6 @@ class Sensor extends Model
         });
     }
 
-    /** Names can slug alike; a symbols-only name slugs to ''. */
     public static function uniqueSlug(string $name): string
     {
         $base = Str::slug($name) ?: 'sensor';
@@ -68,13 +64,5 @@ class Sensor extends Model
     public function reports(): HasMany
     {
         return $this->hasMany(StationReport::class);
-    }
-
-    /**
-     * @return HasMany<Forecast, $this>
-     */
-    public function forecasts(): HasMany
-    {
-        return $this->hasMany(Forecast::class);
     }
 }

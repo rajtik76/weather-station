@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 use App\Enums\ProtocolVersion;
-use App\Jobs\ForecastWeather;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
@@ -141,8 +140,6 @@ it('pings the uptime monitor once a batch is stored', function (): void {
             ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
         ],
     ])->assertCreated();
-
-    // Dispatched after the response; the test kernel terminates the request.
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://status.example.com/api/push/abc');
 });
 
@@ -161,37 +158,20 @@ it('stores a batch without pinging when no monitor is configured', function (): 
     Http::assertNothingSent();
 });
 
-it('asks for a forecast for the sensor once a batch is stored', function (): void {
-    config()->set('forecast.url', 'http://forecast.test');
-    Bus::fake([ForecastWeather::class]);
+it('stores readings without dispatching model jobs', function (): void {
+    Bus::fake();
+    config()->set('sensor.heartbeat_url');
 
     postJson('/api/v1/measurement', [
-        'sensor_name' => 'bme280',
+        'sensor_name' => 'sht4x',
         'protocol_version' => 1,
         'measurements' => [
-            ['timestamp' => 1757000000, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
+            ['timestamp' => 1792062000, 'temperature' => 1250, 'humidity' => 6000, 'pressure' => 97389],
         ],
     ])->assertCreated();
 
-    Bus::assertDispatchedAfterResponse(
-        ForecastWeather::class,
-        fn (ForecastWeather $job): bool => $job->sensor->name === 'bme280',
-    );
-});
-
-it('stores a batch without a forecast when no service is configured', function (): void {
-    config()->set('forecast.url');
-    Bus::fake([ForecastWeather::class]);
-
-    postJson('/api/v1/measurement', [
-        'sensor_name' => 'bme280',
-        'protocol_version' => 1,
-        'measurements' => [
-            ['timestamp' => 1757000001, 'temperature' => 2602, 'humidity' => 4871, 'pressure' => 97389],
-        ],
-    ])->assertCreated();
-
-    Bus::assertNotDispatchedAfterResponse(ForecastWeather::class);
+    expect(storedMeasurement(1792062000)->data->temperature)->toBe(1250);
+    Bus::assertNothingDispatched();
 });
 
 it('registers a sensor on its first upload and reuses it afterwards', function (): void {

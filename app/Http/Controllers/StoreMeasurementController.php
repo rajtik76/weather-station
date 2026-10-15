@@ -6,7 +6,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\ProtocolVersion;
 use App\Http\Requests\StoreMeasurementRequest;
-use App\Jobs\ForecastWeather;
 use App\Models\Measurement;
 use App\Models\Sensor;
 use App\Models\StationReport;
@@ -34,7 +33,6 @@ class StoreMeasurementController extends Controller
         $upserted = Measurement::upsert(
             values: $rows,
             uniqueBy: ['sensor_id', 'timestamp'],
-            // A window may be resent under a newer protocol after a firmware upgrade.
             update: ['data', 'protocol_version'],
         );
 
@@ -48,12 +46,10 @@ class StoreMeasurementController extends Controller
         }
 
         $this->pingHeartbeat();
-        $this->forecast($sensor);
 
         return response()->json(['stored' => $upserted], JsonResponse::HTTP_CREATED);
     }
 
-    /** After the response so it never delays the device; failures swallowed. */
     private function pingHeartbeat(): void
     {
         $url = config('sensor.heartbeat_url');
@@ -63,17 +59,5 @@ class StoreMeasurementController extends Controller
         }
 
         dispatch(fn () => rescue(fn () => Http::timeout(5)->get($url)))->afterResponse();
-    }
-
-    /** After the response: the service takes about a second. No URL, no forecasts. */
-    private function forecast(Sensor $sensor): void
-    {
-        $url = config('forecast.url');
-
-        if (! is_string($url) || $url === '') {
-            return;
-        }
-
-        ForecastWeather::dispatchAfterResponse($sensor);
     }
 }

@@ -1,75 +1,96 @@
-# Weather forecast station
+# Balcony Station
 
 [![CI](https://github.com/rajtik76/weather-station/actions/workflows/ci.yml/badge.svg)](https://github.com/rajtik76/weather-station/actions/workflows/ci.yml)
 [![Site](https://status.rajtik.com/api/badge/19/status?label=site)](https://status.rajtik.com)
 [![Readings](https://status.rajtik.com/api/badge/18/status?label=readings)](https://status.rajtik.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.md)
 
-Can a balcony weather station forecast its own next six hours better than
-assuming nothing changes? A small model, trained on eight years of Czech
-Hydrometeorological Institute (ČHMÚ) records, forecasts temperature and the
-chance of rain one to six hours ahead from the station's own readings alone.
-Every forecast is scored against what the station then measured, and the
-front page sets the last 30 days' verdict beside the next six hours.
+A weather station on an east-facing balcony in Plzeň, Czech Republic,
+measuring temperature, humidity and pressure. Its goal is to estimate
+outdoor air temperature as accurately as possible by correcting the
+heating error of this particular radiation shield and balcony setup.
 
-The bar to clear is persistence: the temperature stays as it is. The target
-is not the air temperature a weather service forecasts but what this sensor
-will read, and it is no professional sensor: on clear mornings the sun heats
-its shield and the reading runs more than 10 °C high. A forecast for Plzeň
-knows nothing of that, so it is no yardstick here. The model has to learn
-this balcony, morning sun included, and the score shows how far the station
-correction gets it: every forecast is also scored as the base model gave it,
-before the correction.
+The SHT4x measures temperature inside a passive radiation shield. Sunlight
+can heat the shield and make the sensor read above the surrounding air
+temperature. The project aims to retain the original readings and show a
+corrected estimate alongside them.
 
-The verdict is given for six hours ahead, with every shorter horizon beside
-it, in three numbers over the last 30 days:
-
-- **skill** - how much smaller the forecast's miss was than persistence's; below zero the forecast did worse
-- **mean miss** - in °C, beside persistence's
-- **in range** - how often the reading landed inside the forecast range; the range is drawn to hold 80 %, so less means too narrow
-
-Until a day of forecasts has come true, the verdict says it is too early.
+**Current status:** the overview and historical charts show original,
+uncorrected measurements. The temperature correction and its comparison
+page are the next stage of development.
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
-## Architecture
+## Reference and evaluation
 
-```
+ČHMÚ Plzeň-Mikulka, approximately 3.5 km away, is the professional reference
+for developing and evaluating the correction. Its historical observations
+are available through [ČHMÚ open data](https://opendata.chmi.cz/meteorology/climate/).
+Location, elevation and microclimate can produce real differences between
+Mikulka and the balcony; agreement with Mikulka is a measurable reference,
+with that limitation.
+
+The correction will be evaluated against the uncorrected sensor on the
+same observations, using days excluded from calibration. Both the mean
+absolute error and the mean signed error should be compared, with sunny
+periods and nights evaluated separately.
+
+The setup changed during the record:
+
+- Radiation shield installed on **16 September 2026 at 15:00 Europe/Prague**
+- BME280 replaced by an SHT4x on 23 September 2026
+- SHT4x sensor replaced and VEML7700 installed on 30 September 2026
+
+These events are recorded in `station_events`. Calibration must account
+for the shield installation and sensor changes.
+
+## Measurements
+
+```text
 SHT4x    --I2C--+
 VEML7700 --I2C--+
 BMP280   --I2C--+--> ESP32 --HTTPS--> Laravel API --> PostgreSQL
-INMP441  --I2S--+                       |    |
-                                        |  forecast service (Python)
-                                   Livewire pages
+INMP441  --I2S--+                                      |
+                                                 Livewire pages
 ```
 
-- SHT4x (temperature, humidity) and VEML7700 (light) outside in a passive radiation shield, BMP280 (pressure) indoors, INMP441 microphone in the shield
-- Readings every 30 s, folded into ten-minute windows and uploaded to the API
-- Rain is detected from the microphone spectrum
-- A Python service forecasts after every upload from the station's last 56 hours, with a station correction fitted daily on the last 60 days
+- SHT4x: temperature and humidity, outside in the radiation shield
+- BMP280: pressure, on the indoor base board; its temperature is unused
+- VEML7700: light inside the shield, retained as a potential correction input
+- INMP441: sound in the shield, with an experimental indication of rain from its spectrum
+- Samples every 30 seconds, uploaded as ten-minute windows with means and extremes
+- Original measurements remain stored in the firmware's units; display conversions happen on read
 
-## Known limitations
-
-- Sensor reads more than 10 °C above air temperature for an hour or two on clear mornings (sun on the east-facing balcony, shield only partly helps); accepted, the forecast is scored against these same readings
-- VEML7700 sits behind the shield's louvers: the shape of the day is real, the lux do not compare with a station in the open
-- Rain thresholds come from one rain (checked against the ČHMÚ gauge 3.5 km away) and belong to this mounting; drizzle too fine to drip is not heard
+Light behind the shield's louvers is specific to this mounting. Its absolute
+lux values are not an open-sky radiation measurement. The microphone's rain
+indication is experimental and has only been checked on a small number of
+showers.
 
 ## Run it
 
-Needs PHP 8.4, Node 24 and Docker.
+Requires PHP 8.4, Node 24 and Docker. Docker Compose runs PostgreSQL 18;
+Laravel Herd serves the local site and Vite provides the development assets.
 
+```sh
+docker compose up -d
+composer setup
+npm run dev
 ```
-docker compose up -d              # PostgreSQL, with a second database for the tests
-composer setup                    # install, .env, app key, migrate, build assets
-php artisan migrate:fresh --seed  # a month of sample data; wipes the local database
-composer dev                      # server, queue worker, logs, vite
-```
+
+For a local demonstration, `php artisan migrate:fresh --seed` replaces the
+local database with a month of sample measurements for two stations. The
+sample weather series comes from ČHMÚ Plzeň-Mikulka, with synthetic station
+variation, light and sound added for the dashboard.
+
+ČHMÚ data is licensed CC BY 4.0. Source: Czech Hydrometeorological Institute.
+The sample series uses hourly means of its ten-minute observations for
+August 2025. Sample pressure is adjusted from Mikulka's elevation of 359.8 m
+to the balcony's 345 m before the synthetic station variation is added.
 
 ## Documentation
 
-- [`docs/development.md`](docs/development.md) - layout, configuration, tests, deploying
-- [`docs/api.md`](docs/api.md) - ingest endpoint and storage
-- [`docs/scoring.md`](docs/scoring.md) - how the forecast is scored
-- [`firmware/README.md`](firmware/README.md) - wiring, protocol, hardware notes; [`firmware/CHANGELOG.md`](firmware/CHANGELOG.md)
-- [`forecast/README.md`](forecast/README.md) - model and service; [`forecast/CHANGELOG.md`](forecast/CHANGELOG.md)
-- `docs/hardware/kicad/` - KiCad projects of the station and the shield hub
+- [`docs/development.md`](docs/development.md): application structure, configuration, checks and deployment
+- [`docs/api.md`](docs/api.md): ingest protocol and storage
+- [`firmware/README.md`](firmware/README.md): wiring, protocol and hardware notes
+- [`firmware/CHANGELOG.md`](firmware/CHANGELOG.md): firmware history
+- `docs/hardware/kicad/`: station, shield hub and base board KiCad projects

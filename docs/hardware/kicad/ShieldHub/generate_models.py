@@ -1,6 +1,6 @@
 """Build approximate STEP models of the sensor breakouts and pin headers (needs CadQuery).
 
-The SHT45 STEP is the unmodified LaskaKit model. 3D Y is opposite 2D footprint Y.
+The SHT4x STEP is the unmodified LaskaKit model. 3D Y is opposite 2D footprint Y.
 """
 
 from pathlib import Path

@@ -6,9 +6,6 @@ namespace App\Enums;
 
 use App\ValueObject\Figure;
 
-/**
- * Value: key in DayFigures::metrics(). Tailwind classes are spelled out whole for the source scanner.
- */
 enum Channel: string
 {
     case Temperature = 't';
@@ -39,7 +36,6 @@ enum Channel: string
         };
     }
 
-    /** CSS token name without `--`. */
     public function colour(): string
     {
         return match ($this) {
@@ -86,17 +82,6 @@ enum Channel: string
             self::Pressure => 'bg-ch3/60',
             self::Noise => 'bg-ch4/60',
             self::Light => 'bg-aux/60',
-        };
-    }
-
-    public function bandFillClass(): string
-    {
-        return match ($this) {
-            self::Temperature => 'fill-ch1/18',
-            self::Humidity => 'fill-ch2/18',
-            self::Pressure => 'fill-ch3/18',
-            self::Noise => 'fill-ch4/18',
-            self::Light => 'fill-aux/18',
         };
     }
 

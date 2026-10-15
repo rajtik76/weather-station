@@ -56,49 +56,37 @@ class MeasurementSeeder extends Seeder
         ],
     ];
 
-    /** LAeq per local hour, dB. */
     private const array NOISE_BY_HOUR = [42, 41, 40, 40, 41, 44, 50, 56, 58, 57, 56, 56, 57, 56, 56, 57, 58, 59, 57, 54, 51, 48, 46, 44];
 
-    /** Third-octave bands 25 Hz to 8 kHz against LAeq, 0.01 dB; unweighted, so the low end sits above LAeq. */
     private const array BAND_OFFSETS = [935, 775, 556, 718, 315, -173, -304, -655, -1038, -980, -1169, -1245, -1157, -1053, -1187, -1013, -814, -709, -810, -1287, -1793, -2166, -2428, -2582, -2632, -3279];
 
-    /** Showers as [from, to] hours before the end of the record. */
     private const array SHOWERS = [[20.0, 18.5], [44.0, 43.5]];
 
     private const float LATITUDE = 49.73;
 
     private const float LONGITUDE = 13.40;
 
-    /** Open-sky illuminance, lx: at the horizon, and added per unit of sin(sun height). */
     private const float HORIZON_LUX = 400.0;
 
     private const float SUN_LUX = 110_000.0;
 
-    /** Share of open sky reaching the VEML7700 behind the louvers. */
     private const float SHIELD_SHARE = 0.08;
 
-    /** Local hour until which the morning sun shines straight through the east louvers. */
     private const int MORNING_SUN_UNTIL = 10;
 
     private const float MORNING_SUN_GAIN = 4.0;
 
-    /** Real hourly Open-Meteo data for Plzen-Slovany (345 m): station pressure is ~977 hPa, not sea level 1013. */
     public function run(): void
     {
         $observations = $this->observations();
         $hours = count($observations['temperature_c']);
         $perHour = 3600 / self::STEP_SECONDS;
         $count = $hours * $perHour;
-
-        // Fixed seed: a reseed returns the same month.
         mt_srand(1898);
-
-        // Last closed slot: a stamp in an open one would lie in the future.
         $end = (int) (floor(now()->getTimestamp() / self::STEP_SECONDS) - 1) * self::STEP_SECONDS;
         $start = $end - ($count - 1) * self::STEP_SECONDS;
 
         foreach (self::SENSORS as $station) {
-            // Model events are off in seeders: pass the slug by hand.
             $sensor = Sensor::query()->firstOrCreate(
                 ['name' => $station['name']],
                 ['slug' => Sensor::uniqueSlug($station['name']), 'description' => $station['description']],
@@ -114,8 +102,6 @@ class MeasurementSeeder extends Seeder
                 $temperature = $this->between($observations['temperature_c'], $hour, $into) + $station['warmerBy'] + mt_rand(-4, 4) / 100;
                 $humidity = $this->between($observations['humidity_pct'], $hour, $into) - $station['drierBy'] + mt_rand(-20, 20) / 100;
                 $pressure = $this->between($observations['pressure_hpa'], $hour, $into) + mt_rand(-3, 3) / 100;
-
-                // Protocol units: 0.01.
                 $t = (int) round($temperature * 100);
                 $h = (int) round(max(0.0, min(100.0, $humidity)) * 100);
                 $p = (int) round($pressure * 100);
@@ -128,7 +114,6 @@ class MeasurementSeeder extends Seeder
                     default => ProtocolVersion::V1,
                 };
                 $window = fn (): MeasurementDataV2 => $this->window($t, $h, $p, $station['sunSpikes'] && $this->inAfternoonSun($slot));
-                // Stamped by the last reading, 30 s short of the slot's end.
                 $timestamp = $version === ProtocolVersion::V1 ? $slot : $slot + self::STEP_SECONDS - 30;
                 $arrived = Date::createFromTimestamp(min($timestamp, now()->getTimestamp()));
 
@@ -209,7 +194,6 @@ class MeasurementSeeder extends Seeder
         );
 
         if ($isShowering) {
-            // Drops on the shield, as RainDetector hears them: loud at 8 kHz, the shell ringing at 1 kHz.
             $bands[25] = mt_rand(4900, 6000);
             $bands[16] = max($bands[15], $bands[17]) + mt_rand(250, 500);
         }
@@ -254,7 +238,6 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /** Light behind the shield, 0.01 lx. */
     private function light(int $slot, bool $isShowering): LightWindow
     {
         $height = $this->sunHeight($slot + intdiv(self::STEP_SECONDS, 2));
@@ -264,8 +247,6 @@ class MeasurementSeeder extends Seeder
             $height < 0.0 => self::HORIZON_LUX * 10 ** ($height / 2),
             default => self::HORIZON_LUX + self::SUN_LUX * sin(deg2rad($height)),
         };
-
-        // One cover per hour from a hash of the hour; a shower is dark.
         $cover = $isShowering ? 0.12 : 0.25 + 0.75 * (crc32((string) intdiv($slot, 3600)) % 1000) / 999;
 
         $isMorningSun = $height > 3.0 && $this->localHour($slot) < self::MORNING_SUN_UNTIL && $cover > 0.7;
@@ -281,7 +262,6 @@ class MeasurementSeeder extends Seeder
         );
     }
 
-    /** Sun height in degrees; equation of time left out. */
     private function sunHeight(int $timestamp): float
     {
         $day = (int) gmdate('z', $timestamp) + 1;

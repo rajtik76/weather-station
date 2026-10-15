@@ -14,32 +14,10 @@ export function formatNumber(value, decimals) {
     return numberFormats.get(decimals).format(value);
 }
 
-const MINUS = "\u2212";
-
-/** As Figure::signed(): the sign follows the value, not its rounding, and zero takes a plus. */
-export function formatSigned(value, decimals) {
-    const sign = value < 0 ? MINUS : "+";
-
-    return `${sign}${formatNumber(Math.abs(value), decimals)}`;
-}
-
-/** As Figure::format(): the true minus. */
-export function formatWithMinus(value, decimals) {
-    return `${value < 0 ? MINUS : ""}${formatNumber(Math.abs(value), decimals)}`;
-}
-
-/** As Figure::range(): a hyphen would read as a minus beside a negative end. */
-export function formatRange(low, high, decimals) {
-    const separator = low < 0 || high < 0 ? " to " : "-";
-
-    return `${formatWithMinus(low, decimals)}${separator}${formatWithMinus(high, decimals)}`;
-}
-
 export function formatValue(value, channel) {
     return value === null ? "n/a" : `${formatNumber(value, channel.decimals)} ${channel.unit}`;
 }
 
-/** `j.n.Y H:i` as LocalTime::stamp() prints it. Wall-clock ms tagged UTC, so the parts are read as UTC. */
 export function formatStamp(wallClockMs) {
     const date = new Date(wallClockMs);
     const pad = (part) => String(part).padStart(2, "0");
@@ -64,7 +42,6 @@ export function formatLux(value) {
     return `${formatNumber(value, decimals)} lx`;
 }
 
-/** Titles are hand-typed and land in innerHTML. */
 export function escapeHtml(text) {
     const node = document.createElement("span");
     node.textContent = text;

@@ -5,7 +5,6 @@
         @include('livewire.overview.hero')
         @include('livewire.overview.about')
         @include('livewire.overview.channels')
-        @include('livewire.overview.forecast')
         @include('livewire.overview.status')
         @include('livewire.overview.location')
     </main>

@@ -20,8 +20,6 @@ it('reads the day\'s extremes off the samples rather than the means', function (
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
 
     $sensor = Sensor::factory()->create();
-
-    // Coldest mean 2,10 °C with a sample at 1,05; warmest mean 21,50 with a sample at 24,90.
     Measurement::factory()->for($sensor)->v2()->create([
         'timestamp' => now()->subHours(8)->getTimestamp(),
         'data' => (string) new MeasurementDataV2(
@@ -122,7 +120,7 @@ it('shows every other channel with its day extremes below the temperature readou
     $this->get(route('overview'))
         ->assertOk()
         ->assertSeeInOrder([
-            'Temperature, last 24 h',
+            'Measured temperature, last 24 h',
             'Measure · CH1', '16,48',
             'bg-ch2', '87,84', '%', 'min', '87,00', 'max', '88,00',
             'bg-ch3', '1 021,39', 'hPa', 'min', '1 021,27', 'max', '1 021,48',
@@ -185,7 +183,7 @@ it('updates every readout on the page when a poll brings a new reading', functio
         ->assertSee('between 16,00 and 19,37 °C, now 18,73 °C');
 
     $this->assertThat([
-        'Temperature, last 24 h',
+        'Measured temperature, last 24 h',
         'Measure · CH1', '18,73',
         'rising', '2,25 °C', 'an hour',
         'Min', '16,00 °C',
@@ -260,7 +258,6 @@ it('marks the noise as the last heard once the newest window has none', function
         'timestamp' => now()->subHours(2)->getTimestamp(),
         'data' => (string) noisyWindow(5562, 5762, 5262, 6462, 3000),
     ]);
-    // The microphone died: the newest window carries the weather alone.
     Measurement::factory()->for($sensor)->create([
         'timestamp' => now()->subMinutes(5)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 1200, humidity: 6000, pressure: 97000),
@@ -361,7 +358,6 @@ it('says in the noise channel when the microphone hears rain, and nothing otherw
         $overview->assertDontSee('Noise, LAeq');
     }
 })->with([
-    // Drips loud at 8 kHz with the shield ringing at 1 kHz, as RainDetector hears rain.
     'rain' => ['rain', 'Rain heard now.'],
     'dry' => ['dry', 'No rain heard.'],
     'no microphone' => [null, 'Temperature'],
@@ -370,7 +366,6 @@ it('says in the noise channel when the microphone hears rain, and nothing otherw
 it('keeps quiet about rain once the station has gone silent', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
-    // Rain heard two hours ago, then nothing: the shower is not the weather now.
     Measurement::factory()->v3()->for($sensor)->create([
         'timestamp' => now()->subHours(2)->getTimestamp(),
         'data' => (string) new MeasurementDataV3(

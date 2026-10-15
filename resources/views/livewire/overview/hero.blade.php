@@ -28,7 +28,7 @@
         <div class="overflow-hidden rounded-[10px] border border-line bg-screen lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[1fr_auto]">
             <figure class="m-0 min-w-0 border-b border-line lg:col-start-1 lg:row-start-1 lg:border-r lg:border-b-0">
                 <figcaption class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 font-mono text-[13px] text-ink-3 sm:px-6">
-                    <span class="flex items-center gap-2"><span class="swatch {{ $temperatureChannel->backgroundClass() }}"></span><span class="text-ink">{{ $temperatureChannel->code() }}</span><span>Temperature, last 24 h</span></span>
+                    <span class="flex items-center gap-2"><span class="swatch {{ $temperatureChannel->backgroundClass() }}"></span><span class="text-ink">{{ $temperatureChannel->code() }}</span><span>Measured temperature, last 24 h</span></span>
                     <span class="num">min {{ $temperatureChannel->format($temperature['dayMin']) }} · max {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}</span>
                 </figcaption>
                 <div class="relative ml-[calc(1.5rem+52px)] mr-6 mt-4 mb-3 h-[240px] sm:ml-[calc(1.75rem+52px)] sm:mr-7 sm:h-[340px]">
@@ -66,7 +66,7 @@
                 <p class="label-mono m-0">Measure · {{ $temperatureChannel->code() }}</p>
                 <p class="num m-0 mt-4 font-mono text-[60px] leading-none font-medium tracking-[-0.03em]">{{ $temperatureChannel->format($temperature['now']) }}<span class="ml-1.5 align-top text-[22px] font-normal tracking-normal text-ink-3">{{ $temperatureChannel->unit() }}</span></p>
                 <p class="m-0 mt-3 text-[16px] text-ink-2">
-                    Outside air,
+                    Sensor reading,
                     @if (abs($temperature['delta']) < 0.05)
                         steady.
                     @else
@@ -89,7 +89,7 @@
                         </div>
                     @endif
                 </dl>
-                <p class="m-0 mt-auto pt-6 text-[15px] leading-relaxed text-ink-3">On a clear morning the sun hits the shield and the reading runs high for an hour or two. It stays in the record on purpose.</p>
+                <p class="m-0 mt-auto pt-6 text-[15px] leading-relaxed text-ink-3">Measured inside the radiation shield. Sunlight can heat the shield and raise the reading above the surrounding air temperature. These readings are uncorrected.</p>
             </aside>
             @include('livewire.overview.hero-readouts')
         </div>

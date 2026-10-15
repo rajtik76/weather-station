@@ -2,12 +2,13 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "rajtik76/weather-station",
     "type": "project",
-    "description": "Balcony weather station: Laravel ingest API and dashboard for readings from an ESP32 with an SHT4x sensor. The firmware lives in firmware/.",
+    "description": "Balcony weather station measuring temperature, humidity and pressure, developing a radiation shield correction with ČHMÚ reference data.",
     "keywords": [
         "weather-station",
         "iot",
         "esp32",
         "sht4x",
+        "temperature",
         "laravel",
         "livewire"
     ],
@@ -108,16 +109,12 @@
         "npm:test": [
             "npm run test"
         ],
-        "forecast:test": [
-            "uv run --directory forecast --frozen --group dev pytest -q"
-        ],
         "review": [
             "Composer\\Config::disableProcessTimeout",
             "@lint:check",
             "@rector:check",
             "@stan",
             "@npm:test",
-            "@forecast:test",
             "@test"
         ]
     },

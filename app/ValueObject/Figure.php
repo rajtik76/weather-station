@@ -24,14 +24,6 @@ final readonly class Figure
         return $signed ? self::signed($value, 2) : self::format($value, 2);
     }
 
-    /** "to" once an end is below zero: a hyphen between signed figures reads as a third minus. */
-    public static function range(float|int $low, float|int $high, int $decimals): string
-    {
-        $separator = $low < 0 || $high < 0 ? ' to ' : '-';
-
-        return self::format($low, $decimals).$separator.self::format($high, $decimals);
-    }
-
     /** The sign follows the value, not its rounding ("−0,0"); `$plusOnZero` off leaves zero bare. */
     public static function signed(float|int $value, int $decimals, bool $plusOnZero = true): string
     {

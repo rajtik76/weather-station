@@ -1,6 +1,4 @@
-# forecast/ has its own image.
 firmware/
-/forecast/
 
 # Rebuilt inside the image.
 /vendor/
@@ -19,6 +17,7 @@ auth.json
 /storage/framework/sessions/*
 /storage/framework/views/*.php
 /storage/debugbar/*.json
+/storage/app/private/
 
 /.git/
 /.github/

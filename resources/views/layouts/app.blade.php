@@ -5,13 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
         <title>{{ $title ?? config('app.name') }}</title>
-        <meta name="description" content="A balcony weather station that forecasts its own next six hours and scores each forecast against what it then measured.">
+        <meta name="description" content="Temperature, humidity and pressure from a balcony in Plzeň. A project to estimate outdoor air temperature by correcting radiation shield heating, using ČHMÚ Plzeň-Mikulka as a reference.">
 
         <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48 64x64">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
-        {{-- bunny() in vite.config.js bundles the fonts; @vite does not emit them, this does. --}}
         @fonts
         @vite(['resources/css/app.css', 'resources/js/app.js'])
 

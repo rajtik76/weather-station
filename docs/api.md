@@ -166,7 +166,6 @@ Firmware is tagged `fw/v<version>` ([`firmware/CHANGELOG.md`](../firmware/CHANGE
 
 - Validation is all or nothing: one invalid entry rejects the batch, nothing is stored
 - After storing, once the response has gone out: `SENSOR_HEARTBEAT_URL` is requested if set
-- Same for `FORECAST_URL`: every upload asks the forecast service for a forecast ([scoring](scoring.md#stored)); a failure is logged and ignored, the next upload retries
 
 ## Storage
 
@@ -175,13 +174,11 @@ Firmware is tagged `fw/v<version>` ([`firmware/CHANGELOG.md`](../firmware/CHANGE
 | `sensors`         | stations; created by the first upload under a new `sensor_name`, description added by hand |
 | `measurements`    | one row per window per station                                                             |
 | `station_reports` | one `jsonb` row per batch, tied to the sensor; newest shown under the payload tail         |
-| `forecasts`       | one row per forecast service run                                                           |
 
 - `measurements`: `sensor_id`, `timestamp`, `protocol_version`, `jsonb` blob with the version's fields as the firmware sent them
 - `(sensor_id, timestamp)` is unique; the endpoint upserts (new blob and version replace the old), so a resent batch never duplicates
 - Conversion to °C, % and hPa and the sea-level pressure reduction (`StationSite::ALTITUDE_METRES`) happen on read
 - `protocol_version` is its own column; `App\Enums\ProtocolVersion` maps a version to its value object in `App\ValueObject\`; a new format is a new case and class
-- `forecasts`: `sensor_id`, `issued_at` (ten-minute window of the starting reading, unique per sensor), `model` (the model's `trained_at`, see [`forecast/CHANGELOG.md`](../forecast/CHANGELOG.md)), whether the station correction applied, six horizons as `jsonb` in °C, % and hPa; service contract in [`forecast/README.md`](../forecast/README.md#the-services-contract)
 
 ## Aggregation
 

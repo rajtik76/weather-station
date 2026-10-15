@@ -9,13 +9,10 @@ use App\ValueObject\Readout;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * One sensor's readings outside the charts, by the station's own stamp (a buffered batch arrives late).
- *
  * @phpstan-import-type DayRow from Readout
  */
 final readonly class StationRecord
 {
-    /** Null id matches nothing. */
     public function __construct(private ?int $sensorId) {}
 
     public function newest(): ?Measurement
@@ -29,17 +26,6 @@ final readonly class StationRecord
     public function readoutsSince(int $from): array
     {
         return array_map(fn (Measurement $measurement): array => Readout::of($measurement->data)->toArray(), $this->since($from));
-    }
-
-    /**
-     * @return list<array{at: int, t: float}>
-     */
-    public function temperaturesSince(int $from): array
-    {
-        return array_map(fn (Measurement $measurement): array => [
-            'at' => $measurement->timestamp,
-            't' => Readout::of($measurement->data)->temperature(),
-        ], $this->since($from));
     }
 
     /**

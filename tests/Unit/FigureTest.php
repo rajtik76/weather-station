@@ -40,12 +40,6 @@ it('prints a negative figure with the true minus, like the signed ones beside it
         ->and(Figure::format(-1204, 0))->toBe('−1 204');
 });
 
-it('joins a range with a hyphen, and with words once an end is below zero', function (): void {
-    expect(Figure::range(13.5, 15.1, 1))->toBe('13,5-15,1')
-        ->and(Figure::range(-3.2, -1.0, 1))->toBe('−3,2 to −1,0')
-        ->and(Figure::range(-0.5, 1.2, 1))->toBe('−0,5 to 1,2');
-});
-
 it('prints a figure to the hundredth, signed on request', function (): void {
     expect(Figure::twoDecimals(1020.1))->toBe('1 020,10')
         ->and(Figure::twoDecimals(-3.256))->toBe('−3,26')

@@ -1,78 +1,134 @@
 # Development
 
-## The site
+## Purpose and current scope
 
-A station is whatever uploads under a `sensor_name`; the first upload registers it in `sensors`, a description can be added by hand. A header picker switches stations once there are two.
+The project records temperature, humidity and pressure from a balcony
+station in Plzeň. Its next stage is a correction of radiation shield heating,
+with ČHMÚ Plzeň-Mikulka as the professional temperature reference.
 
-Three Livewire pages on the base `StationPage`. Window and station are in the URL.
+The current application displays original sensor measurements. A corrected
+temperature estimate, automated reference ingestion and a historical
+comparison page are still to be implemented. Mikulka is about 3.5 km away;
+its temperature is a reference with a different local environment.
 
-| Page     | Path        | Shows                                                                                                                                                                                  |
-| -------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overview | `/`         | current readings per channel with the last 24 h, next six hours with the verdict, the board's report, approximate location; the only self-refreshing page                              |
-| Charts   | `/charts`   | temperature, humidity (dew point on request), sea-level pressure; last week by default, min-max band, whole-record strip to drag a window up to a month; bucket width follows the span |
-| Forecast | `/forecast` | how the model works, the forecast now, the verdict by horizon, [scoring](scoring.md)                                                                                                   |
+Downloaded reference files are kept locally under
+`storage/app/private/chmu/`, outside version control and the application image.
 
-Charts, when the data exists:
+## Pages
 
-- Noise strips: A-weighted level with LA90 to LA10 band and loudest second; third-octave spectrum waterfall with a rain icon over columns where rain was heard
-- Light strip: lux in the shield, log scale
-- Events from `station_events` (entered by hand) marked on the charts
-- Below: the three newest windows as stored and the station's full report
+Both pages extend `StationPage`. A station is registered by the first upload
+under a new `sensor_name`. The picker appears once two stations exist; its
+selection survives navigation through the `sensor` query parameter.
+Links use station slugs so they remain stable across reseeding.
 
-Rain is detected by `App\ValueObject\RainDetector` per ten-minute window: ring around 1 kHz plus a loud top of the spectrum.
+| Page     | Path      | Content                                                                                                        |
+| -------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| Overview | `/`       | Current measurements, last 24 hours, hardware, station report and approximate location; polls every 60 seconds |
+| Charts   | `/charts` | Measurement history, time window, channel switches, station events and the newest three raw transmissions      |
 
-## Layout
+The charts average measurements into PostgreSQL buckets, preserving gaps
+and sample extremes. The selected window is limited to a month, with a
+navigator over the whole record. Pressure is stored as station pressure
+and reduced to sea level for display.
 
-| Path                | Contents                                                                                                                                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `firmware/`         | Arduino sketches; [`README`](../firmware/README.md), [`CHANGELOG`](../firmware/CHANGELOG.md)                                                                                                                                          |
-| `forecast/`         | ČHMÚ fetching, training, scoring, the service; [`README`](../forecast/README.md), [`CHANGELOG`](../forecast/CHANGELOG.md)                                                                                                             |
-| `app/Http/`         | Ingest endpoint, form request, bearer token middleware                                                                                                                                                                                |
-| `app/Enums/`        | `ProtocolVersion` (payload version to decoder), bucket widths per span                                                                                                                                                                |
-| `app/ValueObject/`  | Per-version payload decoding; calculations for the pages: sea-level pressure, dew point, rain, forecast scores, number format                                                                                                         |
-| `app/Models/`       | Sensors, measurements, station reports, forecasts, events                                                                                                                                                                             |
-| `app/Queries/`      | Everything pages and jobs read: chart buckets, scoring, newest forecast and report, the one client of the forecast service, the station correction cached for a day                                                                   |
-| `app/Jobs/`         | `ForecastWeather` (asks the service after every upload, stores the answer and the light experiment); `BackfillForecastBase` (`php artisan forecast:backfill-base`), `BackfillLightExperiment` (`php artisan forecast:backfill-light`) |
-| `app/Livewire/`     | The three pages; views and partials in `resources/views/livewire/`                                                                                                                                                                    |
-| `database/seeders/` | A month of two stations (first: last three days with noise and two showers, last day with light), two weeks of forecasts each                                                                                                         |
-| `docs/`             | [API contract](api.md); KiCad projects in `docs/hardware/kicad/`                                                                                                                                                                      |
-| `docker/`           | nginx, PHP-FPM, supervisord config for the production image; init script for the local test database                                                                                                                                  |
+Sound and light appear when the selected station has sent them. Light is
+measured behind the radiation shield's louvers. The sound spectrum provides
+an experimental rain indication through `RainDetector`.
 
-## Running it
+## Structure
 
-Needs PHP 8.4, Node 24 and Docker. No paid Flux components, no `auth.json`.
+| Path                   | Content                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `firmware/`            | ESP32 firmware, wiring and protocol documentation                                           |
+| `app/Http/`            | Measurement ingest, validation and bearer token authentication                              |
+| `app/Models/`          | Sensors, measurements, station reports and station events                                   |
+| `app/Queries/`         | Data access for pages and chart buckets                                                     |
+| `app/ValueObject/`     | Payload decoding, units, pressure reduction, dew point, light, sound and chart calculations |
+| `app/Livewire/`        | Shared station state and the two page components                                            |
+| `resources/views/`     | Page templates and shared Blade components                                                  |
+| `resources/js/charts/` | ECharts strips, navigator, events, cursor and zoom                                          |
+| `database/seeders/`    | Demonstration measurements and events                                                       |
+| `docker/`              | Production nginx, PHP-FPM, supervisord and local PostgreSQL initialization                  |
+| `docs/hardware/kicad/` | Hardware designs and their generation tools                                                 |
 
+The hardware generation scripts under `docs/hardware/kicad/` belong to the
+circuit designs and remain part of the project.
+
+## Local development
+
+Requires PHP 8.4, Node 24 and Docker. PostgreSQL uses the same
+`postgres:18-alpine` image locally and in production. Laravel Herd serves
+the site. No Flux Pro license is required.
+
+```sh
+docker compose up -d
+composer setup
+npm run dev
 ```
-docker compose up -d   # PostgreSQL 18 on 5432, with a second database for the tests
-composer setup         # install, .env, app key, migrate, build assets
-php artisan migrate:fresh --seed   # a month of sample data; wipes the local database
-composer dev           # server, queue worker, logs, vite
-composer test
-composer review        # rector, phpstan, js, forecast (uv) and php tests
+
+`php artisan migrate:fresh --seed` is an optional destructive reset of the
+local database. The two sample stations contain a month of weather based
+on ČHMÚ Mikulka observations from August 2025. Their station differences,
+sample extremes, sound and light are synthetic. The first station has
+sound for its last three days and light for its last day.
+
+The sample pressure has been adjusted from Mikulka's 359.8 m elevation to
+the balcony's 345 m using the same dry-air hypsometric formula as the display.
+The fixture records both elevations. This avoids introducing an elevation
+offset when the dashboard reduces the sample station pressure to sea level.
+Synthetic variation uses a fixed random seed. The stored protocol units
+are documented in [`api.md`](api.md).
+
+## Configuration
+
+| Variable               | Purpose                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `SENSOR_API_TOKEN`     | Bearer token for ingest; an empty token disables access |
+| `SENSOR_HEARTBEAT_URL` | Optional monitor ping after a batch has been stored     |
+| `DB_*`                 | PostgreSQL connection                                   |
+| `APP_NAME`             | Application name; `Balcony Station` in `.env.example`   |
+
+The measurement protocol and response remain documented in
+[`api.md`](api.md). Storage uses UTC; presentation uses Europe/Prague.
+
+## Presentation contracts
+
+- `LocalTime::wallClockMs()` includes the Czech UTC offset so ECharts can render local time with `useUTC: true`. It is a display coordinate, distinct from the real epoch used for zooming and comparisons with the current time.
+- `LocalTime::stamp()` and `formatStamp()` in `resources/js/charts/format.js` share the `j.n.Y H:i` format.
+- `Channel` spells out complete Tailwind utility names for source detection.
+- Chart event titles pass through `escapeHtml()` before insertion into `innerHTML`.
+- The reset zoom button remains rendered while disabled so other controls stay in place when zoom becomes available.
+
+## Checks
+
+Code formatting, static analysis and tests:
+
+```sh
+vendor/bin/pint --dirty
+composer stan
+npm run test
+php artisan test --parallel
+npm run build
 ```
 
-PostgreSQL everywhere (same image as production); the charts average buckets in SQL only PostgreSQL speaks.
+`composer review` runs formatting, Rector, PHPStan, JavaScript tests and
+PHP tests. Regression coverage includes ingest authentication, validation,
+resends, protocol versions, station selection and chart behavior.
 
-### `.env`
+## Deployment
 
-| Variable                 | Meaning                                                                                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SENSOR_API_TOKEN`       | Bearer token the firmware sends; the endpoint denies everything while empty                                                                                    |
-| `SENSOR_HEARTBEAT_URL`   | Optional; requested after each stored batch (push monitor)                                                                                                     |
-| `FORECAST_URL`           | Optional; forecast service address, locally `http://127.0.0.1:8000` after `uv run serve.py` in `forecast/`; unset, no forecasts                                |
-| `FORECAST_HISTORY_SINCE` | Local date such as `2026-09-17`; earlier readings stay out of the station correction; invalid value is reported and ignored                                    |
-| `FORECAST_NWP_URL`       | Numerical weather model stored with every forecast (not scored), default Open-Meteo `https://api.open-meteo.com/v1/forecast`; empty disables it (the tests do) |
+The application uses one image from the root `Dockerfile`: nginx, PHP-FPM
+and the Laravel scheduler on port 8080. The entrypoint caches configuration,
+routes and views. Migrations run separately during deployment.
 
-### Sample data
+## Temperature correction work
 
-- `MeasurementSeeder`: a month of two stations at the reporting interval; first station has noise for its last three days (two showers) and light for the last one, the second has neither
-- `ForecastSeeder`: a forecast on every ten-minute slot of each station's last two weeks; synthetic, shaped like the service's answer (improving correction, a new model taking over five days back)
-- `LightForecastSeeder` (local and testing only): a synthetic light experiment on forecasts issued while the station had light
-- The forecast and accuracy panel show without the service running
+Use `station_events` to distinguish hardware periods. The radiation shield
+was installed on 16 September 2026 at 15:00 Europe/Prague. The following
+sensor changes on 23 and 30 September mark separate calibration periods.
 
-## Deploying
-
-- `Dockerfile`: one image, assets on Node, dependencies on Composer, nginx + PHP-FPM + Laravel scheduler under supervisord on port 8080
-- Entrypoint caches config, routes and views at start; it does not run migrations - do that in the deploy
-- Forecast service: second image from `forecast/`, model mounted; no public address, point `FORECAST_URL` at it on the internal network; see [`forecast/README.md`](../forecast/README.md#deploying)
-- Once, after both are deployed: `php artisan forecast:backfill-base`
+The next stage will pair the original temperature, its corrected estimate
+and ČHMÚ Mikulka observations in time. Evaluation must use days excluded
+from calibration and compare the corrected estimate with the original
+measurement on the same reference timestamps. Reference outages must
+remain missing data.
