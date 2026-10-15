@@ -6,6 +6,7 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
+use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\Queries\TemperatureCalibrator;
 use App\Queries\TemperatureDataset;
@@ -28,13 +29,13 @@ function heatingCalibrationData(): array
     $from = Date::parse('2026-10-01', LocalTime::TIMEZONE)->getTimestamp();
     $validateFrom = Date::parse('2026-10-08', LocalTime::TIMEZONE)->getTimestamp();
     $until = Date::parse('2026-10-11', LocalTime::TIMEZONE)->getTimestamp();
-    $features = new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0);
+    $features = new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, StationSite::WALL_AZIMUTH);
     $measurements = $references = [];
     $createdAt = now()->toDateTimeString();
 
     for ($timestamp = $from + 570; $timestamp < $until; $timestamp += 600) {
         $sun = SolarPosition::at($timestamp - 300, StationSite::LATITUDE, StationSite::LONGITUDE);
-        $lit = $sun->faces(65.0);
+        $lit = $sun->faces(StationSite::WALL_AZIMUTH);
         $temperature = $lit ? 1300 : 1000;
         $lux = $lit ? 200000 : 0;
         $data = new MeasurementDataV4(
@@ -113,7 +114,7 @@ it('refuses calibration without enough independent reference days', function ():
 
     expect(fn (): TemperatureCalibration => new TemperatureCalibrator(new TemperatureDataset)->calibrate(
         $sensor->id, 1000, 2000, 3000,
-        new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0),
+        new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, StationSite::WALL_AZIMUTH),
     ))->toThrow(InvalidArgumentException::class, 'At least seven calibration days');
 
     assertDatabaseCount('temperature_calibrations', 0);
@@ -123,4 +124,54 @@ it('does not allow overlapping or reversed calibration periods', function (): vo
     expect(fn (): TemperatureCalibration => new TemperatureCalibrator(new TemperatureDataset)->calibrate(
         1, 2000, 1000, 3000, new ShieldFeatures(49.7, 13.4, 65.0),
     ))->toThrow(InvalidArgumentException::class, 'from < validate-from < until');
+});
+
+it('refuses a calibration range that contains a station event', function (): void {
+    $data = heatingCalibrationData();
+    StationEvent::factory()->create(['sensor_id' => $data['sensor']->id, 'occurred_at' => Date::createFromTimestampUTC($data['from'] + 86400)]);
+
+    expect(fn (): TemperatureCalibration => new TemperatureCalibrator(new TemperatureDataset)->calibrate(
+        $data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features'],
+    ))->toThrow(InvalidArgumentException::class, 'contains a station event');
+
+    assertDatabaseCount('temperature_calibrations', 0);
+});
+
+it('ignores station events outside the range or on other sensors', function (): void {
+    $data = heatingCalibrationData();
+    StationEvent::factory()->create(['sensor_id' => $data['sensor']->id, 'occurred_at' => Date::createFromTimestampUTC($data['from'] - 3600)]);
+    StationEvent::factory()->create(['occurred_at' => Date::createFromTimestampUTC($data['from'] + 86400)]);
+
+    $calibration = new TemperatureCalibrator(new TemperatureDataset)->calibrate(
+        $data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features'],
+    );
+
+    expect($calibration->accepted)->toBeTrue();
+});
+
+it('rejects a correction that barely improves the sun-facing error', function (): void {
+    $data = heatingCalibrationData();
+    $calibrator = new TemperatureCalibrator(new TemperatureDataset);
+    ReferenceTemperature::query()->where('timestamp', '>=', $data['validateFrom'])->get()->each(function (ReferenceTemperature $reference): void {
+        $lit = SolarPosition::at($reference->timestamp - 330, StationSite::LATITUDE, StationSite::LONGITUDE)->faces(StationSite::WALL_AZIMUTH);
+        $reference->update(['temperature' => $lit ? 11.45 : 10.0]);
+    });
+
+    $calibration = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $sun = $calibration->scores['validation']['sun_facing'];
+
+    expect($sun['corrected_mae'] < $sun['raw_mae'])->toBeTrue()
+        ->and($calibration->accepted)->toBeFalse();
+});
+
+it('accepts the default until date while it is already tomorrow in UTC terms', function (): void {
+    $sensor = Sensor::factory()->create();
+    $this->travelTo(Date::parse('2026-10-15 22:30:00', 'UTC'));
+
+    $exitCode = Artisan::call('temperature:calibrate', [
+        'sensor' => $sensor->slug, '--from' => '2026-10-01', '--validate-from' => '2026-10-08',
+    ]);
+
+    expect($exitCode)->toBe(1)
+        ->and(Artisan::output())->toContain('At least seven calibration days');
 });

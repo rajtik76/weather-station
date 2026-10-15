@@ -14,4 +14,7 @@ final readonly class StationSite
     public const float LONGITUDE = 13.399911;
 
     public const float ALTITUDE_METRES = 345.0;
+
+    /** Facade direction, degrees clockwise from true north. */
+    public const float WALL_AZIMUTH = 71.8;
 }

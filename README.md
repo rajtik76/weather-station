@@ -57,8 +57,8 @@ temperature minus the estimated heating; original records are unchanged.
 Calibration and inference run in PHP, without a separate service. ČHMÚ
 temperature is used for calibration and evaluation only. The running model
 uses the station's light history, time and calibrated installation geometry.
-The 65° wall direction is an initial estimate for this balcony and can be
-overridden when calibrating another installation.
+The wall direction is the balcony facade at 71.8° clockwise from true north;
+override it when calibrating another installation.
 
 ```sh
 php artisan temperature:import-reference

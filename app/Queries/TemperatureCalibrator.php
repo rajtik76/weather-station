@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\LocalTime;
 use App\ValueObject\NonNegativeRegression;
@@ -14,15 +15,26 @@ use App\ValueObject\TemperatureScore;
 use Illuminate\Support\Facades\Date;
 use InvalidArgumentException;
 
-/** @phpstan-type Pair array{sample: ShieldSample, reference: float, reference_at: int} */
+/**
+ * @phpstan-import-type Score from TemperatureScore
+ * @phpstan-import-type ScoredPair from TemperatureScore
+ *
+ * @phpstan-type Pair array{sample: ShieldSample, reference: float, reference_at: int}
+ */
 final readonly class TemperatureCalibrator
 {
+    private const float REQUIRED_MAE_RATIO = 0.9;
+
     public function __construct(private TemperatureDataset $dataset) {}
 
     public function calibrate(int $sensorId, int $from, int $validateFrom, int $until, ShieldFeatures $features): TemperatureCalibration
     {
         if ($from >= $validateFrom || $validateFrom >= $until) {
             throw new InvalidArgumentException('Calibration requires from < validate-from < until.');
+        }
+
+        if (StationEvent::query()->between($sensorId, $from, $until)->exists()) {
+            throw new InvalidArgumentException('Calibration range contains a station event; start after the latest hardware change.');
         }
 
         $pairs = $this->dataset->pair($this->dataset->samples($sensorId, $from, $until, $features));
@@ -49,23 +61,26 @@ final readonly class TemperatureCalibrator
             array_column(array_column($training, 'sample'), 'features'),
             array_map(fn (array $pair): float => $pair['sample']->measured - $pair['reference'], $training),
         );
+        $sunFacing = array_values(array_filter($training, fn (array $pair): bool => $pair['sample']->facesSun));
         $limits = [
-            'max_lux' => max(0.0, ...array_map(fn (array $pair): float => $pair['sample']->illuminance, $training)),
-            'max_heating' => max(0.0, ...array_map(fn (array $pair): float => $pair['sample']->measured - $pair['reference'], $training)),
+            'max_lux' => max(0.0, ...array_map(fn (array $pair): float => $pair['sample']->illuminance, $sunFacing)),
+            'max_heating' => max(0.0, ...array_map(fn (array $pair): float => $pair['sample']->measured - $pair['reference'], $sunFacing)),
         ];
         $model = new ShieldModel($coefficients, $limits['max_lux'], $limits['max_heating']);
+        $scoredTraining = $this->withHeating($training, $model);
+        $scoredValidation = $this->withHeating($validation, $model);
         $scores = [
-            'training' => $this->scores($training, $model),
-            'validation' => $this->scores($validation, $model),
-            'days' => $this->byDay($validation, $model),
+            'training' => $this->scores($scoredTraining),
+            'validation' => $this->scores($scoredValidation),
+            'days' => $this->byDay($scoredValidation),
         ];
         $all = $scores['validation']['all'];
         $sun = $scores['validation']['sun_facing'];
         $night = $scores['validation']['night'];
         $shade = $scores['validation']['shade'];
         $accepted = $all['count'] >= 0.9 * count($validation)
-            && $all['corrected_mae'] < $all['raw_mae']
-            && $sun['count'] > 0 && $sun['corrected_mae'] < $sun['raw_mae']
+            && $this->improves($all)
+            && $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
             && $night['count'] > 0 && $night['corrected_mae'] <= $night['raw_mae'] + 0.05
             && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1;
 
@@ -98,23 +113,39 @@ final readonly class TemperatureCalibrator
 
     /**
      * @param  list<Pair>  $pairs
-     * @return array<string, array{count: int, unavailable: int, raw_mae: ?float, corrected_mae: ?float, raw_bias: ?float, corrected_bias: ?float}>
+     * @return list<ScoredPair>
      */
-    private function scores(array $pairs, ShieldModel $model): array
+    private function withHeating(array $pairs, ShieldModel $model): array
+    {
+        return array_map(fn (array $pair): array => [...$pair, 'heating' => $model->heating($pair['sample'])], $pairs);
+    }
+
+    /** @param Score $score */
+    private function improves(array $score): bool
+    {
+        return $score['raw_mae'] !== null && $score['corrected_mae'] !== null
+            && $score['corrected_mae'] <= $score['raw_mae'] * self::REQUIRED_MAE_RATIO;
+    }
+
+    /**
+     * @param  list<ScoredPair>  $pairs
+     * @return array<string, Score>
+     */
+    private function scores(array $pairs): array
     {
         return [
-            'all' => TemperatureScore::of($pairs, $model),
-            'sun_facing' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->facesSun)), $model),
-            'shade' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->sun->elevation > 0 && ! $pair['sample']->facesSun)), $model),
-            'night' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->sun->elevation <= 0)), $model),
+            'all' => TemperatureScore::of($pairs),
+            'sun_facing' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->facesSun))),
+            'shade' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->sun->elevation > 0 && ! $pair['sample']->facesSun))),
+            'night' => TemperatureScore::of(array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->sun->elevation <= 0))),
         ];
     }
 
     /**
-     * @param  list<Pair>  $pairs
-     * @return array<string, array{count: int, unavailable: int, raw_mae: ?float, corrected_mae: ?float, raw_bias: ?float, corrected_bias: ?float}>
+     * @param  list<ScoredPair>  $pairs
+     * @return array<string, Score>
      */
-    private function byDay(array $pairs, ShieldModel $model): array
+    private function byDay(array $pairs): array
     {
         $days = [];
 
@@ -122,6 +153,6 @@ final readonly class TemperatureCalibrator
             $days[Date::createFromTimestamp($pair['sample']->timestamp, LocalTime::TIMEZONE)->format('Y-m-d')][] = $pair;
         }
 
-        return array_map(fn (array $day): array => TemperatureScore::of($day, $model), $days);
+        return array_map(TemperatureScore::of(...), $days);
     }
 }

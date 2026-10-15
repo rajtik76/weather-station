@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\ShieldFeatures;
 use App\ValueObject\ShieldSample;
@@ -23,7 +24,7 @@ final readonly class CorrectedTemperature
             ->orderByDesc('id')
             ->first();
 
-        if ($calibration === null) {
+        if ($calibration === null || StationEvent::query()->between($sensorId, $calibration->trained_from, $timestamp)->exists()) {
             return null;
         }
 

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
-#[Signature('temperature:calibrate {sensor} {--from=} {--validate-from=} {--until=} {--latitude=} {--longitude=} {--wall-azimuth=65}')]
+#[Signature('temperature:calibrate {sensor} {--from=} {--validate-from=} {--until=} {--latitude=} {--longitude=} {--wall-azimuth=}')]
 #[Description('Fit and validate a sensor-specific radiation shield heating correction')]
 class CalibrateTemperature extends Command
 {
@@ -31,16 +31,18 @@ class CalibrateTemperature extends Command
             return self::FAILURE;
         }
 
+        $today = Date::now(LocalTime::TIMEZONE)->format('Y-m-d');
         $options = [
             ...$this->options(),
-            'until' => $this->option('until') ?? Date::now(LocalTime::TIMEZONE)->format('Y-m-d'),
+            'until' => $this->option('until') ?? $today,
             'latitude' => $this->option('latitude') ?? StationSite::LATITUDE,
             'longitude' => $this->option('longitude') ?? StationSite::LONGITUDE,
+            'wall-azimuth' => $this->option('wall-azimuth') ?? StationSite::WALL_AZIMUTH,
         ];
         Validator::make($options, [
             'from' => ['required', 'date_format:Y-m-d'],
             'validate-from' => ['required', 'date_format:Y-m-d', 'after:from'],
-            'until' => ['required', 'date_format:Y-m-d', 'after:validate-from', 'before_or_equal:today'],
+            'until' => ['required', 'date_format:Y-m-d', 'after:validate-from', 'before_or_equal:'.$today],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'wall-azimuth' => ['required', 'numeric', 'gte:0', 'lt:360'],

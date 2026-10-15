@@ -6,6 +6,7 @@ use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
 use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
+use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\Queries\CorrectedTemperature;
 use App\Queries\TemperatureDataset;
@@ -13,6 +14,7 @@ use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\ShieldFeatures;
 use App\ValueObject\ShieldSample;
 use App\ValueObject\SolarPosition;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\assertDatabaseHas;
@@ -106,3 +108,18 @@ it('pairs a window only with a nearby real Mikulka observation', function (): vo
         ->and($pairs[0]['reference'])->toBe(10.0)
         ->and($pairs[0]['sample']->timestamp)->toBe($slot - 30);
 });
+
+it('stops applying a calibration once a station event follows its training start', function (int $offset, bool $applies): void {
+    $sensor = Sensor::factory()->create();
+    $end = strtotime('2026-10-16T07:00:00Z');
+    $calibration = TemperatureCalibration::factory()->for($sensor)->create();
+    StationEvent::factory()->create(['sensor_id' => $sensor->id, 'occurred_at' => Date::createFromTimestampUTC($calibration->trained_from + $offset)]);
+    correctionHistory($sensor, $end);
+
+    $result = new CorrectedTemperature(new TemperatureDataset)->at($sensor->id, $end);
+
+    expect($result !== null)->toBe($applies);
+})->with([
+    'sensor swapped after training began' => [3600, false],
+    'swap before training began' => [-3600, true],
+]);

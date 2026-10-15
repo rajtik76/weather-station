@@ -142,7 +142,10 @@ so run the scheduler continuously; monthly archives arrive later.
 scores the later period, with exclusive date boundaries in Europe/Prague.
 The start must belong to the current hardware and mounting period. Optional
 `--latitude`, `--longitude` and `--wall-azimuth` describe the installation;
-defaults are the balcony coordinates and 65° clockwise from true north.
+defaults are the balcony coordinates and a 71.8° facade clockwise from true north.
+A range that contains a `station_events` row for the sensor is refused, and
+`CorrectedTemperature::at()` ignores a calibration once an event follows its
+training start.
 
 `TemperatureDataset` reads one sensor's unchanged measurements, builds
 causal features and pairs each window end with its nearest ten-minute
