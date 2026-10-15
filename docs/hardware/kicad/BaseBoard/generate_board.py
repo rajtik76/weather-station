@@ -8,7 +8,7 @@ from pathlib import Path
 import pcbnew as pcb
 
 from layout import (BOARD_H, BOARD_W, COLS, HOLE_X, HOLE_Y, LINK_SPANS, NETS, PARTS, PITCH,
-                    ROWS, FOOTPRINT_PADS, check, free_holes, col_number, hole_name, occupied, row_letter, wiring)
+                    ROWS, FOOTPRINT_PADS, check, free_holes, col_number, hole_name, occupied, row_letter, solder_row_letter, wiring)
 
 
 HERE = Path(__file__).resolve().parent
@@ -267,15 +267,15 @@ def text(content, x, y, layer, size=0.9, justify=None):
 
 
 # Hole labels in the margins, as printed on the perfboard
-for layer in (pcb.F_SilkS, pcb.B_SilkS):
+for layer, letter in ((pcb.F_SilkS, row_letter), (pcb.B_SilkS, solder_row_letter)):
     for col in range(1, COLS + 1):
         x = BOARD_X + HOLE_X + (col - 1) * PITCH
         text(col_number(col), x, BOARD_Y + 2.2, layer, 0.8)
         text(col_number(col), x, BOARD_Y + BOARD_H - 2.2, layer, 0.8)
     for row in range(1, ROWS + 1):
         y = BOARD_Y + HOLE_Y + (row - 1) * PITCH
-        text(row_letter(row), BOARD_X + 1.4, y, layer, 0.8)
-        text(row_letter(row), BOARD_X + BOARD_W - 1.4, y, layer, 0.8)
+        text(letter(row), BOARD_X + 1.4, y, layer, 0.8)
+        text(letter(row), BOARD_X + BOARD_W - 1.4, y, layer, 0.8)
 
 where = {entry[:2]: spot for spot, entry in spots.items()}
 

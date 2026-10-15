@@ -1,7 +1,8 @@
 """Hole grid, parts and runs of the base board, shared by the generators (plain Python 3.9).
 
 Perfboard 22 x 27 holes, plated. Printed labels, component side upright: columns 22..01 left to right,
-rows A-Z then A bottom-up (A22 bottom left). Holes here are (column, row) from 1, top left, as KiCad draws them.
+rows A-Z then A bottom-up (A22 bottom left). The solder side prints the same columns, rows A-Z then A top-down.
+Holes here are (column, row) from 1, top left, as KiCad draws them.
 Rows 1 and 27 are both printed A, so the layout keeps them empty.
 Runs: solder bridges between neighbouring holes (solder side); 0 ohm links only where a run crosses another net.
 """
@@ -15,6 +16,10 @@ HOLE_Y = (BOARD_H - (ROWS - 1) * PITCH) / 2
 
 def row_letter(row):
     return chr(ord("A") + (ROWS - row) % 26)
+
+
+def solder_row_letter(row):
+    return chr(ord("A") + (row - 1) % 26)
 
 
 def col_number(col):
