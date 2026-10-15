@@ -16,9 +16,10 @@ temperature. The project aims to retain the original readings and show a
 corrected estimate alongside them.
 
 **Current status:** a PHP correction model can be calibrated and evaluated
-against ČHMÚ observations through Artisan. The overview and historical
-charts still show original, uncorrected measurements; displaying the
-estimate and its comparison page is the next stage.
+against ČHMÚ observations through Artisan. Overview and Charts display
+the original temperature alongside the calculated shade estimate. The
+Mikulka page compares all three temperatures by day, up to 30 days back,
+and reports deviations over the last 30 days.
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
@@ -42,8 +43,8 @@ The setup changed during the record:
 - BME280 replaced by an SHT4x on 23 September 2026
 - SHT4x sensor replaced and VEML7700 installed on 30 September 2026
 
-These events are recorded in `station_events`. Calibration must account
-for the shield installation and sensor changes.
+These events are recorded in `station_events` and marked on the charts.
+They do not block calibration or invalidate an existing correction model.
 
 ## Temperature correction
 
@@ -62,6 +63,7 @@ override it when calibrating another installation.
 
 ```sh
 php artisan temperature:import-reference
+php artisan temperature:import-reference --days=30
 php artisan temperature:import-reference --month=2026-09
 php artisan temperature:import-reference /path/to/mikulka-20261001.json
 php artisan temperature:calibrate sensor-001 --from=2026-09-30 --validate-from=2026-10-10 --until=2026-10-15
@@ -69,7 +71,7 @@ php artisan temperature:show sensor-001
 ```
 
 Dates are local calendar boundaries in Europe/Prague, with exclusive ends.
-Choose a start after the latest hardware or mounting change. At least
+Station events do not restrict the calibration range. At least
 seven calibration days and three later validation days must each have
 100 reference pairs; calibration also needs two sunlit mornings. Validation
 reports MAE and signed error for the same raw and corrected observations,
@@ -78,8 +80,8 @@ The validation days are never used to fit coefficients. An accepted model
 is available to inference only after its validation period ends.
 
 The scheduler imports the previous and current UTC day's references every
-hour. Historical monthly files and previously archived daily files can be
-imported explicitly. Missing reference periods stay missing. ČHMÚ's good
+hour. Run `--days=30` once to backfill history from monthly and daily
+archives; the scheduled import continues to fetch only yesterday and today. Missing reference periods stay missing. ČHMÚ's good
 and unknown-quality observations are eligible; suspect, poor, estimated,
 missing and flagged observations are excluded.
 

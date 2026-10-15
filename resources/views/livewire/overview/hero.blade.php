@@ -20,16 +20,19 @@
     @if ($temperature === null)
         <p class="m-0 rounded-[10px] border border-line bg-screen px-6 py-10 text-ink-2">Waiting for the first reading.</p>
     @else
-        @php($trace = \App\ValueObject\Trace::spanning($temperature['trace']))
-        @php($newest = $trace->points[array_key_last($trace->points)])
-        @php($traceLow = min($temperature['trace']))
+        @php($traceLow = $this->temperatureTrace->low(min($temperature['trace'])))
         @php($traceHigh = max($temperature['trace']))
+        @php($trace = \App\ValueObject\Trace::spanning($temperature['trace'], $traceLow, $traceHigh))
+        @php($newest = $trace->points[array_key_last($trace->points)])
+        @php($shadePath = $this->temperatureTrace->line($traceLow, $traceHigh))
+        @php($shadeNow = $this->temperatureTrace->latest())
         @php($ticks = \App\ValueObject\Trace::ticks($traceLow, $traceHigh, fn (float $value): float => \App\ValueObject\Trace::levelOf($value, $traceLow, $traceHigh), [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]))
         <div class="overflow-hidden rounded-[10px] border border-line bg-screen lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[1fr_auto]">
             <figure class="m-0 min-w-0 border-b border-line lg:col-start-1 lg:row-start-1 lg:border-r lg:border-b-0">
                 <figcaption class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 font-mono text-[13px] text-ink-3 sm:px-6">
                     <span class="flex items-center gap-2"><span class="swatch {{ $temperatureChannel->backgroundClass() }}"></span><span class="text-ink">{{ $temperatureChannel->code() }}</span><span>Measured temperature, last 24 h</span></span>
                     <span class="num">min {{ $temperatureChannel->format($temperature['dayMin']) }} · max {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}</span>
+                    <span class="flex items-center gap-2"><span class="swatch bg-ref"></span>Shade estimate</span>
                 </figcaption>
                 <div class="relative ml-[calc(1.5rem+52px)] mr-6 mt-4 mb-3 h-[240px] sm:ml-[calc(1.75rem+52px)] sm:mr-7 sm:h-[340px]">
                     <svg class="graticule absolute inset-0 h-full w-full" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
@@ -49,6 +52,9 @@
                     <div class="absolute inset-0" role="img" aria-label="Temperature over the last 24 hours, between {{ $temperatureChannel->format($temperature['dayMin']) }} and {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}, now {{ $temperatureChannel->format($temperature['now']) }} {{ $temperatureChannel->unit() }}.">
                         <svg class="layer phosphor" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--trace: {{ $temperatureChannel->cssColour() }}">
                             <path d="{{ $trace->line() }}" class="{{ $temperatureChannel->strokeClass() }}" style="fill: none; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round" />
+                            @if ($shadePath !== '')
+                                <path data-shade-trace d="{{ $shadePath }}" style="fill: none; stroke: var(--ref); stroke-width: 2px; stroke-dasharray: 6 4; stroke-linejoin: round; stroke-linecap: round" />
+                            @endif
                         </svg>
                         @foreach ($ticks as $tick)
                             <span class="ylab" style="top: {{ $tick['y'] }}%">{{ \App\ValueObject\Figure::format($tick['value'], 1) }} {{ $temperatureChannel->unit() }}</span>
@@ -89,7 +95,16 @@
                         </div>
                     @endif
                 </dl>
-                <p class="m-0 mt-auto pt-6 text-[15px] leading-relaxed text-ink-3">Measured inside the radiation shield. Sunlight can heat the shield and raise the reading above the surrounding air temperature. These readings are uncorrected.</p>
+                <div class="mt-5 border-t border-line pt-4">
+                    <p class="label-mono m-0 text-ref">Shade estimate</p>
+                    @if ($shadeNow !== null)
+                        <p class="num m-0 mt-2 font-mono text-[32px] leading-tight text-ref">{{ $temperatureChannel->format($shadeNow) }} <span class="text-[16px] text-ink-3">°C</span></p>
+                        <p class="m-0 mt-2 text-[14px] text-ink-2">Shield correction {{ $temperatureChannel->format($temperature['now'] - $shadeNow) }} °C</p>
+                    @else
+                        <p class="m-0 mt-2 text-[14px] text-ink-3">Unavailable for this reading. A valid calibration and light history are required.</p>
+                    @endif
+                </div>
+                <p class="m-0 mt-auto pt-6 text-[15px] leading-relaxed text-ink-3">Measured inside the radiation shield. The shade estimate subtracts the modelled heating of the shield. <a href="{{ route('comparison', $this->sensorQuery()) }}" class="link-ink">Compare with Mikulka</a>.</p>
             </aside>
             @include('livewire.overview.hero-readouts')
         </div>

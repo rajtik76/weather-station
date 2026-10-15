@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Enums\ProtocolVersion;
+use App\Models\Measurement;
+use App\Models\Sensor;
 use App\ValueObject\LightWindow;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\MeasurementDataV4;
@@ -155,4 +158,24 @@ function spectrumWindow(float $high, float $ring, float $neighbours = 40.0): Mea
         samples: 20,
         noise: new NoiseWindow(seconds: 600, laeq: 6500, lamax: 7200, la10: 6700, la90: 6000, bands: $bands),
     );
+}
+
+/** @return list<Measurement> */
+function correctionHistory(Sensor $sensor, int $end, ?int $missingAt = null): array
+{
+    $rows = [];
+
+    for ($index = 0; $index <= 6; $index++) {
+        $rows[] = Measurement::factory()->for($sensor)->create([
+            'timestamp' => $end - (6 - $index) * 600,
+            'protocol_version' => ProtocolVersion::V4,
+            'data' => (string) ($index === $missingAt
+                ? new MeasurementDataV4(temperature: 1200, humidity: 6000, pressure: 97000,
+                    temperatureMin: 1200, temperatureMax: 1200, humidityMin: 6000, humidityMax: 6000,
+                    pressureMin: 97000, pressureMax: 97000, samples: 20)
+                : litWindow(140000, 140000, 140000)),
+        ]);
+    }
+
+    return $rows;
 }

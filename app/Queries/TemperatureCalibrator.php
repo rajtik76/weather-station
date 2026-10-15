@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\LocalTime;
 use App\ValueObject\NonNegativeRegression;
@@ -31,10 +30,6 @@ final readonly class TemperatureCalibrator
     {
         if ($from >= $validateFrom || $validateFrom >= $until) {
             throw new InvalidArgumentException('Calibration requires from < validate-from < until.');
-        }
-
-        if (StationEvent::query()->between($sensorId, $from, $until)->exists()) {
-            throw new InvalidArgumentException('Calibration range contains a station event; start after the latest hardware change.');
         }
 
         $pairs = $this->dataset->pair($this->dataset->samples($sensorId, $from, $until, $features));

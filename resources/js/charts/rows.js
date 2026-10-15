@@ -22,6 +22,9 @@ export const NOISE_COLUMN = { time: 0, epoch: 1, laeq: 2, la10: 3, la90: 4, lama
 /** Wall-clock ms, epoch, mean, min, max, all lx. A slot without light is nulls. */
 export const LIGHT_COLUMN = { time: 0, epoch: 1, mean: 2, min: 3, max: 4 };
 
+export const CORRECTED_COLUMN = { time: 0, epoch: 1, estimated: 2 };
+export const COMPARISON_COLUMN = { time: 0, measured: 1, estimated: 2, reference: 3 };
+
 /** Wall-clock ms, title, CSS colour or null. */
 export const EVENT = { time: 0, title: 1, colour: 2 };
 

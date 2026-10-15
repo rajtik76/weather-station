@@ -18,15 +18,16 @@ under `storage/app/private/chmu/`, outside version control and the image.
 
 ## Pages
 
-Both pages extend `StationPage`. A station is registered by the first upload
+All three pages extend `StationPage`. A station is registered by the first upload
 under a new `sensor_name`. The picker appears once two stations exist; its
 selection survives navigation through the `sensor` query parameter.
 Links use station slugs so they remain stable across reseeding.
 
-| Page     | Path      | Content                                                                                                        |
-| -------- | --------- | -------------------------------------------------------------------------------------------------------------- |
-| Overview | `/`       | Current measurements, last 24 hours, hardware, station report and approximate location; polls every 60 seconds |
-| Charts   | `/charts` | Measurement history, time window, channel switches, station events and the newest three raw transmissions      |
+| Page     | Path          | Content                                                                                                        |
+| -------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| Overview | `/`           | Current measurements, last 24 hours, hardware, station report and approximate location; polls every 60 seconds |
+| Charts   | `/charts`     | Measurement history with shade correction, time window, channel switches, station events and raw transmissions |
+| Mikulka  | `/comparison` | Daily sensor, shade and ČHMÚ comparison up to 30 days back; 30-day deviation statistics                        |
 
 The charts average measurements into PostgreSQL buckets, preserving gaps
 and sample extremes. The selected window is limited to a month, with a
@@ -46,7 +47,7 @@ an experimental rain indication through `RainDetector`.
 | `app/Models/`          | Sensors, measurements, station reports and station events                                   |
 | `app/Queries/`         | Data access for pages and chart buckets                                                     |
 | `app/ValueObject/`     | Payload decoding, units, pressure reduction, dew point, light, sound and chart calculations |
-| `app/Livewire/`        | Shared station state and the two page components                                            |
+| `app/Livewire/`        | Shared station state and the three page components                                          |
 | `resources/views/`     | Page templates and shared Blade components                                                  |
 | `resources/js/charts/` | ECharts strips, navigator, events, cursor and zoom                                          |
 | `database/seeders/`    | Demonstration measurements and events                                                       |
@@ -127,12 +128,14 @@ routes and views. Migrations run separately during deployment.
 
 Use `station_events` to distinguish hardware periods. The radiation shield
 was installed on 16 September 2026 at 15:00 Europe/Prague. The following
-sensor changes on 23 and 30 September mark separate calibration periods.
+sensor changes on 23 and 30 September are informational markers. Station
+events do not block calibration or invalidate an existing model.
 
 `temperature:import-reference` downloads yesterday and today in UTC from
 ČHMÚ open data. The scheduler runs it hourly at :15. Use `--date=YYYY-MM-DD`
 for one available daily file, `--month=YYYY-MM` for a published monthly
-file, or pass local JSON paths to import an archive. Upserts use the
+file, or pass local JSON paths to import an archive. Run `--days=30` once
+to backfill monthly archives and the current month's dated daily files. Upserts use the
 station and observation timestamp; invalidated observations become null.
 Data attribution: ČHMÚ Plzeň-Mikulka, CC BY 4.0. Daily files are short-lived,
 so run the scheduler continuously; monthly archives arrive later.
@@ -140,12 +143,12 @@ so run the scheduler continuously; monthly archives arrive later.
 `temperature:calibrate <sensor-slug> --from=YYYY-MM-DD
 --validate-from=YYYY-MM-DD --until=YYYY-MM-DD` fits on the first period and
 scores the later period, with exclusive date boundaries in Europe/Prague.
-The start must belong to the current hardware and mounting period. Optional
+Optional
 `--latitude`, `--longitude` and `--wall-azimuth` describe the installation;
 defaults are the balcony coordinates and a 71.8° facade clockwise from true north.
-A range that contains a `station_events` row for the sensor is refused, and
-`CorrectedTemperature::at()` ignores a calibration once an event follows its
-training start.
+`CorrectedTemperature` applies accepted, compatible calibrations after their
+validation period, including across station events. Its batch and individual
+calculations use the same six-hour light history for each observation.
 
 `TemperatureDataset` reads one sensor's unchanged measurements, builds
 causal features and pairs each window end with its nearest ten-minute

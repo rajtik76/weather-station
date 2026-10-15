@@ -29,6 +29,8 @@ export const ICON_HALF = 8;
 
 const CHANNEL_TOKEN = {
     t: "--ch1",
+    c: "--ref",
+    m: "--ch3",
     h: "--ch2",
     d: "--ref",
     p: "--ch3",

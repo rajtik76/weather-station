@@ -10,7 +10,7 @@ namespace App\ValueObject;
 final readonly class ChannelSelection
 {
     /** @var array<string, bool> */
-    public const array DEFAULTS = ['t' => true, 'h' => true, 'd' => false];
+    public const array DEFAULTS = ['t' => true, 'h' => true, 'd' => false, 'c' => true];
 
     /**
      * @param  array<string, bool>  $on

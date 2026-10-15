@@ -69,6 +69,7 @@ it('links the remaining pages without offering forecasts', function (string $rou
         ->assertOk()
         ->assertSee('href="'.route('overview', $query).'"', false)
         ->assertSee('href="'.route('charts', $query).'"', false)
+        ->assertSee('href="'.route('comparison', $query).'"', false)
         ->assertDontSee('/forecast', false)
         ->assertDontSee('id="fc-h"', false)
         ->assertDontSee('id="verdict-h"', false)
@@ -76,6 +77,8 @@ it('links the remaining pages without offering forecasts', function (string $rou
 })->with([
     'overview' => ['overview', false],
     'charts' => ['charts', false],
+    'comparison' => ['comparison', false],
     'overview with selected sensor' => ['overview', true],
     'charts with selected sensor' => ['charts', true],
+    'comparison with selected sensor' => ['comparison', true],
 ]);

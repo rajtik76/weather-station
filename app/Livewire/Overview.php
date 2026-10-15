@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Livewire;
 
 use App\Enums\Channel;
+use App\Queries\TemperatureHistory;
 use App\ValueObject\CarriesNoise;
 use App\ValueObject\DayFigures;
 use App\ValueObject\NoiseWindow;
 use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
 use App\ValueObject\StationSite;
+use App\ValueObject\TemperatureTrace;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -26,6 +28,7 @@ use Livewire\Attributes\Title;
  * @property-read array<string, Figures> $metrics
  * @property-read list<Channel> $channels
  * @property-read ?float $dewPoint
+ * @property-read TemperatureTrace $temperatureTrace
  * @property-read ?bool $rainHeard
  * @property-read list<Channel> $silentChannels
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
@@ -33,8 +36,21 @@ use Livewire\Attributes\Title;
 #[Title('Balcony Station')]
 class Overview extends StationPage
 {
+    #[Computed]
+    public function temperatureTrace(): TemperatureTrace
+    {
+        $newest = $this->newestMeasurement?->timestamp;
+        $from = $newest === null ? $this->dayStart() : min($this->dayStart(), $newest);
+        $readings = resolve(TemperatureHistory::class)->readings($this->selectedSensor?->id, $from, now()->addHour()->getTimestamp());
+
+        return new TemperatureTrace(array_slice($readings, 0, count($this->lastDay)));
+    }
+
     /** Blurs the public map into a circle this wide. */
     private const int LOCATION_RADIUS_METRES = 800;
+
+    /** Start of the trailing 24 hours, fixed per request so the measured and estimated traces share rows. */
+    private ?int $dayStart = null;
 
     /** Stamp of the newest reading already on screen; null before the station's first. */
     #[Locked]
@@ -51,6 +67,11 @@ class Overview extends StationPage
         parent::updatedSensor();
         unset($this->newestMeasurement);
         $this->shownReadingAt = $this->newestMeasurement?->timestamp;
+    }
+
+    private function dayStart(): int
+    {
+        return $this->dayStart ??= now()->subDay()->getTimestamp();
     }
 
     public function render(): View
@@ -70,7 +91,7 @@ class Overview extends StationPage
     #[Computed]
     public function lastDay(): array
     {
-        $day = $this->record()->readoutsSince(now()->subDay()->getTimestamp());
+        $day = $this->record()->readoutsSince($this->dayStart());
 
         if ($day === [] && $this->newestMeasurement !== null) {
             return [Readout::of($this->newestMeasurement->data)->toArray()];

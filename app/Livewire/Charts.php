@@ -8,6 +8,7 @@ use App\Queries\ChartSeries;
 use App\Queries\RecentTransmissions;
 use App\Queries\RecordOverview;
 use App\Queries\StationEventMarks;
+use App\Queries\TemperatureHistory;
 use App\ValueObject\ChannelSelection;
 use App\ValueObject\ChartRow;
 use App\ValueObject\ChartWindow;
@@ -30,6 +31,7 @@ use Livewire\Attributes\Url;
  * @phpstan-import-type Mark from StationEventMarks
  *
  * @property-read list<BucketRow> $readings
+ * @property-read list<array{0: int, 1: int, 2: ?float}> $correctedRows
  * @property-read list<NoiseRow> $noise
  * @property-read list<LightRow> $light
  * @property-read list<array{0: int, 1: int}> $rainSlots
@@ -47,6 +49,19 @@ use Livewire\Attributes\Url;
 #[Title('Balcony Station Charts')]
 class Charts extends StationPage
 {
+    /** @return list<array{0: int, 1: int, 2: ?float}> */
+    #[Computed]
+    public function correctedRows(): array
+    {
+        if (in_array('c', $this->hiddenChannels, true)) {
+            return [];
+        }
+
+        $window = $this->chartWindow();
+
+        return resolve(TemperatureHistory::class)->correctedBuckets($this->selectedSensor?->id, $window->from, $window->to + 1, $window->range()->bucketSeconds());
+    }
+
     private const int RECENT_TRANSMISSIONS = 3;
 
     /** Zoomed window as UTC epochs, null for the default; instants so a drag can land anywhere. */

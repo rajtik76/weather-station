@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Livewire\Charts;
 use App\Models\Measurement;
+use App\Models\Sensor;
+use App\Models\TemperatureCalibration;
 use App\ValueObject\MeasurementDataV1;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -29,18 +31,18 @@ it('never lets the shared strip go blank', function (): void {
     Measurement::factory()->create(['timestamp' => now()->subMinutes(10)->getTimestamp()]);
 
     $component = Livewire::test(Charts::class)
-        ->call('toggleChannel', 't');
+        ->call('toggleChannel', 't')->call('toggleChannel', 'c');
 
     expect($component->html())
-        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"')
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;,&quot;c&quot;]"')
         ->toMatch('/toggleChannel\(\'h\'\)"[^>]*disabled/')
         ->not->toMatch('/toggleChannel\(\'t\'\)"[^>]*disabled/');
 
     expect($component->call('toggleChannel', 'h')->html())
-        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;]"');
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;d&quot;,&quot;c&quot;]"');
 
     expect($component->call('toggleChannel', 'd')->call('toggleChannel', 'h')->html())
-        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;h&quot;]"');
+        ->toContain('data-hidden-channels="[&quot;t&quot;,&quot;h&quot;,&quot;c&quot;]"');
 });
 
 it('ignores a switch for a channel the strip does not have', function (): void {
@@ -107,8 +109,19 @@ it('labels the shared strip with each channel and its unit', function (): void {
 
     expect($headers)->toContain('Temperature, °C')
         ->toContain('Dew point, °C')
+        ->toContain('Shade estimate, °C')
         ->toContain('Humidity, %')
         ->not->toContain('21,50')
         ->not->toContain('48,00')
         ->not->toContain('Pressure, MSL');
+});
+
+it('skips the shade estimate payload while its channel is hidden', function (): void {
+    $sensor = Sensor::factory()->create();
+    TemperatureCalibration::factory()->for($sensor)->create();
+    correctionHistory($sensor, now()->getTimestamp());
+    $component = Livewire::test(Charts::class);
+
+    expect($component->get('correctedRows'))->not->toBe([])
+        ->and($component->call('toggleChannel', 'c')->get('correctedRows'))->toBe([]);
 });

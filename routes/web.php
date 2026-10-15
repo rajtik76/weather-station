@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Livewire\Charts;
+use App\Livewire\Comparison;
 use App\Livewire\Overview;
 use Illuminate\Support\Facades\Route;
 
 Route::livewire('/', Overview::class)->name('overview');
 Route::livewire('/charts', Charts::class)->name('charts');
+Route::livewire('/comparison', Comparison::class)->name('comparison');

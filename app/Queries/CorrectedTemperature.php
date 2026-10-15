@@ -4,50 +4,69 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Models\StationEvent;
+use App\Models\Measurement;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\ShieldFeatures;
-use App\ValueObject\ShieldSample;
 
+/** @phpstan-type Correction array{timestamp: int, measured: float, estimated: ?float, correction: ?float, calibration_id: int} */
 final readonly class CorrectedTemperature
 {
     public function __construct(private TemperatureDataset $dataset) {}
 
-    /** @return array{timestamp: int, measured: float, estimated: ?float, correction: ?float, calibration_id: int}|null */
+    /** @return Correction|null */
     public function at(int $sensorId, int $timestamp): ?array
     {
-        $calibration = TemperatureCalibration::query()
+        return $this->between($sensorId, $timestamp, $timestamp + 1)[$timestamp] ?? null;
+    }
+
+    /**
+     * @param  ?list<Measurement>  $measurements  Preloaded readings covering [from - HISTORY_SECONDS, until); loaded here when null.
+     * @return array<int, Correction>
+     */
+    public function between(int $sensorId, int $from, int $until, ?array $measurements = null): array
+    {
+        $calibrations = TemperatureCalibration::query()
             ->where('sensor_id', $sensorId)
             ->where('accepted', true)
             ->where('feature_version', ShieldFeatures::VERSION)
-            ->where('validated_until', '<=', $timestamp)
-            ->orderByDesc('id')
-            ->first();
+            ->where('validated_until', '<', $until)
+            ->orderByDesc('id')->get();
+        $results = [];
+        $claimedFrom = $until;
 
-        if ($calibration === null || StationEvent::query()->between($sensorId, $calibration->trained_from, $timestamp)->exists()) {
-            return null;
+        foreach ($calibrations as $calibration) {
+            $start = max($from, $calibration->validated_until);
+            $end = $claimedFrom;
+            $claimedFrom = min($claimedFrom, $calibration->validated_until);
+
+            if ($start >= $end) {
+                continue;
+            }
+
+            $model = $calibration->model();
+            $historyFrom = max($calibration->trained_from, $start - ShieldFeatures::HISTORY_SECONDS);
+            $history = $measurements === null
+                ? $this->dataset->history($sensorId, $historyFrom, $end)
+                : array_values(array_filter($measurements, fn (Measurement $measurement): bool => $measurement->timestamp >= $historyFrom && $measurement->timestamp < $end));
+
+            foreach ($calibration->features()->samples($history) as $sample) {
+                if ($sample->timestamp < $start) {
+                    continue;
+                }
+
+                $heating = $model->heating($sample);
+                $results[$sample->timestamp] = [
+                    'timestamp' => $sample->timestamp,
+                    'measured' => $sample->measured,
+                    'estimated' => $heating === null ? null : $sample->measured - $heating,
+                    'correction' => $heating,
+                    'calibration_id' => $calibration->id,
+                ];
+            }
         }
 
-        $samples = $this->dataset->samples(
-            $sensorId,
-            max($calibration->trained_from, $timestamp - ShieldFeatures::HISTORY_SECONDS),
-            $timestamp + 1,
-            $calibration->features(),
-        );
-        $sample = $samples === [] ? null : $samples[array_key_last($samples)];
+        ksort($results);
 
-        if (! $sample instanceof ShieldSample || $sample->timestamp !== $timestamp) {
-            return null;
-        }
-
-        $heating = $calibration->model()->heating($sample);
-
-        return [
-            'timestamp' => $timestamp,
-            'measured' => $sample->measured,
-            'estimated' => $heating === null ? null : $sample->measured - $heating,
-            'correction' => $heating,
-            'calibration_id' => $calibration->id,
-        ];
+        return $results;
     }
 }

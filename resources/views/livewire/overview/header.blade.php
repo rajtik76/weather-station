@@ -46,6 +46,7 @@
             <ul class="m-0 flex list-none gap-7 p-0 text-[16px] font-medium">
                 <li><a class="navlink" href="{{ route('overview', $this->sensorQuery()) }}" @if ($page === 'overview') aria-current="page" @endif>Overview</a></li>
                 <li><a class="navlink" href="{{ route('charts', $this->sensorQuery()) }}" @if ($page === 'charts') aria-current="page" @endif>Charts</a></li>
+                <li><a class="navlink" href="{{ route('comparison', $this->sensorQuery()) }}" @if ($page === 'comparison') aria-current="page" @endif>Mikulka</a></li>
             </ul>
         </nav>
     </div>

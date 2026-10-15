@@ -13,7 +13,7 @@ import { trackEventHover } from "./charts/events";
 import { chartOption, narrowScreen } from "./charts/frame";
 import { unwatchSize, watchSize, watchThemeChange, parsed } from "./charts/lifecycle";
 import { mountNavigator, resizeNavigator } from "./charts/navigator";
-import { typicalStep } from "./charts/rows";
+import { CORRECTED_COLUMN, typicalStep } from "./charts/rows";
 import { charts, state } from "./charts/state";
 import { STRIPS } from "./charts/strips";
 import { bindZoom, blockWheel, syncCursor } from "./charts/zoom";
@@ -38,6 +38,10 @@ let painted = null;
 function paintKey(payload) {
     return (
         payload.dataset.chartRows +
+        "\n" +
+        payload.dataset.correctedRows +
+        "\n" +
+        payload.dataset.comparisonRows +
         "\n" +
         payload.dataset.chartEvents +
         "\n" +
@@ -73,6 +77,14 @@ function mount(force = false) {
 
 function render(payload, force) {
     state.rows = parsed(payload.dataset.chartRows);
+    state.correctedRows = parsed(payload.dataset.correctedRows);
+    state.correctedByTime = new Map(
+        state.correctedRows.map((row) => [
+            row[CORRECTED_COLUMN.time],
+            row[CORRECTED_COLUMN.estimated],
+        ]),
+    );
+    state.comparisonRows = parsed(payload.dataset.comparisonRows);
 
     state.overview = parsed(payload.dataset.navigatorRows);
 
@@ -141,7 +153,7 @@ function render(payload, force) {
 
             strip.mount?.(chart);
 
-            if (component) {
+            if (component && strip.zoom !== false) {
                 bindZoom(chart, element, component);
             }
         }
@@ -164,6 +176,8 @@ function watchPayload() {
         attributes: true,
         attributeFilter: [
             "data-chart-rows",
+            "data-corrected-rows",
+            "data-comparison-rows",
             "data-navigator-rows",
             "data-chart-events",
             "data-hidden-channels",

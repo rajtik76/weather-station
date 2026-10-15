@@ -8,11 +8,13 @@
         'label' => $channel->label().', '.$channel->unit(),
     ], [\App\Enums\Channel::Temperature, \App\Enums\Channel::Humidity]),
     ['key' => 'd', 'ch' => 'REF', 'colour' => 'bg-ref', 'label' => 'Dew point, °C'],
+    ['key' => 'c', 'ch' => 'EST', 'colour' => 'bg-ref', 'label' => 'Shade estimate, °C'],
 ])
 
 {{-- station-charts.js watches these attributes; Livewire never touches the canvases. --}}
 <div
     data-chart-rows="{{ json_encode($this->readings) }}"
+    data-corrected-rows="{{ json_encode($this->correctedRows) }}"
     data-navigator-rows="{{ json_encode($this->overview) }}"
     data-chart-events="{{ json_encode($this->stationEvents) }}"
     data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
@@ -74,6 +76,7 @@
                     </button>
                 @endforeach
             </x-channel-strip>
+            <p class="m-0 text-[13px] text-ink-3">The shade estimate uses the shield correction. Gaps indicate an unavailable estimate.</p>
 
             <x-channel-strip key="p" :label="\App\Enums\Channel::Pressure->label()" :channel="\App\Enums\Channel::Pressure->code()" height="h-48 sm:h-56">
                 <span class="flex items-center gap-2 text-ink-2"><span class="swatch {{ \App\Enums\Channel::Pressure->backgroundClass() }}" aria-hidden="true"></span>{{ \App\Enums\Channel::Pressure->label() }}, {{ \App\Enums\Channel::Pressure->unit() }}</span>

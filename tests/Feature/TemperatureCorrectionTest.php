@@ -2,15 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Enums\ProtocolVersion;
-use App\Models\Measurement;
 use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
 use App\Models\StationEvent;
 use App\Models\TemperatureCalibration;
 use App\Queries\CorrectedTemperature;
 use App\Queries\TemperatureDataset;
-use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\ShieldFeatures;
 use App\ValueObject\ShieldSample;
 use App\ValueObject\SolarPosition;
@@ -18,26 +15,6 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\assertDatabaseHas;
-
-/** @return list<Measurement> */
-function correctionHistory(Sensor $sensor, int $end, ?int $missingAt = null): array
-{
-    $rows = [];
-
-    for ($index = 0; $index <= 6; $index++) {
-        $rows[] = Measurement::factory()->for($sensor)->create([
-            'timestamp' => $end - (6 - $index) * 600,
-            'protocol_version' => ProtocolVersion::V4,
-            'data' => (string) ($index === $missingAt
-                ? new MeasurementDataV4(temperature: 1200, humidity: 6000, pressure: 97000,
-                    temperatureMin: 1200, temperatureMax: 1200, humidityMin: 6000, humidityMax: 6000,
-                    pressureMin: 97000, pressureMax: 97000, samples: 20)
-                : litWindow(140000, 140000, 140000)),
-        ]);
-    }
-
-    return $rows;
-}
 
 it('computes a shade estimate from one sensor without contacting a reference or changing its records', function (): void {
     Http::preventStrayRequests();
@@ -109,7 +86,7 @@ it('pairs a window only with a nearby real Mikulka observation', function (): vo
         ->and($pairs[0]['sample']->timestamp)->toBe($slot - 30);
 });
 
-it('stops applying a calibration once a station event follows its training start', function (int $offset, bool $applies): void {
+it('keeps applying a calibration across station events', function (int $offset): void {
     $sensor = Sensor::factory()->create();
     $end = strtotime('2026-10-16T07:00:00Z');
     $calibration = TemperatureCalibration::factory()->for($sensor)->create();
@@ -118,8 +95,8 @@ it('stops applying a calibration once a station event follows its training start
 
     $result = new CorrectedTemperature(new TemperatureDataset)->at($sensor->id, $end);
 
-    expect($result !== null)->toBe($applies);
+    expect($result['estimated'] ?? null)->toEqualWithDelta(11.1, 0.001);
 })->with([
-    'sensor swapped after training began' => [3600, false],
-    'swap before training began' => [-3600, true],
+    'sensor swapped after training began' => [3600],
+    'swap before training began' => [-3600],
 ]);

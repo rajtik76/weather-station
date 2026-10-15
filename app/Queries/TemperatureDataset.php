@@ -12,6 +12,14 @@ use App\ValueObject\ShieldSample;
 
 final readonly class TemperatureDataset
 {
+    /** @return list<Measurement> */
+    public function history(int $sensorId, int $from, int $until): array
+    {
+        return array_values(Measurement::query()->where('sensor_id', $sensorId)
+            ->where('timestamp', '>=', $from)->where('timestamp', '<', $until)
+            ->orderBy('timestamp')->get()->all());
+    }
+
     /** @return list<ShieldSample> */
     public function samples(int $sensorId, int $from, int $until, ShieldFeatures $features): array
     {

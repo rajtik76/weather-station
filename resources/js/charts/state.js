@@ -2,6 +2,9 @@
 export const state = {
     /** Strip rows (see COLUMN in rows.js). */
     rows: [],
+    correctedRows: [],
+    correctedByTime: new Map(),
+    comparisonRows: [],
     /** Event rows (see EVENT in rows.js). */
     events: [],
     /** Noise rows (see NOISE_COLUMN in rows.js). */

@@ -126,15 +126,16 @@ it('does not allow overlapping or reversed calibration periods', function (): vo
     ))->toThrow(InvalidArgumentException::class, 'from < validate-from < until');
 });
 
-it('refuses a calibration range that contains a station event', function (): void {
+it('calibrates a range that contains a station event', function (): void {
     $data = heatingCalibrationData();
     StationEvent::factory()->create(['sensor_id' => $data['sensor']->id, 'occurred_at' => Date::createFromTimestampUTC($data['from'] + 86400)]);
 
-    expect(fn (): TemperatureCalibration => new TemperatureCalibrator(new TemperatureDataset)->calibrate(
+    $calibration = new TemperatureCalibrator(new TemperatureDataset)->calibrate(
         $data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features'],
-    ))->toThrow(InvalidArgumentException::class, 'contains a station event');
+    );
 
-    assertDatabaseCount('temperature_calibrations', 0);
+    expect($calibration->accepted)->toBeTrue();
+    assertDatabaseCount('temperature_calibrations', 1);
 });
 
 it('ignores station events outside the range or on other sensors', function (): void {

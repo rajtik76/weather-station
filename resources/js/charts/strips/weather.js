@@ -14,6 +14,14 @@ const CHANNELS = [
         band: ["tMin", "tMax"],
     },
     {
+        key: "c",
+        label: "Shade estimate",
+        unit: "°C",
+        decimals: 2,
+        axis: "t",
+        dash: [6, 4],
+    },
+    {
         key: "h",
         label: "Humidity",
         unit: "%",
@@ -27,7 +35,7 @@ const CHANNELS = [
         unit: "°C",
         decimals: 2,
         axis: "t",
-        dashed: true,
+        dash: [2, 3],
     },
     {
         key: "p",
@@ -43,6 +51,11 @@ const channelFor = (key) => CHANNELS.find((candidate) => candidate.key === key);
 
 const isShown = (channel) => !state.hidden.has(channel.key);
 
+const valueOf = (row, channel) =>
+    channel.key === "c"
+        ? (state.correctedByTime.get(row[COLUMN.time]) ?? null)
+        : row[COLUMN[channel.key]];
+
 /** Two lines share an axis: a gradient over the data range, because ECharts hands a label its value, not its position. */
 function axisLabelStyle(axis, channels) {
     const readers = channels.filter((entry) => entry.axis === axis.key);
@@ -52,7 +65,7 @@ function axisLabelStyle(axis, channels) {
     }
 
     const values = readers.flatMap((entry) =>
-        state.rows.map((row) => row[COLUMN[entry.key]]).filter((value) => value !== null),
+        state.rows.map((row) => valueOf(row, entry)).filter((value) => value !== null),
     );
     const low = Math.min(...values);
     const high = Math.max(...values);
@@ -78,7 +91,7 @@ function weatherLines(row, strip) {
         .filter(isShown)
         .map((channel) => ({
             label: channel.label,
-            value: formatValue(row[COLUMN[channel.key]], channel),
+            value: formatValue(valueOf(row, channel), channel),
             colour: colourFor(channel.key),
             detail: spreadText(row, channel),
         }));
@@ -138,10 +151,10 @@ function weatherOption(strip, colours) {
                 lineStyle: {
                     width: 1.5,
                     color: colourFor(entry.key),
-                    type: entry.dashed ? [6, 4] : "solid",
+                    type: entry.dash ?? "solid",
                 },
                 itemStyle: { color: colourFor(entry.key) },
-                data: state.rows.map((row) => [row[COLUMN.time], row[COLUMN[entry.key]]]),
+                data: state.rows.map((row) => [row[COLUMN.time], valueOf(row, entry)]),
             })),
         ],
     };
@@ -189,7 +202,7 @@ function bandSeries(channel, yAxisIndex) {
 export const temperatureStrip = {
     key: "th",
     events: true,
-    channels: ["t", "h", "d"],
+    channels: ["t", "h", "d", "c"],
     option: weatherOption,
     lines: weatherLines,
     rows: () => state.rows,
