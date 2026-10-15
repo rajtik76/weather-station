@@ -127,3 +127,51 @@ it('still fails the scheduled import when yesterday file is missing', function (
     expect(Artisan::call('temperature:import-reference'))->toBe(1);
     assertDatabaseCount('reference_temperatures', 1);
 });
+
+it('backfills history only when explicitly requested using monthly and dated archives', function (): void {
+    Http::preventStrayRequests();
+    $this->travelTo(Date::parse('2026-10-15 12:15:00', 'UTC'));
+    $base = ChmuReference::BASE_URL;
+    $station = ChmuTemperatures::STATION;
+    $fakes = [
+        $base.'/recent/data/10min/09/10m-'.$station.'-202609.json' => Http::response(chmuDocument([
+            [$station, 'T', '2026-09-15T12:00:00Z', 10.0, '', 5.0],
+        ])),
+    ];
+
+    foreach (range(1, 15) as $day) {
+        $stamp = sprintf('202610%02d', $day);
+        $path = $day < 13 ? '/recent/data/10min/' : '/now/data/';
+        $fakes[$base.$path.'10m-'.$station.'-'.$stamp.'.json'] = Http::response(chmuDocument([
+            [$station, 'T', sprintf('2026-10-%02dT00:00:00Z', $day), 10.0, '', 5.0],
+        ]));
+    }
+
+    Http::fake($fakes);
+
+    expect(Artisan::call('temperature:import-reference', ['--days' => 30]))->toBe(0);
+    assertDatabaseCount('reference_temperatures', 16);
+    Http::assertSentCount(16);
+
+    expect(Artisan::call('temperature:import-reference'))->toBe(0);
+    Http::assertSentCount(18);
+    assertDatabaseCount('reference_temperatures', 16);
+});
+
+it('falls back to dated archives while the previous month file is not published yet', function (): void {
+    Http::preventStrayRequests();
+    $this->travelTo(Date::parse('2026-10-03 12:15:00', 'UTC'));
+    $base = ChmuReference::BASE_URL;
+    $station = ChmuTemperatures::STATION;
+    $fakes = [$base.'/recent/data/10min/09/10m-'.$station.'-202609.json' => Http::response('', 404)];
+
+    foreach ([['20260929', '2026-09-29'], ['20260930', '2026-09-30'], ['20261001', '2026-10-01'], ['20261002', '2026-10-02'], ['20261003', '2026-10-03']] as [$stamp, $day]) {
+        $path = $stamp < '20261001' ? '/recent/data/10min/' : '/now/data/';
+        $fakes[$base.$path.'10m-'.$station.'-'.$stamp.'.json'] = Http::response(chmuDocument([[$station, 'T', $day.'T00:00:00Z', 10.0, '', 5.0]]));
+    }
+
+    Http::fake($fakes);
+
+    expect(Artisan::call('temperature:import-reference', ['--days' => 4]))->toBe(0);
+    assertDatabaseCount('reference_temperatures', 5);
+});

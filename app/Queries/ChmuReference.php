@@ -16,12 +16,12 @@ final readonly class ChmuReference
 {
     public const string BASE_URL = 'https://opendata.chmi.cz/meteorology/climate';
 
-    public function download(string $date, bool $monthly = false): int
+    public function download(string $date, bool $monthly = false, bool $archived = false): int
     {
         $stamp = str_replace('-', '', $date);
         $path = $monthly
             ? '/recent/data/10min/'.substr($stamp, 4, 2).'/10m-'.ChmuTemperatures::STATION.'-'.$stamp.'.json'
-            : '/now/data/10m-'.ChmuTemperatures::STATION.'-'.$stamp.'.json';
+            : ($archived ? '/recent/data/10min/' : '/now/data/').'10m-'.ChmuTemperatures::STATION.'-'.$stamp.'.json';
         $url = self::BASE_URL.$path;
         $response = Http::connectTimeout(5)->timeout(30)->retry(2, 500, fn (Throwable $exception): bool => $exception instanceof ConnectionException
             || ($exception instanceof RequestException && ($exception->response->serverError() || $exception->response->status() === 429))
