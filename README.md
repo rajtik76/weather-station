@@ -15,9 +15,10 @@ can heat the shield and make the sensor read above the surrounding air
 temperature. The project aims to retain the original readings and show a
 corrected estimate alongside them.
 
-**Current status:** the overview and historical charts show original,
-uncorrected measurements. The temperature correction and its comparison
-page are the next stage of development.
+**Current status:** a PHP correction model can be calibrated and evaluated
+against ČHMÚ observations through Artisan. The overview and historical
+charts still show original, uncorrected measurements; displaying the
+estimate and its comparison page is the next stage.
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
@@ -43,6 +44,57 @@ The setup changed during the record:
 
 These events are recorded in `station_events`. Calibration must account
 for the shield installation and sensor changes.
+
+## Temperature correction
+
+The model estimates solar heating from light inside the shield and the
+Sun's position relative to the balcony wall. It combines the current light
+with exponentially weighted histories of 20 and 60 minutes to represent
+heating and cooling. Non-negative, regularized regression learns the
+response of this installation. The shade estimate is the measured
+temperature minus the estimated heating; original records are unchanged.
+
+Calibration and inference run in PHP, without a separate service. ČHMÚ
+temperature is used for calibration and evaluation only. The running model
+uses the station's light history, time and calibrated installation geometry.
+The 65° wall direction is an initial estimate for this balcony and can be
+overridden when calibrating another installation.
+
+```sh
+php artisan temperature:import-reference
+php artisan temperature:import-reference --month=2026-09
+php artisan temperature:import-reference /path/to/mikulka-20261001.json
+php artisan temperature:calibrate sensor-001 --from=2026-09-30 --validate-from=2026-10-10 --until=2026-10-15
+php artisan temperature:show sensor-001
+```
+
+Dates are local calendar boundaries in Europe/Prague, with exclusive ends.
+Choose a start after the latest hardware or mounting change. At least
+seven calibration days and three later validation days must each have
+100 reference pairs; calibration also needs two sunlit mornings. Validation
+reports MAE and signed error for the same raw and corrected observations,
+split into sun-facing periods, daytime shade and night, plus each day.
+The validation days are never used to fit coefficients. An accepted model
+is available to inference only after its validation period ends.
+
+The scheduler imports the previous and current UTC day's references every
+hour. Historical monthly files and previously archived daily files can be
+imported explicitly. Missing reference periods stay missing. ČHMÚ's good
+and unknown-quality observations are eligible; suspect, poor, estimated,
+missing and flagged observations are excluded.
+
+The model needs an uninterrupted hour of light measurements after startup
+or a gap. Unsupported readings and inputs beyond its calibrated light or
+heating range return no estimate. Acceptance requires improvement overall
+and on the sun-facing side, at least 90% validation coverage, and no MAE
+increase above 0.05 °C at night or 0.1 °C in daytime shade.
+
+This first model corrects solar heating. Local air differences, reflected
+heat from the building, ventilation and night-time radiation are not
+independently identified by the distant reference. A smaller error against
+Mikulka is evidence of agreement with that station, not a measurement of
+the remaining error on the balcony. Calibration over a few autumn days
+does not establish accuracy in other seasons.
 
 ## Measurements
 

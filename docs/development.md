@@ -6,13 +6,15 @@ The project records temperature, humidity and pressure from a balcony
 station in Plzeň. Its next stage is a correction of radiation shield heating,
 with ČHMÚ Plzeň-Mikulka as the professional temperature reference.
 
-The current application displays original sensor measurements. A corrected
-temperature estimate, automated reference ingestion and a historical
-comparison page are still to be implemented. Mikulka is about 3.5 km away;
+The current pages display original sensor measurements. A PHP correction
+model and automated reference ingestion are available through Artisan;
+displaying the estimate and a historical comparison page remain to be
+implemented. Mikulka is about 3.5 km away;
 its temperature is a reference with a different local environment.
 
-Downloaded reference files are kept locally under
-`storage/app/private/chmu/`, outside version control and the application image.
+Imported reference temperatures and calibration results are stored in
+PostgreSQL. Previously downloaded reference files may also be kept locally
+under `storage/app/private/chmu/`, outside version control and the image.
 
 ## Pages
 
@@ -127,8 +129,53 @@ Use `station_events` to distinguish hardware periods. The radiation shield
 was installed on 16 September 2026 at 15:00 Europe/Prague. The following
 sensor changes on 23 and 30 September mark separate calibration periods.
 
-The next stage will pair the original temperature, its corrected estimate
-and ČHMÚ Mikulka observations in time. Evaluation must use days excluded
-from calibration and compare the corrected estimate with the original
-measurement on the same reference timestamps. Reference outages must
-remain missing data.
+`temperature:import-reference` downloads yesterday and today in UTC from
+ČHMÚ open data. The scheduler runs it hourly at :15. Use `--date=YYYY-MM-DD`
+for one available daily file, `--month=YYYY-MM` for a published monthly
+file, or pass local JSON paths to import an archive. Upserts use the
+station and observation timestamp; invalidated observations become null.
+Data attribution: ČHMÚ Plzeň-Mikulka, CC BY 4.0. Daily files are short-lived,
+so run the scheduler continuously; monthly archives arrive later.
+
+`temperature:calibrate <sensor-slug> --from=YYYY-MM-DD
+--validate-from=YYYY-MM-DD --until=YYYY-MM-DD` fits on the first period and
+scores the later period, with exclusive date boundaries in Europe/Prague.
+The start must belong to the current hardware and mounting period. Optional
+`--latitude`, `--longitude` and `--wall-azimuth` describe the installation;
+defaults are the balcony coordinates and 65° clockwise from true north.
+
+`TemperatureDataset` reads one sensor's unchanged measurements, builds
+causal features and pairs each window end with its nearest ten-minute
+ČHMÚ T observation within 90 seconds. A balcony reading is a ten-minute
+mean; ČHMÚ T is a temperature at the observation time and location. The
+window and reference therefore have a temporal representativeness limit.
+Missing references are neither interpolated nor carried forward.
+
+`ShieldFeatures` uses lux hinges at 500, 1200 and 1800 lx, gated by solar
+elevation and whether the Sun is in front of the calibrated wall. Their
+20- and 60-minute exponential histories allow cooling after shade arrives.
+Solar geometry follows [NOAA's solar position equations](https://gml.noaa.gov/grad/solcalc/solareqns.PDF).
+`NonNegativeRegression` fits nine non-negative coefficients with an L2
+penalty of 0.001 per observation. No constant offset is fitted: differences
+between the two locations must not become a universal temperature offset.
+The knots, time constants and regularization are initial modeling choices,
+not independently measured physical properties.
+
+`temperature_calibrations` keeps geometry, feature version, coefficients,
+training and validation boundaries, limits, acceptance and scores. The
+minimum data and acceptance rules are described in the README. Rejected
+calibrations are retained for inspection and never used for inference.
+Validation periods are not refitted after scoring. Keep a new set of later
+days for evaluating changes suggested by these scores.
+
+`CorrectedTemperature::at()` selects a compatible accepted calibration for
+the sensor whose validation ended before the requested reading. It reads
+six hours of local history, uses the identical feature calculation and
+does not access ČHMÚ. No estimate is returned without a full hour of
+uninterrupted light readings, after gaps above 15 minutes, or beyond
+120% of the calibration's maximum lux or heating. The lux limit applies
+while the shield faces the Sun. `temperature:show <sensor-slug>` prints the
+newest measured temperature, shade estimate and heating correction.
+
+The correction currently operates through these backend APIs and commands;
+the page payloads and charts continue to show original temperatures.
