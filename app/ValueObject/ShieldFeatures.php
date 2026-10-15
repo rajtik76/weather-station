@@ -43,6 +43,7 @@ final readonly class ShieldFeatures
 
             if ($previous === null || $gap <= 0 || $gap > 900) {
                 $started = $timestamp;
+                $gap = 0;
                 $fast = $slow = array_fill(0, count(self::KNOTS_LUX), 0.0);
             }
 

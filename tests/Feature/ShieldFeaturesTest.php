@@ -93,3 +93,17 @@ it('does not change earlier features when later readings arrive', function (): v
 
     expect($after)->toEqual($before);
 });
+
+it('starts the filters from zero after a gap instead of decaying over it', function (): void {
+    $start = strtotime('2026-10-01T06:00:00Z');
+    $readings = [
+        ...shieldReadings($start - 5400, array_fill(0, 7, 1400)),
+        ...shieldReadings($start, array_fill(0, 7, 1400)),
+    ];
+
+    $samples = balconyFeatures()->samples($readings);
+
+    expect(array_last($samples)?->timestamp)->toBe($start + 3600)
+        ->and(array_last($samples)?->features[3])->toEqualWithDelta(0.8552, 0.001)
+        ->and(array_last($samples)?->features[6])->toEqualWithDelta(0.5689, 0.001);
+});
