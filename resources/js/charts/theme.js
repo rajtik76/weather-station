@@ -31,6 +31,7 @@ const CHANNEL_TOKEN = {
     t: "--ch1",
     c: "--ref",
     m: "--ch3",
+    r: "--ch2",
     h: "--ch2",
     d: "--ref",
     p: "--ch3",

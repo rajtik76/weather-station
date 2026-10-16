@@ -41,6 +41,32 @@ it("plots Mikulka minus the shade estimate and keeps missing values as gaps", ()
     ]);
 });
 
+it("adds the retrained model line only when a row carries it", () => {
+    state.comparisonRows = [
+        [1000, 11, 10.5, null],
+        [2000, 12, 10, 10.25],
+    ];
+
+    const option = comparisonStrip.option(comparisonStrip, { grid: "#eeeeee" });
+
+    expect(option.series.map((series) => series.name)).toEqual([
+        "Mikulka − shade estimate",
+        "Mikulka − retrained model",
+    ]);
+    expect(option.series[1].data).toEqual([
+        [1000, null],
+        [2000, -0.25],
+    ]);
+    expect(comparisonStrip.lines(state.comparisonRows[1]).map((line) => line.value)).toEqual([
+        "−2,00 °C",
+        "−0,25 °C",
+    ]);
+
+    state.comparisonRows = [[1000, 11, 10.5, null]];
+
+    expect(comparisonStrip.option(comparisonStrip, { grid: "#eeeeee" }).series).toHaveLength(1);
+});
+
 it("pairs the weather correction by slot time and preserves an unavailable slot", () => {
     state.rows = [
         [1000, 12, 60, 1000, 4, 1, 12, 12, 60, 60, 1000, 1000],

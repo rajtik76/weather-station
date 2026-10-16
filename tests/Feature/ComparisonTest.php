@@ -9,6 +9,7 @@ use App\Models\Measurement;
 use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
 use App\Models\TemperatureCalibration;
+use App\Queries\TemperatureCalibrator;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -24,7 +25,7 @@ it('plots the difference from Mikulka even when only reference data exists', fun
 
     expect($rows)->toHaveCount(144)
         ->and(array_values(array_filter($rows, fn (array $row): bool => $row[2] !== null))[0])
-        ->toBe([1792141200000, null, 10.0]);
+        ->toBe([1792141200000, null, 10.0, null]);
     $page->assertSee('Mikulka − shade estimate')->assertSee('No matched observations for this day yet.')
         ->assertSee('No matched corrected observations yet.')->assertDontSee('wire:poll', false);
     Http::assertNothingSent();
@@ -110,4 +111,58 @@ it('keeps a missing current correction explicit on overview', function (): void 
     correctionHistory($sensor, now()->getTimestamp(), missingAt: 6);
 
     Livewire::test(Overview::class)->assertSee('Unavailable for this reading.')->assertDontSee('11,10');
+});
+
+it('draws a retrained model only on its own validation days and scores it there', function (): void {
+    $data = heatingCalibrationData();
+    $candidate = resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
+
+    $validationDay = Livewire::withQueryParams(['date' => '2026-10-09'])->test(Comparison::class);
+    $laterDay = Livewire::withQueryParams(['date' => '2026-10-12'])->test(Comparison::class);
+    $summary = $validationDay->get('candidateSummary');
+
+    expect(array_filter(array_column($validationDay->get('comparisonRows'), 3), fn (?float $value): bool => $value !== null))->toHaveCount(144)
+        ->and(array_filter(array_column($laterDay->get('comparisonRows'), 3), fn (?float $value): bool => $value !== null))->toBeEmpty()
+        ->and($summary['candidate']['count'])->toBe(432)
+        ->and($summary['measured']['count'])->toBe(432)
+        ->and($summary['estimated']['count'])->toBe(0)
+        ->and($summary['candidate']['mae'])->toBeLessThan(0.01)
+        ->and($summary['measured']['mae'])->toBeGreaterThan(0.5)
+        ->and($summary['estimated']['mae'])->toBeNull();
+    $validationDay->assertSee('Mikulka − retrained model #'.$candidate->id.' · accepted')
+        ->assertSee('Retrained model on its validation days')->assertSee('validated 8.10.2026 - 10.10.2026');
+    $laterDay->assertDontSee('Mikulka − retrained model');
+});
+
+it('leaves training readings out of the first validation slot', function (): void {
+    $data = heatingCalibrationData();
+    resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
+
+    $rows = Livewire::withQueryParams(['date' => '2026-10-08'])->test(Comparison::class)->get('comparisonRows');
+
+    expect($rows[0][3])->toBeNull()
+        ->and($rows[1][3])->not->toBeNull();
+});
+
+it('hides the retrained legend on a validation day without its estimates', function (): void {
+    $data = heatingCalibrationData();
+    resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    Measurement::query()->where('timestamp', '>=', strtotime('2026-10-08T21:55:00Z'))->delete();
+    $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
+
+    Livewire::withQueryParams(['date' => '2026-10-09'])->test(Comparison::class)
+        ->assertDontSee('Mikulka − retrained model')->assertSee('Retrained model on its validation days');
+});
+
+it('reuses the retrained model summary instead of recomputing it on every request', function (): void {
+    $data = heatingCalibrationData();
+    resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
+    $summary = Livewire::test(Comparison::class)->get('candidateSummary');
+
+    ReferenceTemperature::query()->delete();
+
+    expect(Livewire::test(Comparison::class)->get('candidateSummary'))->toBe($summary);
 });

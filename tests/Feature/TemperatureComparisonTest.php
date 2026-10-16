@@ -115,3 +115,15 @@ it('averages a correction bucket over all of its readings even when the window s
 
     expect($partial[0][2])->toBe($whole[0][2]);
 });
+
+it('scores each model on every observation where it has an estimate', function (): void {
+    $summary = TemperatureComparison::candidate([
+        ['timestamp' => 1, 'measured' => 13.0, 'estimated' => null, 'reference' => 10.0, 'candidate' => 10.5],
+        ['timestamp' => 2, 'measured' => 12.0, 'estimated' => 11.0, 'reference' => 10.0, 'candidate' => 10.0],
+        ['timestamp' => 3, 'measured' => 12.0, 'estimated' => 11.0, 'reference' => null, 'candidate' => 11.0],
+    ]);
+
+    expect($summary['measured'])->toBe(['count' => 2, 'mae' => 2.5, 'bias' => 2.5, 'min' => 2.0, 'max' => 3.0])
+        ->and($summary['estimated'])->toBe(['count' => 1, 'mae' => 1.0, 'bias' => 1.0, 'min' => 1.0, 'max' => 1.0])
+        ->and($summary['candidate'])->toBe(['count' => 2, 'mae' => 0.25, 'bias' => 0.25, 'min' => 0.0, 'max' => 0.5]);
+});

@@ -13,6 +13,8 @@ final readonly class LocalTime
 
     private const string STAMP_FORMAT = 'j.n.Y H:i';
 
+    private const string DAY_FORMAT = 'j.n.Y';
+
     private function __construct(public int $timestamp) {}
 
     public static function of(int $timestamp): self
@@ -23,6 +25,11 @@ final readonly class LocalTime
     public function stamp(): string
     {
         return $this->moment()->format(self::STAMP_FORMAT);
+    }
+
+    public function day(): string
+    {
+        return $this->moment()->format(self::DAY_FORMAT);
     }
 
     public function ago(): string
