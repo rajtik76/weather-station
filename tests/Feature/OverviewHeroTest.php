@@ -102,7 +102,7 @@ it('prints every temperature in the hero to the hundredth', function (): void {
         ]);
 });
 
-it('shows every other channel with its day extremes below the temperature readout', function (): void {
+it('shows every channel with its day extremes right below the hero', function (): void {
     $this->travelTo(Date::parse('2026-03-15 12:00:00', 'UTC'));
     Measurement::factory()->for(Sensor::factory())->v4()->create([
         'timestamp' => now()->subMinutes(5)->getTimestamp(),
@@ -122,15 +122,15 @@ it('shows every other channel with its day extremes below the temperature readou
         ->assertSeeInOrder([
             'Measured temperature, last 24 h',
             'Measure · CH1', '16,48',
-            'bg-ch2', '87,84', '%', 'min', '87,00', 'max', '88,00',
-            'bg-ch3', '1 021,39', 'hPa', 'min', '1 021,27', 'max', '1 021,48',
-            'bg-ch4', '59,1', 'dB(A)', 'min', '59,1', 'max', '59,1',
-            'bg-aux', '266', 'lx', 'min', '260', 'max', '270',
             '>Channels</h2>',
+            '>Humidity</h3>', '87,84', '%', 'min', '87,00', 'max', '88,00',
+            '>Pressure, MSL</h3>', '1 021,39', 'hPa', 'min', '1 021,27', 'max', '1 021,48',
+            '>Noise, LAeq</h3>', '59,1', 'dB(A)', 'min', '59,1', 'max', '59,1',
+            '>Light</h3>', '266', 'lx', 'min', '260', 'max', '270',
         ], false);
 });
 
-it('leaves channels the station does not send out of the strip below the temperature readout', function (): void {
+it('leaves channels the station does not send out of the channels row', function (): void {
     Measurement::factory()->for(Sensor::factory())->create([
         'timestamp' => now()->subMinutes(5)->getTimestamp(),
         'data' => (string) new MeasurementDataV1(temperature: 1648, humidity: 8784, pressure: 98081),
@@ -138,7 +138,7 @@ it('leaves channels the station does not send out of the strip below the tempera
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['Measure · CH1', '16,48', '87,84', '1 021,39', '>Channels</h2>'], false)
+        ->assertSeeInOrder(['Measure · CH1', '16,48', '>Channels</h2>', '>Humidity</h3>', '87,84', '>Pressure, MSL</h3>', '1 021,39'], false)
         ->assertDontSee('dB(A)')
         ->assertDontSee('lx');
 });
@@ -190,10 +190,6 @@ it('updates every readout on the page when a poll brings a new reading', functio
         'Max', '19,37 °C',
         'Δ / h', '+2,25 °C',
         'Dew pt', '15,03 °C',
-        '79,12', '%', 'min', '78,55', 'max', '88,00',
-        '1 021,51', 'hPa', 'min', '1 021,27', 'max', '1 021,79',
-        '62,3', 'dB(A)', 'min', '59,1', 'max', '62,3',
-        '512', 'lx', 'min', '260', 'max', '533',
         'Channels',
         'Temperature', '18,73', 'min', '16,00', 'max', '19,37', 'Δ/h', '+2,25', 'Dew point 15,03 °C.',
         'Humidity', '79,12', 'min', '78,55', 'max', '88,00', 'Δ/h', '−8,72',
@@ -265,7 +261,6 @@ it('marks the noise as the last heard once the newest window has none', function
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['Measure · CH1', '55,6', 'dB(A)', ', last read, missing from the newest window', '>Channels</h2>'], false)
         ->assertSeeInOrder(['Noise, LAeq', '55,6', 'Missing from the newest window: the figure is the last one read.']);
 
     expect(Livewire::test(Overview::class)->get('silentChannels'))->toBe([Channel::Noise]);
@@ -295,7 +290,6 @@ it('reads the light into the hero with the day\'s brightest and darkest sample',
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['Measure · CH1', 'bg-aux', '1 235', 'lx', 'min', '0', 'max', '6 100', '>Channels</h2>'], false)
         ->assertSeeInOrder(['>Channels</h2>', '>Light</h3>', 'AUX', '1 235', 'lx', 'min', '0', 'max', '6 100', 'VEML7700 in the shield'], false);
 });
 

@@ -66,6 +66,7 @@
                     <span>24 h ago</span>
                     <span class="text-ink-2">now</span>
                 </div>
+                <p class="m-0 px-5 pb-4 text-[13px] leading-relaxed text-ink-3 sm:px-6">Measured inside the radiation shield. The shade estimate subtracts the modelled heating of the shield. <a href="{{ route('comparison', $this->sensorQuery()) }}" class="link-ink">Compare with Mikulka</a>.</p>
             </figure>
 
             <aside class="flex flex-col p-5 sm:p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1" aria-label="Channel 1 measurements">
@@ -89,24 +90,21 @@
                     <div class="grid grid-cols-[88px_1fr] items-baseline border-t border-line py-2.5">
                         <dt class="label-mono">Δ / h</dt><dd class="m-0">{{ $temperatureChannel->format($temperature['delta'], signed: true) }} {{ $temperatureChannel->unit() }}</dd>
                     </div>
+                    <div @class(['grid grid-cols-[88px_1fr] items-baseline border-t border-line py-2.5', 'border-b' => $this->dewPoint === null])>
+                        <dt class="label-mono text-ref">Shade</dt>
+                        @if ($shadeNow !== null)
+                            <dd class="m-0 text-ref">{{ $temperatureChannel->format($shadeNow) }} {{ $temperatureChannel->unit() }}<span class="ml-2 text-[13px] text-ink-3" title="Shield correction">{{ $temperatureChannel->format($shadeNow - $temperature['now'], signed: true) }}</span></dd>
+                        @else
+                            <dd class="m-0 text-[13px] leading-snug text-ink-3" title="A valid calibration and light history are required.">Unavailable for this reading.</dd>
+                        @endif
+                    </div>
                     @if ($this->dewPoint !== null)
                         <div class="grid grid-cols-[88px_1fr] items-baseline border-y border-line py-2.5">
                             <dt class="label-mono">Dew pt</dt><dd class="m-0">{{ $temperatureChannel->format($this->dewPoint) }} {{ $temperatureChannel->unit() }}</dd>
                         </div>
                     @endif
                 </dl>
-                <div class="mt-5 border-t border-line pt-4">
-                    <p class="label-mono m-0 text-ref">Shade estimate</p>
-                    @if ($shadeNow !== null)
-                        <p class="num m-0 mt-2 font-mono text-[32px] leading-tight text-ref">{{ $temperatureChannel->format($shadeNow) }} <span class="text-[16px] text-ink-3">°C</span></p>
-                        <p class="m-0 mt-2 text-[14px] text-ink-2">Shield correction {{ $temperatureChannel->format($temperature['now'] - $shadeNow) }} °C</p>
-                    @else
-                        <p class="m-0 mt-2 text-[14px] text-ink-3">Unavailable for this reading. A valid calibration and light history are required.</p>
-                    @endif
-                </div>
-                <p class="m-0 mt-auto pt-6 text-[15px] leading-relaxed text-ink-3">Measured inside the radiation shield. The shade estimate subtracts the modelled heating of the shield. <a href="{{ route('comparison', $this->sensorQuery()) }}" class="link-ink">Compare with Mikulka</a>.</p>
             </aside>
-            @include('livewire.overview.hero-readouts')
         </div>
     @endif
 </section>
