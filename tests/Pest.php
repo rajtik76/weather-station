@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
+use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
+use App\ValueObject\ChmuTemperatures;
 use App\ValueObject\LightWindow;
+use App\ValueObject\LocalTime;
 use App\ValueObject\MeasurementDataV3;
 use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\NoiseWindow;
+use App\ValueObject\ShieldFeatures;
+use App\ValueObject\SolarPosition;
+use App\ValueObject\StationSite;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Date;
 use Tests\TestCase;
 
 use function Pest\Laravel\withHeader;
@@ -178,4 +185,58 @@ function correctionHistory(Sensor $sensor, int $end, ?int $missingAt = null): ar
     }
 
     return $rows;
+}
+
+/** @return array{sensor: Sensor, from: int, validateFrom: int, until: int, features: ShieldFeatures} */
+function heatingCalibrationData(): array
+{
+    $sensor = Sensor::factory()->create();
+    $from = Date::parse('2026-10-01', LocalTime::TIMEZONE)->getTimestamp();
+    $validateFrom = Date::parse('2026-10-08', LocalTime::TIMEZONE)->getTimestamp();
+    $until = Date::parse('2026-10-11', LocalTime::TIMEZONE)->getTimestamp();
+    $features = new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, StationSite::WALL_AZIMUTH);
+    $measurements = $references = [];
+    $createdAt = now()->toDateTimeString();
+
+    for ($timestamp = $from + 570; $timestamp < $until; $timestamp += 600) {
+        $sun = SolarPosition::at($timestamp - 300, StationSite::LATITUDE, StationSite::LONGITUDE);
+        $lit = $sun->faces(StationSite::WALL_AZIMUTH);
+        $temperature = $lit ? 1300 : 1000;
+        $lux = $lit ? 200000 : 0;
+        $data = new MeasurementDataV4(
+            temperature: $temperature, humidity: 6000, pressure: 97000,
+            temperatureMin: $temperature, temperatureMax: $temperature,
+            humidityMin: 6000, humidityMax: 6000,
+            pressureMin: 97000, pressureMax: 97000,
+            samples: 20,
+            light: new LightWindow($lux, $lux, $lux),
+        );
+        $measurements[] = [
+            'sensor_id' => $sensor->id,
+            'timestamp' => $timestamp,
+            'protocol_version' => ProtocolVersion::V4->value,
+            'data' => (string) $data,
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
+        ];
+        $references[] = [
+            'station' => ChmuTemperatures::STATION,
+            'timestamp' => (int) round($timestamp / 600) * 600,
+            'temperature' => 10.0,
+            'quality' => 0,
+            'source' => 'calibration.json',
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
+        ];
+    }
+
+    foreach (array_chunk($measurements, 300) as $chunk) {
+        Measurement::query()->insert($chunk);
+    }
+
+    foreach (array_chunk($references, 300) as $chunk) {
+        ReferenceTemperature::query()->insert($chunk);
+    }
+
+    return ['sensor' => $sensor, 'from' => $from, 'validateFrom' => $validateFrom, 'until' => $until, 'features' => $features];
 }

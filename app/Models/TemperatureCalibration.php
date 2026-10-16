@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array{latitude: float, longitude: float, wall_azimuth: float} $geometry
  * @property list<float> $coefficients
  * @property array{max_lux: float, max_heating: float} $limits
- * @property array{training: array<string, Score>, validation: array<string, Score>, days: array<string, Score>} $scores
+ * @property array{training: array<string, Score>, validation: array<string, Score>, days: array<string, Score>, versus_current?: array{current?: array<string, Score>, retrained?: array<string, Score>}} $scores
  */
 class TemperatureCalibration extends Model
 {

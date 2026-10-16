@@ -24,7 +24,7 @@ final readonly class TemperatureCalibrator
 {
     private const float REQUIRED_MAE_RATIO = 0.9;
 
-    public function __construct(private TemperatureDataset $dataset) {}
+    public function __construct(private TemperatureDataset $dataset, private CorrectedTemperature $corrections) {}
 
     public function calibrate(int $sensorId, int $from, int $validateFrom, int $until, ShieldFeatures $features): TemperatureCalibration
     {
@@ -64,10 +64,12 @@ final readonly class TemperatureCalibrator
         $model = new ShieldModel($coefficients, $limits['max_lux'], $limits['max_heating']);
         $scoredTraining = $this->withHeating($training, $model);
         $scoredValidation = $this->withHeating($validation, $model);
+        $versusCurrent = $this->versusCurrent($sensorId, $validateFrom, $until, $scoredValidation);
         $scores = [
             'training' => $this->scores($scoredTraining),
             'validation' => $this->scores($scoredValidation),
             'days' => $this->byDay($scoredValidation),
+            'versus_current' => $versusCurrent,
         ];
         $all = $scores['validation']['all'];
         $sun = $scores['validation']['sun_facing'];
@@ -77,7 +79,8 @@ final readonly class TemperatureCalibrator
             && $this->improves($all)
             && $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
             && $night['count'] > 0 && $night['corrected_mae'] <= $night['raw_mae'] + 0.05
-            && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1;
+            && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1
+            && $this->beatsCurrent($versusCurrent);
 
         return TemperatureCalibration::query()->create([
             'sensor_id' => $sensorId,
@@ -113,6 +116,43 @@ final readonly class TemperatureCalibrator
     private function withHeating(array $pairs, ShieldModel $model): array
     {
         return array_map(fn (array $pair): array => [...$pair, 'heating' => $model->heating($pair['sample'])], $pairs);
+    }
+
+    /**
+     * Both models scored on the validation pairs where each has an estimate; empty without a model in use.
+     *
+     * @param  list<ScoredPair>  $validation
+     * @return array{current?: array<string, Score>, retrained?: array<string, Score>}
+     */
+    private function versusCurrent(int $sensorId, int $validateFrom, int $until, array $validation): array
+    {
+        $current = $this->corrections->between($sensorId, $validateFrom, $until);
+        $common = array_values(array_filter($validation, fn (array $pair): bool => $pair['heating'] !== null
+            && ($current[$pair['sample']->timestamp]['correction'] ?? null) !== null));
+
+        return $common === [] ? [] : [
+            'current' => $this->scores(array_map(fn (array $pair): array => [...$pair, 'heating' => $current[$pair['sample']->timestamp]['correction']], $common)),
+            'retrained' => $this->scores($common),
+        ];
+    }
+
+    /** @param array{current?: array<string, Score>, retrained?: array<string, Score>} $versusCurrent */
+    private function beatsCurrent(array $versusCurrent): bool
+    {
+        if (! isset($versusCurrent['current'], $versusCurrent['retrained'])) {
+            return true;
+        }
+
+        foreach (['all', 'sun_facing'] as $group) {
+            $current = $versusCurrent['current'][$group]['corrected_mae'];
+            $retrained = $versusCurrent['retrained'][$group]['corrected_mae'];
+
+            if ($current !== null && ($retrained === null || $retrained > $current)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param Score $score */

@@ -78,6 +78,10 @@ class CalibrateTemperature extends Command
             $this->line($day.': '.$score['count'].' pairs, '.$this->decimal($score['raw_mae']).' -> '.$this->decimal($score['corrected_mae']).' °C MAE');
         }
 
+        foreach ($calibration->scores['versus_current']['current'] ?? [] as $group => $score) {
+            $this->line('Versus model in use, '.$group.': '.$this->decimal($score['corrected_mae']).' -> '.$this->decimal($calibration->scores['versus_current']['retrained'][$group]['corrected_mae'] ?? null).' °C MAE on '.$score['count'].' pairs');
+        }
+
         $this->line('Calibration #'.$calibration->id.($calibration->accepted ? ' accepted.' : ' rejected; inference will not use it.'));
 
         return $calibration->accepted ? self::SUCCESS : self::FAILURE;
