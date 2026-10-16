@@ -66,7 +66,7 @@ final readonly class TemperatureHistory
         return $rows;
     }
 
-    /** @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> */
+    /** @return list<array{0: int, 1: ?float, 2: ?float}> */
     public function comparisonRows(?int $sensorId, int $from, int $until): array
     {
         $groups = [];
@@ -82,11 +82,9 @@ final readonly class TemperatureHistory
 
         for ($slot = $from; $slot < $until; $slot += 600) {
             $readings = $groups[$slot] ?? [];
-            $measured = array_column($readings, 'measured');
             $estimated = array_column($readings, 'estimated');
             $rows[] = [
                 LocalTime::of($slot)->wallClockMs(),
-                $measured === [] ? null : array_sum($measured) / count($measured),
                 $estimated === [] || in_array(null, $estimated, true) ? null : array_sum($estimated) / count($estimated),
                 $references[$slot] ?? null,
             ];

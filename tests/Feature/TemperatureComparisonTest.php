@@ -92,14 +92,15 @@ it('plots a reading stamped just before the mark in the slot of the matching ref
     $this->travelTo(Date::parse('2026-10-16 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
     $slot = strtotime('2026-10-16T07:00:00Z');
-    Measurement::factory()->v4()->for($sensor)->create(['timestamp' => $slot - 30, 'data' => (string) litWindow(0, 0, 0)]);
+    TemperatureCalibration::factory()->for($sensor)->create();
+    correctionHistory($sensor, $slot - 30);
     ReferenceTemperature::factory()->create(['timestamp' => $slot, 'temperature' => 10.0]);
 
     $rows = resolve(TemperatureHistory::class)->comparisonRows($sensor->id, $slot - 1200, $slot + 1200);
-    $plotted = array_values(array_filter($rows, fn (array $row): bool => $row[1] !== null));
+    $matched = array_values(array_filter($rows, fn (array $row): bool => $row[1] !== null && $row[2] !== null));
 
-    expect($plotted)->toHaveCount(1)
-        ->and($plotted[0][3])->toBe(10.0);
+    expect($matched)->toHaveCount(1)
+        ->and($matched[0][2])->toBe(10.0);
 });
 
 it('averages a correction bucket over all of its readings even when the window starts inside it', function (): void {

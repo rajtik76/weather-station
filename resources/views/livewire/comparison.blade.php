@@ -14,19 +14,17 @@
                     <flux:button wire:click="moveDay(1)" :disabled="$this->day->date === \App\ValueObject\ComparisonDay::today()" aria-label="Next day">→</flux:button>
                 </div>
             </div>
-            <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink-2">The shield sensor, the calculated shade temperature and the ČHMÚ reference on one local calendar day. Choose a date up to 30 days back.</p>
+            <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink-2">The ČHMÚ reference minus the calculated shade temperature on one local calendar day. Choose a date up to 30 days back.</p>
             <div data-chart-rows="[]" data-comparison-rows="{{ json_encode($this->comparisonRows) }}" hidden></div>
             <div class="mt-6 rounded-[10px] border border-line bg-screen px-3 py-5 sm:px-5" wire:loading.class="opacity-60" wire:target="date,moveDay,sensor">
-                <x-channel-strip key="comparison" label="Temperature comparison" channel="°C" height="h-72 sm:h-96">
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch1" aria-hidden="true"></span>Shield sensor</span>
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ref" aria-hidden="true"></span>Shade estimate</span>
-                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>ČHMÚ Mikulka</span>
+                <x-channel-strip key="comparison" label="Mikulka vs shade estimate" channel="°C" height="h-72 sm:h-96">
+                    <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>Mikulka − shade estimate</span>
                 </x-channel-strip>
-                @if (! collect($this->comparisonRows)->contains(fn (array $row): bool => $row[1] !== null || $row[3] !== null))
-                    <p class="m-0 py-4 text-center text-[15px] text-ink-2">No observations for this day yet.</p>
+                @if (! collect($this->comparisonRows)->contains(fn (array $row): bool => $row[1] !== null && $row[2] !== null))
+                    <p class="m-0 py-4 text-center text-[15px] text-ink-2">No matched observations for this day yet.</p>
                 @endif
             </div>
-            <p class="mt-3 text-[13px] leading-relaxed text-ink-3">Ten-minute slots, Europe/Prague. Gaps mean missing data or an unavailable correction. ČHMÚ observations can arrive later. Days when the clocks change contain 23 or 25 hours.</p>
+            <p class="mt-3 text-[13px] leading-relaxed text-ink-3">Ten-minute slots, Europe/Prague. Positive means Mikulka is warmer. Gaps mean missing data or an unavailable correction. ČHMÚ observations can arrive later. Days when the clocks change contain 23 or 25 hours.</p>
         </section>
 
         @php($summary = $this->summary)

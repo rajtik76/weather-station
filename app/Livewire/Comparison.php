@@ -16,7 +16,7 @@ use Livewire\Attributes\Url;
  * @phpstan-import-type Summary from TemperatureComparison
  *
  * @property-read ComparisonDay $day
- * @property-read list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> $comparisonRows
+ * @property-read list<array{0: int, 1: ?float, 2: ?float}> $comparisonRows
  * @property-read Summary $summary
  */
 #[Title('Balcony Station · Mikulka comparison')]
@@ -49,7 +49,7 @@ class Comparison extends StationPage
         return ComparisonDay::of($this->date);
     }
 
-    /** @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> */
+    /** @return list<array{0: int, 1: ?float, 2: ?float}> */
     #[Computed]
     public function comparisonRows(): array
     {

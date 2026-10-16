@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
-it('shows sensor, shade estimate and reference even when only reference data exists', function (): void {
+it('plots the difference from Mikulka even when only reference data exists', function (): void {
     $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
     $slot = strtotime('2026-10-16T07:00:00Z');
     ReferenceTemperature::factory()->create(['timestamp' => $slot, 'temperature' => 10.0]);
@@ -23,9 +23,9 @@ it('shows sensor, shade estimate and reference even when only reference data exi
     $rows = $page->get('comparisonRows');
 
     expect($rows)->toHaveCount(144)
-        ->and(array_values(array_filter($rows, fn (array $row): bool => $row[3] !== null))[0])
-        ->toBe([1792141200000, null, null, 10.0]);
-    $page->assertSee('Shield sensor')->assertSee('Shade estimate')->assertSee('ČHMÚ Mikulka')
+        ->and(array_values(array_filter($rows, fn (array $row): bool => $row[2] !== null))[0])
+        ->toBe([1792141200000, null, 10.0]);
+    $page->assertSee('Mikulka − shade estimate')->assertSee('No matched observations for this day yet.')
         ->assertSee('No matched corrected observations yet.')->assertDontSee('wire:poll', false);
     Http::assertNothingSent();
 });

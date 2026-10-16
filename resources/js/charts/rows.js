@@ -23,7 +23,7 @@ export const NOISE_COLUMN = { time: 0, epoch: 1, laeq: 2, la10: 3, la90: 4, lama
 export const LIGHT_COLUMN = { time: 0, epoch: 1, mean: 2, min: 3, max: 4 };
 
 export const CORRECTED_COLUMN = { time: 0, epoch: 1, estimated: 2 };
-export const COMPARISON_COLUMN = { time: 0, measured: 1, estimated: 2, reference: 3 };
+export const COMPARISON_COLUMN = { time: 0, estimated: 1, reference: 2 };
 
 /** Wall-clock ms, title, CSS colour or null. */
 export const EVENT = { time: 0, title: 1, colour: 2 };

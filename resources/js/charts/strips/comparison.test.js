@@ -16,31 +16,27 @@ afterEach(() => {
     state.hidden.clear();
 });
 
-it("keeps missing estimates and references as gaps in the comparison", () => {
+it("plots Mikulka minus the shade estimate and keeps missing values as gaps", () => {
     state.comparisonRows = [
-        [1000, 12, 11, 10],
-        [2000, 13, null, null],
+        [1000, 11, 10.5],
+        [2000, null, 10],
+        [3000, 12, null],
+        [4000, 10, 10],
     ];
 
     const option = comparisonStrip.option(comparisonStrip, { grid: "#eeeeee" });
 
-    expect(option.series.map((series) => series.data)).toEqual([
-        [
-            [1000, 12],
-            [2000, 13],
-        ],
-        [
-            [1000, 11],
-            [2000, null],
-        ],
-        [
-            [1000, 10],
-            [2000, null],
-        ],
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].data).toEqual([
+        [1000, -0.5],
+        [2000, null],
+        [3000, null],
+        [4000, 0],
+    ]);
+    expect(comparisonStrip.lines(state.comparisonRows[0]).map((line) => line.value)).toEqual([
+        "−0,50 °C",
     ]);
     expect(comparisonStrip.lines(state.comparisonRows[1]).map((line) => line.value)).toEqual([
-        "13,00 °C",
-        "n/a",
         "n/a",
     ]);
 });
