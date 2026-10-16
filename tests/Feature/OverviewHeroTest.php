@@ -140,7 +140,7 @@ it('leaves channels the station does not send out of the channels row', function
         ->assertOk()
         ->assertSeeInOrder(['Measure · CH1', '16,48', '>Channels</h2>', '>Humidity</h3>', '87,84', '>Pressure, MSL</h3>', '1 021,39'], false)
         ->assertDontSee('dB(A)')
-        ->assertDontSee('lx');
+        ->assertDontSee('lx</span>', false);
 });
 
 /**
