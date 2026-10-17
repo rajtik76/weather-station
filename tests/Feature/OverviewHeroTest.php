@@ -327,7 +327,7 @@ it('draws the last day under each readout', function (): void {
 
 it('says in the noise channel when the microphone hears rain, and nothing otherwise', function (?string $spectrum, string $note): void {
     $bands = match ($spectrum) {
-        'rain' => rainyBands(),
+        'rain', 'transient' => rainyBands(),
         'dry' => array_fill(0, 26, 3000),
         default => null,
     };
@@ -339,7 +339,7 @@ it('says in the noise channel when the microphone hears rain, and nothing otherw
             humidityMin: 4700, humidityMax: 4900,
             pressureMin: 97380, pressureMax: 97395,
             samples: 20,
-            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: 4500, bands: $bands),
+            noise: new NoiseWindow(seconds: 600, laeq: 5000, lamax: 6000, la10: 5500, la90: $spectrum === 'transient' ? 2900 : 4500, bands: $bands),
         );
     ($bands === null ? Measurement::factory() : Measurement::factory()->v3())
         ->create(['timestamp' => now()->subMinutes(5)->getTimestamp(), 'data' => (string) $data]);
@@ -354,6 +354,7 @@ it('says in the noise channel when the microphone hears rain, and nothing otherw
 })->with([
     'rain' => ['rain', 'Rain heard now.'],
     'dry' => ['dry', 'No rain heard.'],
+    'a transient ringing the shield' => ['transient', 'No rain heard.'],
     'no microphone' => [null, 'Temperature'],
 ]);
 

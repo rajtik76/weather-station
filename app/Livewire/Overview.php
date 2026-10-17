@@ -152,7 +152,7 @@ class Overview extends StationPage
             return null;
         }
 
-        return RainDetector::hearsStored($data->noise->bands);
+        return RainDetector::hears($data->noise->bands, $data->noise->laeq, $data->noise->la90);
     }
 
     /**

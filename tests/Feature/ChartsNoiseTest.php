@@ -98,8 +98,14 @@ it('marks the waterfall slots the microphone heard rain in', function (): void {
     $sensor = Sensor::factory()->create();
     $rain = now()->subMinutes(60)->getTimestamp();
     $wetRoad = now()->subMinutes(30)->getTimestamp();
+    $transient = now()->subMinutes(10)->getTimestamp();
+    $windows = [
+        $rain => spectrumWindow(57.6, 4.7),
+        $wetRoad => spectrumWindow(50.8, 0.6),
+        $transient => spectrumWindow(52.9, 4.3, laeq: 74.0, la90: 48.0),
+    ];
 
-    foreach ([$rain => spectrumWindow(57.6, 4.7), $wetRoad => spectrumWindow(50.8, 0.6)] as $timestamp => $window) {
+    foreach ($windows as $timestamp => $window) {
         Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $timestamp, 'data' => (string) $window]);
     }
 

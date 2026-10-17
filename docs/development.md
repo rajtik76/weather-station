@@ -35,8 +35,8 @@ navigator over the whole record. Pressure is stored as station pressure
 and reduced to sea level for display.
 
 Sound and light appear when the selected station has sent them. Light is
-measured behind the radiation shield's louvers. The sound spectrum provides
-an experimental rain indication through `RainDetector`.
+measured behind the radiation shield's louvers. The sound spectrum, LAeq and
+LA90 provide an experimental rain indication through `RainDetector`.
 
 ## Structure
 

@@ -149,7 +149,7 @@ function chartEvents(string $html): array
     return json_decode(html_entity_decode($matches[1] ?? '[]'), true);
 }
 
-function spectrumWindow(float $high, float $ring, float $neighbours = 40.0): MeasurementDataV3
+function spectrumWindow(float $high, float $ring, float $neighbours = 40.0, float $laeq = 65.0, float $la90 = 60.0): MeasurementDataV3
 {
     $bands = array_fill(0, 26, 3000);
     $bands[15] = (int) round($neighbours * 100);
@@ -163,7 +163,7 @@ function spectrumWindow(float $high, float $ring, float $neighbours = 40.0): Mea
         humidityMin: 4700, humidityMax: 4900,
         pressureMin: 97380, pressureMax: 97395,
         samples: 20,
-        noise: new NoiseWindow(seconds: 600, laeq: 6500, lamax: 7200, la10: 6700, la90: 6000, bands: $bands),
+        noise: new NoiseWindow(seconds: 600, laeq: (int) round($laeq * 100), lamax: (int) round(($laeq + 7.0) * 100), la10: 6700, la90: (int) round($la90 * 100), bands: $bands),
     );
 }
 

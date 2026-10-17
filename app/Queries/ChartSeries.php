@@ -83,12 +83,12 @@ final readonly class ChartSeries
     {
         $rainy = [];
 
-        foreach ($this->buckets->spectra($window) as $spectrum) {
+        foreach ($this->buckets->noiseWindows($window) as $noise) {
             /** @var list<int> $bands */
-            $bands = json_decode($spectrum->bands, true, flags: JSON_THROW_ON_ERROR);
+            $bands = json_decode($noise->bands, true, flags: JSON_THROW_ON_ERROR);
 
-            if (RainDetector::hearsStored($bands)) {
-                $rainy[(int) $spectrum->bucket] = true;
+            if (RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90)) {
+                $rainy[(int) $noise->bucket] = true;
             }
         }
 
