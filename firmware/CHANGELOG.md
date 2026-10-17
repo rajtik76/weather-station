@@ -10,6 +10,7 @@ One entry per build that went on a board, tagged `fw/v<version>`. `Board` = IDE 
 
 Board ESP32_DEV · Protocol 4 · Server v4.0.0
 
+- New shield hub: SHT45 (replaces the SHT41), VEML7700 and INMP441 on one board in the radiation shield
 - Illuminance from the VEML7700: mean, min, max per window in 0.01 lx; omitted when no light data; a failed or saturated read drops only the light
 - VEML7700 steps through five ranges, 0.03 lx per count at dusk to 141 klx in full sun, one step per reading
 - Parked noise task polls its flag every 100 ms (a resume racing the park left the microphone off until the next upload)
