@@ -10,6 +10,7 @@ use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
 use App\Models\TemperatureCalibration;
 use App\Queries\TemperatureCalibrator;
+use App\ValueObject\LocalTime;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -23,7 +24,7 @@ it('plots the difference from Mikulka even when only reference data exists', fun
     $page = Livewire::test(Comparison::class);
     $rows = $page->get('comparisonRows');
 
-    expect($rows)->toHaveCount(144)
+    expect($rows)->toHaveCount(91)
         ->and(array_values(array_filter($rows, fn (array $row): bool => $row[2] !== null))[0])
         ->toBe([1792141200000, null, 10.0, null]);
     $page->assertSee('Mikulka − shade estimate')->assertSee('No matched observations for this day yet.')
@@ -166,3 +167,18 @@ it('reuses the retrained model summary instead of recomputing it on every reques
 
     expect(Livewire::test(Comparison::class)->get('candidateSummary'))->toBe($summary);
 });
+
+it('ends today\'s axis on the next full hour and keeps past days whole', function (string $now, string $date, int $slots, string $last): void {
+    $sensor = Sensor::factory()->create();
+    $this->travelTo(Date::parse($now, LocalTime::TIMEZONE));
+
+    $rows = Livewire::withQueryParams(['date' => $date])->test(Comparison::class)->get('comparisonRows');
+
+    expect($rows)->toHaveCount($slots)
+        ->and($rows[array_key_last($rows)][0])->toBe(LocalTime::of(Date::parse($last, LocalTime::TIMEZONE)->getTimestamp())->wallClockMs());
+})->with([
+    'after midnight' => ['2026-10-20 00:05:00', '2026-10-20', 7, '2026-10-20 01:00:00'],
+    'at noon' => ['2026-10-20 12:00:00', '2026-10-20', 79, '2026-10-20 13:00:00'],
+    'late evening' => ['2026-10-20 23:30:00', '2026-10-20', 144, '2026-10-20 23:50:00'],
+    'yesterday' => ['2026-10-20 12:00:00', '2026-10-19', 144, '2026-10-19 23:50:00'],
+]);

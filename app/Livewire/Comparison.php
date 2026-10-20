@@ -66,7 +66,7 @@ class Comparison extends StationPage
     #[Computed]
     public function comparisonRows(): array
     {
-        return resolve(TemperatureHistory::class)->comparisonRows($this->selectedSensor?->id, $this->day->from, $this->day->until, $this->dayCandidate);
+        return resolve(TemperatureHistory::class)->comparisonRows($this->selectedSensor?->id, $this->day->from, $this->day->axisUntil(now()->getTimestamp()), $this->dayCandidate);
     }
 
     /** @return Summary */

@@ -33,6 +33,12 @@ final readonly class ComparisonDay
         return new self($normalised, $start->getTimestamp(), $start->addDay()->getTimestamp());
     }
 
+    /** Exclusive slot end: the day's end, or today the slot at the next full hour. */
+    public function axisUntil(int $now): int
+    {
+        return min($this->until, (intdiv($now, 3600) + 1) * 3600 + 600);
+    }
+
     public function shift(int $days): string
     {
         return self::of(CarbonImmutable::parse($this->date, LocalTime::TIMEZONE)->addDays(max(-1, min(1, $days)))->toDateString())->date;
