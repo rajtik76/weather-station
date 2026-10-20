@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Models\Measurement;
 use App\Models\TemperatureCalibration;
+use App\ValueObject\CalibrationSpans;
 use App\ValueObject\ShieldFeatures;
 
 /** @phpstan-type Correction array{timestamp: int, measured: float, estimated: ?float, correction: ?float, calibration_id: int} */
@@ -31,13 +32,13 @@ final readonly class CorrectedTemperature
             ->where('feature_version', ShieldFeatures::VERSION)
             ->where('validated_until', '<', $until)
             ->orderByDesc('id')->get();
+        $spans = CalibrationSpans::of($calibrations);
         $results = [];
-        $claimedFrom = $until;
 
         foreach ($calibrations as $calibration) {
-            $start = max($from, $calibration->validated_until);
-            $end = $claimedFrom;
-            $claimedFrom = min($claimedFrom, $calibration->validated_until);
+            $span = $spans[$calibration->id] ?? null;
+            $start = max($from, $span['from'] ?? $until);
+            $end = min($until, $span['until'] ?? $until);
 
             if ($start >= $end) {
                 continue;
