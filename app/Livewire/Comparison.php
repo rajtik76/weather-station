@@ -23,6 +23,7 @@ use Livewire\Attributes\Url;
  * @property-read ?TemperatureCalibration $dayCandidate
  * @property-read list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> $comparisonRows
  * @property-read Summary $summary
+ * @property-read ?TemperatureCalibration $modelInUse
  * @property-read ?TemperatureCalibration $latestCandidate
  * @property-read ?CandidateSummary $candidateSummary
  */
@@ -82,6 +83,12 @@ class Comparison extends StationPage
     }
 
     #[Computed]
+    public function modelInUse(): ?TemperatureCalibration
+    {
+        return resolve(ShieldCalibrations::class)->inUse($this->selectedSensor?->id, now()->getTimestamp());
+    }
+
+    #[Computed]
     public function latestCandidate(): ?TemperatureCalibration
     {
         return resolve(ShieldCalibrations::class)->newest($this->selectedSensor?->id);
@@ -94,7 +101,7 @@ class Comparison extends StationPage
         $candidate = $this->latestCandidate;
 
         return $candidate instanceof TemperatureCalibration
-            ? Cache::remember('comparison:candidate-summary:'.$candidate->id, now()->addHour(),
+            ? Cache::remember('comparison:candidate-summary:'.$candidate->id.':'.$candidate->status(), $candidate->isValidating() ? now()->addMinutes(10) : now()->addHour(),
                 fn (): array => TemperatureComparison::candidate(resolve(TemperatureHistory::class)->candidateReadings($candidate)))
             : null;
     }

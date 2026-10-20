@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { state } from "../state";
 import { comparisonStrip } from "./comparison";
+import { improvementStrip } from "./improvement";
 import { temperatureStrip } from "./weather";
 
 vi.mock("../theme", () => ({
@@ -41,30 +42,29 @@ it("plots Mikulka minus the shade estimate and keeps missing values as gaps", ()
     ]);
 });
 
-it("adds the retrained model line only when a row carries it", () => {
+it("plots how much closer to Mikulka the retrained model is than the model in use", () => {
     state.comparisonRows = [
         [1000, 11, 10.5, null],
         [2000, 12, 10, 10.25],
+        [3000, 10, 10.5, 11.5],
+        [4000, null, 10, 10.25],
     ];
 
-    const option = comparisonStrip.option(comparisonStrip, { grid: "#eeeeee" });
-
-    expect(option.series.map((series) => series.name)).toEqual([
-        "Mikulka − shade estimate",
-        "Mikulka − retrained model",
-    ]);
-    expect(option.series[1].data).toEqual([
-        [1000, null],
-        [2000, -0.25],
-    ]);
-    expect(comparisonStrip.lines(state.comparisonRows[1]).map((line) => line.value)).toEqual([
-        "−2,00 °C",
-        "−0,25 °C",
-    ]);
-
-    state.comparisonRows = [[1000, 11, 10.5, null]];
+    const option = improvementStrip.option(improvementStrip, { grid: "#eeeeee", label: "#999999" });
 
     expect(comparisonStrip.option(comparisonStrip, { grid: "#eeeeee" }).series).toHaveLength(1);
+    expect(option.series[0].data).toEqual([
+        [1000, null],
+        [2000, 1.75],
+        [3000, -0.5],
+        [4000, null],
+    ]);
+    expect(improvementStrip.lines(state.comparisonRows[1]).map((line) => line.value)).toEqual([
+        "+1,75 °C",
+    ]);
+    expect(improvementStrip.lines(state.comparisonRows[2]).map((line) => line.value)).toEqual([
+        "−0,50 °C",
+    ]);
 });
 
 it("pairs the weather correction by slot time and preserves an unavailable slot", () => {

@@ -15,19 +15,25 @@
                 </div>
             </div>
             <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink-2">The ČHMÚ reference minus the calculated shade temperature on one local calendar day. Choose a date up to 30 days back.</p>
+            @include('livewire.comparison.models', ['inUse' => $this->modelInUse, 'candidate' => $this->latestCandidate])
             <div data-chart-rows="[]" data-comparison-rows="{{ json_encode($this->comparisonRows) }}" hidden></div>
             <div class="mt-6 rounded-[10px] border border-line bg-screen px-3 py-5 sm:px-5" wire:loading.class="opacity-60" wire:target="date,moveDay,sensor">
                 <x-channel-strip key="comparison" label="Mikulka vs shade estimate" channel="°C" height="h-72 sm:h-96">
                     <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch3" aria-hidden="true"></span>Mikulka − shade estimate</span>
-                    @if ($this->dayCandidate && collect($this->comparisonRows)->contains(fn (array $row): bool => $row[3] !== null))
-                        <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch2" aria-hidden="true"></span>Mikulka − retrained model #{{ $this->dayCandidate->id }} · {{ $this->dayCandidate->accepted ? 'accepted' : 'rejected' }}</span>
-                    @endif
                 </x-channel-strip>
                 @if (! collect($this->comparisonRows)->contains(fn (array $row): bool => $row[1] !== null && $row[2] !== null))
                     <p class="m-0 py-4 text-center text-[15px] text-ink-2">No matched observations for this day yet.</p>
                 @endif
             </div>
-            <p class="mt-3 text-[13px] leading-relaxed text-ink-3">Ten-minute slots, Europe/Prague. Positive means Mikulka is warmer. Gaps mean missing data or an unavailable correction. ČHMÚ observations can arrive later. Days when the clocks change contain 23 or 25 hours. A retrained model is drawn only on its own validation days.</p>
+            <p class="mt-3 text-[13px] leading-relaxed text-ink-3">Ten-minute slots, Europe/Prague. Positive means Mikulka is warmer. Gaps mean missing data or an unavailable correction. ČHMÚ observations can arrive later. Days when the clocks change contain 23 or 25 hours.</p>
+            @if ($this->dayCandidate && collect($this->comparisonRows)->contains(fn (array $row): bool => $row[1] !== null && $row[2] !== null && $row[3] !== null))
+                <div class="mt-6 rounded-[10px] border border-line bg-screen px-3 py-5 sm:px-5" wire:loading.class="opacity-60" wire:target="date,moveDay,sensor">
+                    <x-channel-strip key="improvement" label="Retrained model improvement" channel="°C" height="h-56 sm:h-72">
+                        <span class="flex items-center gap-2 text-ink-2"><span class="swatch bg-ch2" aria-hidden="true"></span>Improvement of model #{{ $this->dayCandidate->id }} · {{ $this->dayCandidate->status() }} over the model in use</span>
+                    </x-channel-strip>
+                </div>
+                <p class="mt-3 text-[13px] leading-relaxed text-ink-3">|Mikulka − model in use| − |Mikulka − model #{{ $this->dayCandidate->id }}| in the same ten-minute slots. Positive means the retrained model is closer to Mikulka, negative that it is further away. Drawn only on the model's own validation days.</p>
+            @endif
         </section>
 
         @php($summary = $this->summary)
@@ -53,15 +59,15 @@
         @if ($candidate)
             @php($candidateSummary = $this->candidateSummary)
             <section class="mt-12" aria-labelledby="retrain-h">
-                <p class="label-mono m-0 mb-2">Latest calibration #{{ $candidate->id }} · {{ $candidate->accepted ? 'accepted' : 'rejected' }}</p>
+                <p class="label-mono m-0 mb-2">Latest calibration #{{ $candidate->id }} · {{ $candidate->status() }}</p>
                 <h2 id="retrain-h" class="m-0 font-display text-[26px] font-semibold">Retrained model on its validation days</h2>
-                <p class="mt-3 text-[15px] text-ink-2">Trained {{ \App\ValueObject\LocalTime::of($candidate->trained_from)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->trained_until - 1)->day() }}, validated {{ \App\ValueObject\LocalTime::of($candidate->trained_until)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->validated_until - 1)->day() }}. Each column uses every observation where it has a value, within 90 seconds of a usable Mikulka reading.</p>
+                <p class="mt-3 text-[15px] text-ink-2">Trained {{ \App\ValueObject\LocalTime::of($candidate->trained_from)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->trained_until - 1)->day() }}, {{ $candidate->isValidating() ? 'validating' : 'validated' }} {{ \App\ValueObject\LocalTime::of($candidate->trained_until)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->validated_until - 1)->day() }}. Each column uses every observation where it has a value, within 90 seconds of a usable Mikulka reading.</p>
                 @include('livewire.comparison.deviation-table', [
                     'key' => 'retrain',
                     'columns' => ['measured' => ['label' => 'Shield sensor', 'class' => 'text-ch1'], 'estimated' => ['label' => 'Current model', 'class' => 'text-ref'], 'candidate' => ['label' => 'Retrained model', 'class' => 'text-ch2']],
                     'deviations' => $candidateSummary,
                 ])
-                <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Signed differences are station minus Mikulka. Neither model was trained on these days. The current model is the one in use at the time; a dash means none was. A model with fewer matched observations skipped the samples outside its calibration range, often the brightest mornings. A rejected model is shown for inspection and never corrects the page.</p>
+                <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Signed differences are station minus Mikulka. Neither model was trained on these days. The current model is the one in use at the time; a dash means none was. A model with fewer matched observations skipped the samples outside its calibration range, often the brightest mornings. A model under validation corrects nothing until it is accepted. A rejected model is shown for inspection and never corrects the page.</p>
             </section>
         @endif
     </main>

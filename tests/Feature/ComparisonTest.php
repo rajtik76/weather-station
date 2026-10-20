@@ -131,9 +131,8 @@ it('draws a retrained model only on its own validation days and scores it there'
         ->and($summary['candidate']['mae'])->toBeLessThan(0.01)
         ->and($summary['measured']['mae'])->toBeGreaterThan(0.5)
         ->and($summary['estimated']['mae'])->toBeNull();
-    $validationDay->assertSee('Mikulka − retrained model #'.$candidate->id.' · accepted')
-        ->assertSee('Retrained model on its validation days')->assertSee('validated 8.10.2026 - 10.10.2026');
-    $laterDay->assertDontSee('Mikulka − retrained model');
+    $validationDay->assertSee('Retrained model on its validation days')->assertSee('validated 8.10.2026 - 10.10.2026');
+    $laterDay->assertDontSee('data-strip="improvement"', false);
 });
 
 it('leaves training readings out of the first validation slot', function (): void {
@@ -147,14 +146,14 @@ it('leaves training readings out of the first validation slot', function (): voi
         ->and($rows[1][3])->not->toBeNull();
 });
 
-it('hides the retrained legend on a validation day without its estimates', function (): void {
+it('hides the improvement chart on a validation day without its estimates', function (): void {
     $data = heatingCalibrationData();
     resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
     Measurement::query()->where('timestamp', '>=', strtotime('2026-10-08T21:55:00Z'))->delete();
     $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
 
     Livewire::withQueryParams(['date' => '2026-10-09'])->test(Comparison::class)
-        ->assertDontSee('Mikulka − retrained model')->assertSee('Retrained model on its validation days');
+        ->assertDontSee('data-strip="improvement"', false)->assertSee('Retrained model on its validation days');
 });
 
 it('reuses the retrained model summary instead of recomputing it on every request', function (): void {
@@ -166,6 +165,28 @@ it('reuses the retrained model summary instead of recomputing it on every reques
     ReferenceTemperature::query()->delete();
 
     expect(Livewire::test(Comparison::class)->get('candidateSummary'))->toBe($summary);
+});
+
+it('shows the model in use and draws the model under validation on its new days', function (): void {
+    $data = heatingCalibrationData();
+    $inUse = TemperatureCalibration::factory()->for($data['sensor'])->create(['validated_until' => $data['from']]);
+    $candidate = resolve(TemperatureCalibrator::class)->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::parse('2026-10-09 12:00:00', 'UTC'));
+
+    $today = Livewire::test(Comparison::class);
+
+    expect(array_filter(array_column($today->get('comparisonRows'), 3), fn (?float $value): bool => $value !== null))->not->toBeEmpty();
+    $today->assertSee('Model in use')->assertSee('Calibration #'.$inUse->id)
+        ->assertSee('Correcting since '.LocalTime::of($inUse->validated_until)->stamp())
+        ->assertSee('Model under validation')->assertSee('Calibration #'.$candidate->id)
+        ->assertSee('validating on new readings 8.10.2026 - 10.10.2026')
+        ->assertSee('Improvement of model #'.$candidate->id.' · validating over the model in use');
+});
+
+it('says when no model corrects the page', function (): void {
+    Sensor::factory()->create();
+
+    Livewire::test(Comparison::class)->assertSee('No accepted model.')->assertDontSee('Model under validation');
 });
 
 it('ends today\'s axis on the next full hour and keeps past days whole', function (string $now, string $date, int $slots, string $last): void {
@@ -182,3 +203,14 @@ it('ends today\'s axis on the next full hour and keeps past days whole', functio
     'late evening' => ['2026-10-20 23:30:00', '2026-10-20', 144, '2026-10-20 23:50:00'],
     'yesterday' => ['2026-10-20 12:00:00', '2026-10-19', 144, '2026-10-19 23:50:00'],
 ]);
+
+it('refreshes the summary of a model under validation within ten minutes', function (): void {
+    $data = heatingCalibrationData();
+    resolve(TemperatureCalibrator::class)->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::parse('2026-10-09 12:00:00', 'UTC'));
+    $before = Livewire::test(Comparison::class)->get('candidateSummary');
+
+    $this->travelTo(Date::parse('2026-10-09 12:11:00', 'UTC'));
+
+    expect(Livewire::test(Comparison::class)->get('candidateSummary')['candidate']['count'])->toBeGreaterThan($before['candidate']['count']);
+});
