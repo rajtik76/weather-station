@@ -7,12 +7,30 @@ namespace App\Queries;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\ShieldFeatures;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ShieldCalibrations
 {
     public function newest(?int $sensorId): ?TemperatureCalibration
     {
         return $this->forSensor($sensorId)->first();
+    }
+
+    /** Accepted, validation ended at or before $at. */
+    public function inUse(?int $sensorId, int $at): ?TemperatureCalibration
+    {
+        return $this->forSensor($sensorId)->where('accepted', true)->where('validated_until', '<=', $at)->first();
+    }
+
+    /** @return Collection<int, TemperatureCalibration> */
+    public function validationEndedBy(int $until): Collection
+    {
+        return TemperatureCalibration::query()
+            ->where('feature_version', ShieldFeatures::VERSION)
+            ->where('accepted', false)
+            ->where('validated_until', '<=', $until)
+            ->orderBy('id')->get()
+            ->filter(fn (TemperatureCalibration $calibration): bool => $calibration->isValidating())->values();
     }
 
     /** Newest calibration whose validation window [trained_until, validated_until) overlaps [from, until). */

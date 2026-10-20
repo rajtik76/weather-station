@@ -16,37 +16,35 @@ use Illuminate\Support\Facades\Date;
 use InvalidArgumentException;
 
 #[Signature('temperature:retrain')]
-#[Description('Refit every calibrated sensor on a rolling window ending at local midnight')]
+#[Description('Fit every calibrated sensor on the days before local midnight and validate it on the days after')]
 class RetrainTemperature extends Command
 {
     public const int TRAINING_DAYS = 14;
 
-    public const int VALIDATION_DAYS = 3;
-
     public function handle(TemperatureCalibrator $calibrator, ShieldCalibrations $calibrations): int
     {
         $until = Date::now(LocalTime::TIMEZONE)->toImmutable()->startOfDay();
-        $validateFrom = $until->subDays(self::VALIDATION_DAYS);
-        $from = $validateFrom->subDays(self::TRAINING_DAYS);
+        $from = $until->subDays(self::TRAINING_DAYS);
+        $validatedUntil = $until->addDays(TemperatureCalibrator::VALIDATION_DAYS);
         $sensorIds = TemperatureCalibration::query()->where('feature_version', ShieldFeatures::VERSION)
             ->distinct()->orderBy('sensor_id')->pluck('sensor_id');
 
         foreach ($sensorIds as $sensorId) {
             $newest = $calibrations->newest($sensorId);
 
-            if (! $newest instanceof TemperatureCalibration || $newest->validated_until >= $until->getTimestamp()) {
+            if (! $newest instanceof TemperatureCalibration || $newest->isValidating() || $newest->trained_until >= $until->getTimestamp()) {
                 continue;
             }
 
             try {
-                $calibration = $calibrator->calibrate($sensorId, $from->getTimestamp(), $validateFrom->getTimestamp(), $until->getTimestamp(), $newest->features());
+                $calibration = $calibrator->train($sensorId, $from->getTimestamp(), $until->getTimestamp(), $validatedUntil->getTimestamp(), $newest->features());
             } catch (InvalidArgumentException $exception) {
                 $this->warn('Sensor '.$sensorId.' not retrained: '.$exception->getMessage());
 
                 continue;
             }
 
-            $this->line('Sensor '.$sensorId.': calibration #'.$calibration->id.($calibration->accepted ? ' accepted.' : ' rejected.'));
+            $this->line('Sensor '.$sensorId.': calibration #'.$calibration->id.' validating until '.LocalTime::of($calibration->validated_until)->stamp().'.');
         }
 
         return self::SUCCESS;

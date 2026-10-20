@@ -22,6 +22,8 @@ use InvalidArgumentException;
  */
 final readonly class TemperatureCalibrator
 {
+    public const int VALIDATION_DAYS = 3;
+
     private const float REQUIRED_MAE_RATIO = 0.9;
 
     public function __construct(private TemperatureDataset $dataset, private CorrectedTemperature $corrections) {}
@@ -32,14 +34,67 @@ final readonly class TemperatureCalibrator
             throw new InvalidArgumentException('Calibration requires from < validate-from < until.');
         }
 
-        $pairs = $this->dataset->pair($this->dataset->samples($sensorId, $from, $until, $features));
-        $training = array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->timestamp < $validateFrom && $pair['reference_at'] < $validateFrom));
-        $validation = array_values(array_filter($pairs, fn (array $pair): bool => $pair['sample']->timestamp >= $validateFrom && $pair['reference_at'] >= $validateFrom && $pair['reference_at'] < $until));
+        $training = $this->pairs($sensorId, $from, $from, $validateFrom, $features);
+        $validation = $this->pairs($sensorId, $from, $validateFrom, $until, $features);
 
-        if ($this->completeDays($training) < 7 || $this->completeDays($validation) < 3) {
-            throw new InvalidArgumentException('At least seven calibration days and three later validation days with 100 reference pairs each are required.');
+        if ($this->completeDays($training) < 7 || $this->completeDays($validation) < self::VALIDATION_DAYS) {
+            throw new InvalidArgumentException('At least seven calibration days and '.self::VALIDATION_DAYS.' later validation days with 100 reference pairs each are required.');
         }
 
+        return $this->scoreValidation($this->fit($sensorId, $from, $validateFrom, $until, $features, $training), $validation);
+    }
+
+    /** Training [from, until), validation [until, validatedUntil); stored unaccepted. */
+    public function train(int $sensorId, int $from, int $until, int $validatedUntil, ShieldFeatures $features): TemperatureCalibration
+    {
+        if ($from >= $until || $until >= $validatedUntil) {
+            throw new InvalidArgumentException('Training requires from < until < validated-until.');
+        }
+
+        $training = $this->pairs($sensorId, $from, $from, $until, $features);
+
+        if ($this->completeDays($training) < 7) {
+            throw new InvalidArgumentException('At least seven calibration days with 100 reference pairs each are required.');
+        }
+
+        return $this->fit($sensorId, $from, $until, $validatedUntil, $features, $training);
+    }
+
+    public function validate(TemperatureCalibration $calibration): TemperatureCalibration
+    {
+        return $this->scoreValidation($calibration, $this->pairs($calibration->sensor_id, $calibration->trained_from, $calibration->trained_until, $calibration->validated_until, $calibration->features()));
+    }
+
+    /** @param list<Pair> $pairs */
+    private function scoreValidation(TemperatureCalibration $calibration, array $pairs): TemperatureCalibration
+    {
+        $validation = $this->withHeating($pairs, $calibration->model());
+        $versusCurrent = $this->versusCurrent($calibration->sensor_id, $calibration->trained_until, $calibration->validated_until, $validation);
+        $scores = [
+            ...$calibration->scores,
+            'validation' => $this->scores($validation),
+            'days' => $this->byDay($validation),
+            'versus_current' => $versusCurrent,
+        ];
+        $all = $scores['validation']['all'];
+        $sun = $scores['validation']['sun_facing'];
+        $night = $scores['validation']['night'];
+        $shade = $scores['validation']['shade'];
+        $accepted = $this->completeDays($pairs) >= self::VALIDATION_DAYS
+            && $all['count'] >= 0.9 * count($validation)
+            && $this->improves($all)
+            && $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
+            && $night['count'] > 0 && $night['corrected_mae'] <= $night['raw_mae'] + 0.05
+            && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1
+            && $this->beatsCurrent($versusCurrent);
+        $calibration->update(['accepted' => $accepted, 'scores' => $scores]);
+
+        return $calibration;
+    }
+
+    /** @param list<Pair> $training */
+    private function fit(int $sensorId, int $from, int $until, int $validatedUntil, ShieldFeatures $features, array $training): TemperatureCalibration
+    {
         $sunnyDays = [];
 
         foreach ($training as $pair) {
@@ -62,38 +117,32 @@ final readonly class TemperatureCalibrator
             'max_heating' => max(0.0, ...array_map(fn (array $pair): float => $pair['sample']->measured - $pair['reference'], $sunFacing)),
         ];
         $model = new ShieldModel($coefficients, $limits['max_lux'], $limits['max_heating']);
-        $scoredTraining = $this->withHeating($training, $model);
-        $scoredValidation = $this->withHeating($validation, $model);
-        $versusCurrent = $this->versusCurrent($sensorId, $validateFrom, $until, $scoredValidation);
-        $scores = [
-            'training' => $this->scores($scoredTraining),
-            'validation' => $this->scores($scoredValidation),
-            'days' => $this->byDay($scoredValidation),
-            'versus_current' => $versusCurrent,
-        ];
-        $all = $scores['validation']['all'];
-        $sun = $scores['validation']['sun_facing'];
-        $night = $scores['validation']['night'];
-        $shade = $scores['validation']['shade'];
-        $accepted = $all['count'] >= 0.9 * count($validation)
-            && $this->improves($all)
-            && $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
-            && $night['count'] > 0 && $night['corrected_mae'] <= $night['raw_mae'] + 0.05
-            && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1
-            && $this->beatsCurrent($versusCurrent);
 
         return TemperatureCalibration::query()->create([
             'sensor_id' => $sensorId,
             'feature_version' => ShieldFeatures::VERSION,
             'trained_from' => $from,
-            'trained_until' => $validateFrom,
-            'validated_until' => $until,
-            'accepted' => $accepted,
+            'trained_until' => $until,
+            'validated_until' => $validatedUntil,
+            'accepted' => false,
             'geometry' => ['latitude' => $features->latitude, 'longitude' => $features->longitude, 'wall_azimuth' => $features->wallAzimuth],
             'coefficients' => $coefficients,
             'limits' => $limits,
-            'scores' => $scores,
+            'scores' => ['training' => $this->scores($this->withHeating($training, $model))],
         ]);
+    }
+
+    /**
+     * Sample and reference in [from, until); feature history from max(historyFrom, from - HISTORY_SECONDS).
+     *
+     * @return list<Pair>
+     */
+    private function pairs(int $sensorId, int $historyFrom, int $from, int $until, ShieldFeatures $features): array
+    {
+        $samples = $this->dataset->samples($sensorId, max($historyFrom, $from - ShieldFeatures::HISTORY_SECONDS), $until, $features);
+
+        return array_values(array_filter($this->dataset->pair($samples), fn (array $pair): bool => $pair['sample']->timestamp >= $from
+            && $pair['reference_at'] >= $from && $pair['reference_at'] < $until));
     }
 
     /** @param list<Pair> $pairs */

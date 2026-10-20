@@ -66,7 +66,7 @@ class CalibrateTemperature extends Command
 
         $rows = [];
 
-        foreach ($calibration->scores['validation'] as $group => $score) {
+        foreach ($calibration->validationScores() as $group => $score) {
             $rows[] = [$group, $score['count'], $score['unavailable'],
                 $this->decimal($score['raw_mae']), $this->decimal($score['corrected_mae']),
                 $this->decimal($score['raw_bias']), $this->decimal($score['corrected_bias'])];
@@ -74,7 +74,7 @@ class CalibrateTemperature extends Command
 
         $this->table(['Validation', 'Pairs', 'Unavailable', 'Raw MAE °C', 'Corrected MAE °C', 'Raw bias °C', 'Corrected bias °C'], $rows);
 
-        foreach ($calibration->scores['days'] as $day => $score) {
+        foreach ($calibration->scores['days'] ?? [] as $day => $score) {
             $this->line($day.': '.$score['count'].' pairs, '.$this->decimal($score['raw_mae']).' -> '.$this->decimal($score['corrected_mae']).' °C MAE');
         }
 

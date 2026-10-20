@@ -146,6 +146,13 @@ scores the later period, with exclusive date boundaries in Europe/Prague.
 Optional
 `--latitude`, `--longitude` and `--wall-azimuth` describe the installation;
 defaults are the balcony coordinates and a 71.8° facade clockwise from true north.
+`temperature:retrain` runs every Monday at 00:15 Europe/Prague. For each
+calibrated sensor it fits on the 14 days before local midnight and stores
+the model as under validation for the next three days, on readings it has
+never seen. It corrects nothing meanwhile; `/comparison` draws it beside the
+model in use. `temperature:validate` runs daily at 00:10 and scores every
+model whose validation days are over: it is accepted only when it passes the
+acceptance rules and beats the model in use on the same observations.
 `CorrectedTemperature` applies accepted, compatible calibrations after their
 validation period, including across station events. Its batch and individual
 calculations use the same six-hour light history for each observation.

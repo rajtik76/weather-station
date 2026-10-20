@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Measurement;
 use App\Models\ReferenceTemperature;
 use App\Models\Sensor;
 use App\Models\StationEvent;
@@ -29,9 +30,9 @@ it('learns a heating correction and validates on later complete days', function 
 
     expect($exitCode)->toBe(0);
     expect($calibration->accepted)->toBeTrue()
-        ->and($calibration->scores['validation']['all']['corrected_mae'])->toBeLessThan(0.01)
-        ->and($calibration->scores['validation']['night']['corrected_mae'])->toBeLessThan(0.01)
-        ->and($calibration->scores['validation']['all']['count'])->toBe(431)
+        ->and($calibration->validationScores()['all']['corrected_mae'])->toBeLessThan(0.01)
+        ->and($calibration->validationScores()['night']['corrected_mae'])->toBeLessThan(0.01)
+        ->and($calibration->validationScores()['all']['count'])->toBe(431)
         ->and($calibration->trained_until)->toBe($data['validateFrom']);
 });
 
@@ -99,7 +100,7 @@ it('rejects a correction that barely improves the sun-facing error', function ()
     });
 
     $calibration = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
-    $sun = $calibration->scores['validation']['sun_facing'];
+    $sun = $calibration->validationScores()['sun_facing'];
 
     expect($sun['corrected_mae'] < $sun['raw_mae'])->toBeTrue()
         ->and($calibration->accepted)->toBeFalse();
@@ -116,7 +117,7 @@ it('rejects a retrained model that beats the raw sensor but not the model in use
     });
 
     $retrained = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
-    $sun = $retrained->scores['validation']['sun_facing'];
+    $sun = $retrained->validationScores()['sun_facing'];
     $current = $retrained->scores['versus_current']['current']['sun_facing']['corrected_mae'] ?? null;
     $replacement = $retrained->scores['versus_current']['retrained']['sun_facing']['corrected_mae'] ?? 0.0;
 
@@ -138,7 +139,7 @@ it('accepts the default until date while it is already tomorrow in UTC terms', f
         ->and(Artisan::output())->toContain('At least seven calibration days');
 });
 
-it('retrains on a rolling window ending at local midnight with the previous geometry', function (): void {
+it('trains on the days before local midnight and validates on the three days after', function (): void {
     $data = heatingCalibrationData();
     $geometry = ['latitude' => StationSite::LATITUDE, 'longitude' => StationSite::LONGITUDE, 'wall_azimuth' => StationSite::WALL_AZIMUTH];
     $previous = TemperatureCalibration::factory()->for($data['sensor'])->create([
@@ -146,7 +147,7 @@ it('retrains on a rolling window ending at local midnight with the previous geom
         'geometry' => $geometry,
     ]);
     Sensor::factory()->create();
-    $this->travelTo(Date::parse('2026-10-11 00:15:00', LocalTime::TIMEZONE));
+    $this->travelTo(Date::parse('2026-10-08 00:15:00', LocalTime::TIMEZONE));
 
     $exitCode = Artisan::call('temperature:retrain');
     $retrained = TemperatureCalibration::query()->whereKeyNot($previous->id)->sole();
@@ -157,10 +158,37 @@ it('retrains on a rolling window ending at local midnight with the previous geom
         ->and($retrained->trained_until)->toBe($data['validateFrom'])
         ->and($retrained->validated_until)->toBe($data['until'])
         ->and($retrained->geometry)->toEqual($geometry)
-        ->and($retrained->accepted)->toBeTrue();
+        ->and($retrained->accepted)->toBeFalse()
+        ->and($retrained->isValidating())->toBeTrue();
 
     expect(Artisan::call('temperature:retrain'))->toBe(0);
     assertDatabaseCount('temperature_calibrations', 2);
+
+    $this->travelTo(Date::parse('2026-10-10 23:59:00', LocalTime::TIMEZONE));
+    Artisan::call('temperature:validate');
+
+    expect($retrained->refresh()->isValidating())->toBeTrue();
+
+    $this->travelTo(Date::parse('2026-10-11 00:10:00', LocalTime::TIMEZONE));
+
+    expect(Artisan::call('temperature:validate'))->toBe(0)
+        ->and(Artisan::output())->toContain('calibration #'.$retrained->id.' accepted');
+    expect($retrained->refresh()->accepted)->toBeTrue()
+        ->and($retrained->validationScores()['all']['count'])->toBe(431)
+        ->and($retrained->scores['training']['all']['count'])->toBeGreaterThan(0);
+});
+
+it('rejects a retrained model whose validation days lack readings', function (): void {
+    $data = heatingCalibrationData();
+    $calibration = resolve(TemperatureCalibrator::class)->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    Measurement::query()->where('timestamp', '>=', $data['validateFrom'] + 86400)->delete();
+    $this->travelTo(Date::createFromTimestamp($data['until']));
+
+    Artisan::call('temperature:validate');
+
+    expect($calibration->refresh()->accepted)->toBeFalse()
+        ->and($calibration->isValidating())->toBeFalse()
+        ->and($calibration->status())->toBe('rejected');
 });
 
 it('warns without failing when the rolling window lacks enough data', function (): void {
@@ -171,4 +199,16 @@ it('warns without failing when the rolling window lacks enough data', function (
     expect(Artisan::call('temperature:retrain'))->toBe(0)
         ->and(Artisan::output())->toContain('At least seven calibration days');
     assertDatabaseCount('temperature_calibrations', 1);
+});
+
+it('keeps validating the other candidates when one fails', function (): void {
+    $data = heatingCalibrationData();
+    $broken = TemperatureCalibration::factory()->for($data['sensor'])->create(['accepted' => false, 'geometry' => [], 'validated_until' => $data['validateFrom']]);
+    $candidate = resolve(TemperatureCalibrator::class)->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $this->travelTo(Date::createFromTimestamp($data['until']));
+
+    expect(Artisan::call('temperature:validate'))->toBe(0)
+        ->and(Artisan::output())->toContain('Calibration #'.$broken->id.' not validated');
+    expect($candidate->refresh()->accepted)->toBeTrue()
+        ->and($broken->refresh()->isValidating())->toBeTrue();
 });
