@@ -50,12 +50,6 @@ final readonly class TemperatureHistory
         return $rows;
     }
 
-    /** @return list<CandidateRow> */
-    public function candidateReadings(TemperatureCalibration $candidate): array
-    {
-        return $this->rows($candidate->sensor_id, $candidate->trained_until, min($candidate->validated_until, now()->getTimestamp() + 1), true, $candidate);
-    }
-
     /** @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> */
     public function comparisonRows(?int $sensorId, int $from, int $until, ?TemperatureCalibration $candidate = null): array
     {

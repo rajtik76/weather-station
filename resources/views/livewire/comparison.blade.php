@@ -15,7 +15,7 @@
                 </div>
             </div>
             <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink-2">The ČHMÚ reference minus the calculated shade temperature on one local calendar day. Choose a date up to 30 days back.</p>
-            @include('livewire.comparison.models', ['inUse' => $this->modelInUse, 'candidate' => $this->latestCandidate])
+            @include('livewire.comparison.candidate', ['candidate' => $this->latestCandidate])
             <div data-chart-rows="[]" data-comparison-rows="{{ json_encode($this->comparisonRows) }}" hidden></div>
             <div class="mt-6 rounded-[10px] border border-line bg-screen px-3 py-5 sm:px-5" wire:loading.class="opacity-60" wire:target="date,moveDay,sensor">
                 <x-channel-strip key="comparison" label="Mikulka vs shade estimate" channel="°C" height="h-72 sm:h-96">
@@ -55,21 +55,20 @@
             <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Signed differences are station minus Mikulka; positive means warmer. Mikulka measures at a different location, so local weather differences are included in these deviations. Historical estimates use only calibrations already validated at the time of measurement.</p>
         </section>
 
-        @php($candidate = $this->latestCandidate)
-        @if ($candidate)
-            @php($candidateSummary = $this->candidateSummary)
-            <section class="mt-12" aria-labelledby="retrain-h">
-                <p class="label-mono m-0 mb-2">Latest calibration #{{ $candidate->id }} · {{ $candidate->status() }}</p>
-                <h2 id="retrain-h" class="m-0 font-display text-[26px] font-semibold">Retrained model on its validation days</h2>
-                <p class="mt-3 text-[15px] text-ink-2">Trained {{ \App\ValueObject\LocalTime::of($candidate->trained_from)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->trained_until - 1)->day() }}, {{ $candidate->isValidating() ? 'validating' : 'validated' }} {{ \App\ValueObject\LocalTime::of($candidate->trained_until)->day() }} - {{ \App\ValueObject\LocalTime::of($candidate->validated_until - 1)->day() }}. Each column uses every observation where it has a value, within 90 seconds of a usable Mikulka reading.</p>
-                @include('livewire.comparison.deviation-table', [
-                    'key' => 'retrain',
-                    'columns' => ['measured' => ['label' => 'Shield sensor', 'class' => 'text-ch1'], 'estimated' => ['label' => 'Current model', 'class' => 'text-ref'], 'candidate' => ['label' => 'Retrained model', 'class' => 'text-ch2']],
-                    'deviations' => $candidateSummary,
-                ])
-                <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Signed differences are station minus Mikulka. Neither model was trained on these days. The current model is the one in use at the time; a dash means none was. A model with fewer matched observations skipped the samples outside its calibration range, often the brightest mornings. A model under validation corrects nothing until it is accepted. A rejected model is shown for inspection and never corrects the page.</p>
-            </section>
-        @endif
+        <section class="mt-12" aria-labelledby="model-history-h">
+            <p class="label-mono m-0 mb-2">All calibrations · independent of selected date</p>
+            <h2 id="model-history-h" class="m-0 font-display text-[26px] font-semibold">Model history</h2>
+            @php($history = $this->modelHistory)
+            @if ($history === [])
+                <p class="mt-3 text-[15px] text-ink-2">No calibrations yet.</p>
+            @else
+                @include('livewire.comparison.model-history', ['rows' => $history])
+                @if (! collect($history)->contains('in_use_now', true))
+                    <p class="mt-4 text-[15px] text-ink-2">No model corrects the page now; the shade estimate is unavailable.</p>
+                @endif
+                <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Mean absolute deviation from Mikulka on each model's validation days, against the model that was in use before it, on the observations where both have an estimate. Improvement is the previous model's MAE minus this model's; positive means this model is closer to Mikulka. A model under validation shows its days so far. A dash under the previous model means none was in use; this model's MAE then covers all its validation observations. The highlighted row corrects the page now.</p>
+            @endif
+        </section>
     </main>
 
     @include('livewire.overview.footer')

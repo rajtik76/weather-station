@@ -18,14 +18,6 @@
                     @endforeach
                 </tr>
             @endforeach
-            @if (array_key_exists('count', $deviations[array_key_first($columns)]))
-                <tr class="border-b border-line last:border-0" wire:key="{{ $key }}-count">
-                    <th scope="row" class="px-5 py-3 font-normal text-ink-2">Matched observations</th>
-                    @foreach (array_keys($columns) as $series)
-                        <td class="px-5 py-3" wire:key="{{ $key }}-count-{{ $series }}">{{ \App\ValueObject\Figure::format($deviations[$series]['count'], 0) }}</td>
-                    @endforeach
-                </tr>
-            @endif
         </tbody>
     </table>
 </div>

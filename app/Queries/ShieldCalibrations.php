@@ -16,10 +16,10 @@ final readonly class ShieldCalibrations
         return $this->forSensor($sensorId)->first();
     }
 
-    /** Accepted, validation ended at or before $at. */
-    public function inUse(?int $sensorId, int $at): ?TemperatureCalibration
+    /** @return Collection<int, TemperatureCalibration> Newest first. */
+    public function history(?int $sensorId): Collection
     {
-        return $this->forSensor($sensorId)->where('accepted', true)->where('validated_until', '<=', $at)->first();
+        return $this->forSensor($sensorId)->get();
     }
 
     /** @return Collection<int, TemperatureCalibration> */

@@ -6,7 +6,9 @@ namespace App\Livewire;
 
 use App\Models\TemperatureCalibration;
 use App\Queries\ShieldCalibrations;
+use App\Queries\TemperatureCalibrator;
 use App\Queries\TemperatureHistory;
+use App\ValueObject\CalibrationHistory;
 use App\ValueObject\ComparisonDay;
 use App\ValueObject\TemperatureComparison;
 use Illuminate\Contracts\View\View;
@@ -17,15 +19,14 @@ use Livewire\Attributes\Url;
 
 /**
  * @phpstan-import-type Summary from TemperatureComparison
- * @phpstan-import-type CandidateSummary from TemperatureComparison
+ * @phpstan-import-type HistoryRow from CalibrationHistory
  *
  * @property-read ComparisonDay $day
  * @property-read ?TemperatureCalibration $dayCandidate
  * @property-read list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> $comparisonRows
  * @property-read Summary $summary
- * @property-read ?TemperatureCalibration $modelInUse
+ * @property-read list<HistoryRow> $modelHistory
  * @property-read ?TemperatureCalibration $latestCandidate
- * @property-read ?CandidateSummary $candidateSummary
  */
 #[Title('Balcony Station · Mikulka comparison')]
 class Comparison extends StationPage
@@ -82,28 +83,25 @@ class Comparison extends StationPage
         ));
     }
 
+    /** @return list<HistoryRow> */
     #[Computed]
-    public function modelInUse(): ?TemperatureCalibration
+    public function modelHistory(): array
     {
-        return resolve(ShieldCalibrations::class)->inUse($this->selectedSensor?->id, now()->getTimestamp());
+        $calibrations = resolve(ShieldCalibrations::class)->history($this->selectedSensor?->id);
+        $provisional = [];
+
+        foreach ($calibrations->filter(fn (TemperatureCalibration $calibration): bool => $calibration->isValidating()) as $calibration) {
+            $provisional[$calibration->id] = Cache::remember('comparison:versus-current-so-far:'.$calibration->id, now()->addMinutes(10),
+                fn (): array => resolve(TemperatureCalibrator::class)->versusCurrentSoFar($calibration, now()->getTimestamp()));
+        }
+
+        return CalibrationHistory::rows($calibrations, now()->getTimestamp(), $provisional);
     }
 
     #[Computed]
     public function latestCandidate(): ?TemperatureCalibration
     {
         return resolve(ShieldCalibrations::class)->newest($this->selectedSensor?->id);
-    }
-
-    /** @return ?CandidateSummary */
-    #[Computed]
-    public function candidateSummary(): ?array
-    {
-        $candidate = $this->latestCandidate;
-
-        return $candidate instanceof TemperatureCalibration
-            ? Cache::remember('comparison:candidate-summary:'.$candidate->id.':'.$candidate->status(), $candidate->isValidating() ? now()->addMinutes(10) : now()->addHour(),
-                fn (): array => TemperatureComparison::candidate(resolve(TemperatureHistory::class)->candidateReadings($candidate)))
-            : null;
     }
 
     public function render(): View

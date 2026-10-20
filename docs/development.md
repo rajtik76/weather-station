@@ -149,8 +149,9 @@ defaults are the balcony coordinates and a 71.8° facade clockwise from true nor
 `temperature:retrain` runs every Monday at 00:15 Europe/Prague. For each
 calibrated sensor it fits on the 14 days before local midnight and stores
 the model as under validation for the next three days, on readings it has
-never seen. It corrects nothing meanwhile; `/comparison` draws it beside the
-model in use. `temperature:validate` runs daily at 00:10 and scores every
+never seen. It corrects nothing meanwhile; `/comparison` charts its
+improvement over the model in use on those days and lists every calibration,
+its scores and when it was in use under Model history. `temperature:validate` runs daily at 00:10 and scores every
 model whose validation days are over: it is accepted only when it passes the
 acceptance rules and beats the model in use on the same observations.
 `CorrectedTemperature` applies accepted, compatible calibrations after their

@@ -8,12 +8,9 @@ use App\Queries\TemperatureHistory;
 
 /**
  * @phpstan-import-type TemperatureRow from TemperatureHistory
- * @phpstan-import-type CandidateRow from TemperatureHistory
  *
  * @phpstan-type Deviation array{mae: ?float, bias: ?float, min: ?float, max: ?float}
  * @phpstan-type Summary array{count: int, unavailable: int, measured: Deviation, estimated: Deviation}
- * @phpstan-type CountedDeviation array{count: int, mae: ?float, bias: ?float, min: ?float, max: ?float}
- * @phpstan-type CandidateSummary array{measured: CountedDeviation, estimated: CountedDeviation, candidate: CountedDeviation}
  */
 final readonly class TemperatureComparison
 {
@@ -26,31 +23,6 @@ final readonly class TemperatureComparison
         $scored = self::score($readings, ['measured', 'estimated']);
 
         return ['count' => $scored['count'], 'unavailable' => $scored['unavailable'], 'measured' => $scored['deviations']['measured'], 'estimated' => $scored['deviations']['estimated']];
-    }
-
-    /**
-     * Each series on every observation where it has a value.
-     *
-     * @param  list<CandidateRow>  $readings
-     * @return CandidateSummary
-     */
-    public static function candidate(array $readings): array
-    {
-        $summary = [];
-
-        foreach (['measured', 'estimated', 'candidate'] as $series) {
-            $differences = [];
-
-            foreach ($readings as $reading) {
-                if ($reading['reference'] !== null && $reading[$series] !== null) {
-                    $differences[] = $reading[$series] - $reading['reference'];
-                }
-            }
-
-            $summary[$series] = ['count' => count($differences), ...self::deviation($differences)];
-        }
-
-        return $summary;
     }
 
     /**

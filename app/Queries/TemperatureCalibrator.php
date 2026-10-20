@@ -65,6 +65,27 @@ final readonly class TemperatureCalibrator
         return $this->scoreValidation($calibration, $this->pairs($calibration->sensor_id, $calibration->trained_from, $calibration->trained_until, $calibration->validated_until, $calibration->features()));
     }
 
+    /**
+     * versus_current on the validation pairs before $until; retrained alone without a model in use.
+     *
+     * @return array{current?: array<string, Score>, retrained?: array<string, Score>}
+     */
+    public function versusCurrentSoFar(TemperatureCalibration $calibration, int $until): array
+    {
+        $validateUntil = min($calibration->validated_until, $until);
+
+        if ($calibration->trained_until >= $validateUntil) {
+            return [];
+        }
+
+        $pairs = $this->pairs($calibration->sensor_id, $calibration->trained_from, $calibration->trained_until, $validateUntil, $calibration->features());
+
+        $validation = $this->withHeating($pairs, $calibration->model());
+        $versusCurrent = $this->versusCurrent($calibration->sensor_id, $calibration->trained_until, $validateUntil, $validation);
+
+        return $versusCurrent === [] ? ['retrained' => $this->scores($validation)] : $versusCurrent;
+    }
+
     /** @param list<Pair> $pairs */
     private function scoreValidation(TemperatureCalibration $calibration, array $pairs): TemperatureCalibration
     {
