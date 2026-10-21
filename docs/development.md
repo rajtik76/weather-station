@@ -39,9 +39,10 @@ measured behind the radiation shield's louvers. The sound spectrum, LAeq and
 LA90 provide an experimental rain indication through `RainDetector`, by
 either of two rules. Heavy rain is loud at 8 kHz and rings the shield at
 1 kHz. Light rain does not ring it, so it needs a steady hiss at 8 kHz in
-humid air (LAeq within 11 dB of LA90, humidity of at least 83 %). The
-overview shades the windows with rain behind the 24-hour temperature trace
-and the charts page marks them above the spectrum.
+humid air (LAeq within 11 dB of LA90, humidity of at least 83 %). While it
+rains, the overview says so above the temperature trace with the rain's
+times; pauses under half an hour count as the same rain, as in the Discord
+prompt. The charts page marks rain over time above the spectrum.
 
 ## Structure
 
