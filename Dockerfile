@@ -1,5 +1,5 @@
 # Vendor first: app.css imports Flux's stylesheet out of vendor/.
-FROM php:8.4-cli-alpine AS vendor
+FROM php:8.4.26-cli-alpine AS vendor
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -31,7 +31,7 @@ COPY --from=vendor /app/vendor ./vendor
 COPY . .
 RUN npm run build
 
-FROM php:8.4-fpm-alpine AS run
+FROM php:8.4.26-fpm-alpine AS run
 
 RUN apk add --no-cache nginx supervisor libpq \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS libpq-dev \
