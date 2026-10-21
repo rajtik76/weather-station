@@ -90,6 +90,7 @@ are documented in [`api.md`](api.md).
 | `SENSOR_HEARTBEAT_URL` | Optional monitor ping after a batch has been stored     |
 | `DB_*`                 | PostgreSQL connection                                   |
 | `APP_NAME`             | Application name; `Balcony Station` in `.env.example`   |
+| `DISCORD_*`            | Optional rain confirmation bot, see below               |
 
 The measurement protocol and response remain documented in
 [`api.md`](api.md). Storage uses UTC; presentation uses Europe/Prague.
@@ -123,6 +124,35 @@ resends, protocol versions, station selection and chart behavior.
 The application uses one image from the root `Dockerfile`: nginx, PHP-FPM
 and the Laravel scheduler on port 8080. The entrypoint caches configuration,
 routes and views. Migrations run separately during deployment.
+
+## Rain confirmation on Discord
+
+`rain:watch` runs every two minutes. When `RainDetector` changes its mind
+about a station's newest noise window, it posts "Is it raining?" to a Discord
+channel with ✅ and ❌ buttons; ✅ always means raining. Windows older than
+30 minutes are ignored rather than read as dry. `/rain` and `/dry` log a
+report without a prompt, together with what the detector hears at that
+moment. Every prompt and answer lands in `rain_reports` as labels for
+calibrating the detector.
+
+A prompt Discord refuses is posted again on the next run. Discord calls
+`POST /api/discord/interactions`, which accepts only requests signed with the
+application's Ed25519 key within the last five minutes, and takes reports
+only from the configured channel. The route is exempt from the sensor
+ingest's rate limit. Setup:
+
+| Variable                 | Source in the Developer Portal            |
+| ------------------------ | ----------------------------------------- |
+| `DISCORD_APPLICATION_ID` | General Information                       |
+| `DISCORD_PUBLIC_KEY`     | General Information                       |
+| `DISCORD_BOT_TOKEN`      | Bot, Reset Token                          |
+| `DISCORD_CHANNEL_ID`     | Channel, Copy Channel ID (Developer Mode) |
+
+Invite the bot with the `bot` and `applications.commands` scopes and the
+View Channels and Send Messages permissions. After deploying, run
+`php artisan discord:register-commands` once and set the Interactions
+Endpoint URL to `https://<host>/api/discord/interactions`; Discord verifies
+it on save. Without a bot token and channel, `rain:watch` does nothing.
 
 ## Temperature correction work
 
