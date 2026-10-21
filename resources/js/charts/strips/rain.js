@@ -1,11 +1,9 @@
 import { state } from "../state";
-import { ICON_HALF, isDark } from "../theme";
+import { ICON_HALF, token } from "../theme";
 
 /** Lucide's cloud-rain. ECharts fits a path's bounding box into the shape, so the two leading moves pin it to the 24x24 grid. */
 const RAIN_ICON =
     "M0 0M24 24M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 14v6M8 14v6M12 16v6";
-
-const RAIN_COLOUR = { light: "#0284c7", dark: "#38bdf8" };
 
 export const RAIN_LANE = 26;
 
@@ -32,7 +30,7 @@ function rainStretches(width) {
 
 /** Drawn outside the grid, so it clips itself: a stretch off the zoomed window draws nothing. */
 export function rainSeries(width) {
-    const rain = RAIN_COLOUR[isDark() ? "dark" : "light"];
+    const rain = token("--rain");
 
     return {
         type: "custom",

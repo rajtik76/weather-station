@@ -32,7 +32,12 @@
                 <figcaption class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 font-mono text-[13px] text-ink-3 sm:px-6">
                     <span class="flex items-center gap-2"><span class="swatch {{ $temperatureChannel->backgroundClass() }}"></span><span class="text-ink">{{ $temperatureChannel->code() }}</span><span>Measured temperature, last 24 h</span></span>
                     <span class="num">min {{ $temperatureChannel->format($temperature['dayMin']) }} · max {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}</span>
-                    <span class="flex items-center gap-2"><span class="swatch bg-ref"></span>Shade estimate</span>
+                    <span class="flex items-center gap-4">
+                        <span class="flex items-center gap-2"><span class="swatch bg-ref"></span>Shade estimate</span>
+                        @if ($this->rainStretches !== [])
+                            <span class="flex items-center gap-2" data-rain-legend><span class="swatch bg-rain"></span>Rain heard</span>
+                        @endif
+                    </span>
                 </figcaption>
                 <div class="relative ml-[calc(1.5rem+52px)] mr-6 mt-4 mb-3 h-[240px] sm:ml-[calc(1.75rem+52px)] sm:mr-7 sm:h-[340px]">
                     <svg class="graticule absolute inset-0 h-full w-full" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
@@ -49,7 +54,14 @@
                             <line x1="49.5" y1="{{ $tick }}" x2="50.5" y2="{{ $tick }}" style="stroke: var(--grid-2)" />
                         @endforeach
                     </svg>
-                    <div class="absolute inset-0" role="img" aria-label="Temperature over the last 24 hours, between {{ $temperatureChannel->format($temperature['dayMin']) }} and {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}, now {{ $temperatureChannel->format($temperature['now']) }} {{ $temperatureChannel->unit() }}.">
+                    <div class="absolute inset-0" role="img" aria-label="Temperature over the last 24 hours, between {{ $temperatureChannel->format($temperature['dayMin']) }} and {{ $temperatureChannel->format($temperature['dayMax']) }} {{ $temperatureChannel->unit() }}, now {{ $temperatureChannel->format($temperature['now']) }} {{ $temperatureChannel->unit() }}.{{ $this->rainStretches === [] ? '' : ' Shaded where the microphone heard rain.' }}">
+                        @if ($this->rainStretches !== [])
+                            <svg class="layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                                @foreach ($this->rainStretches as $stretch)
+                                    <rect data-rain-mark x="{{ $stretch['from'] }}" y="0" width="{{ round($stretch['to'] - $stretch['from'], 2) }}" height="100" class="fill-rain/15" />
+                                @endforeach
+                            </svg>
+                        @endif
                         <svg class="layer phosphor" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--trace: {{ $temperatureChannel->cssColour() }}">
                             <path d="{{ $trace->line() }}" class="{{ $temperatureChannel->strokeClass() }}" style="fill: none; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round" />
                             @if ($shadePath !== '')
