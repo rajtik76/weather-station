@@ -59,6 +59,10 @@ class WatchRain extends Command
             return;
         }
 
+        if (! $window['heard'] && ! $hearing->dryThrough($sensor->id, $window['timestamp'])) {
+            return;
+        }
+
         RainReport::query()->create([
             'sensor_id' => $sensor->id,
             'source' => RainReportSource::Detector,

@@ -65,14 +65,38 @@ it('asks again when the detector stops hearing rain', function (): void {
     Http::preventStrayRequests();
     Http::fake([configureDiscord() => Http::response(['id' => '1500000000000000002'])]);
     $sensor = Sensor::factory()->create();
-    RainReport::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp() - 660, 'detected' => true]);
-    heardWindow($sensor, now()->getTimestamp() - 60, rainy: false);
+    RainReport::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp() - 1860, 'detected' => true]);
+
+    foreach ([1260, 660, 60] as $secondsAgo) {
+        heardWindow($sensor, now()->getTimestamp() - $secondsAgo, rainy: false);
+    }
 
     expect(Artisan::call('rain:watch'))->toBe(0);
 
-    assertDatabaseHas('rain_reports', ['sensor_id' => $sensor->id, 'detected' => false, 'discord_message_id' => '1500000000000000002']);
+    assertDatabaseHas('rain_reports', ['sensor_id' => $sensor->id, 'detected' => false, 'timestamp' => now()->getTimestamp() - 60, 'discord_message_id' => '1500000000000000002']);
     Http::assertSent(fn (Request $request): bool => str_starts_with($request['content'], '🌤️ Rain no longer heard at'));
 });
+
+it('waits for half an hour without rain before saying it stopped', function (array $windows): void {
+    freezeTime();
+    Http::preventStrayRequests();
+    configureDiscord();
+    $sensor = Sensor::factory()->create();
+    RainReport::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp() - 1860, 'detected' => true]);
+
+    foreach ($windows as $secondsAgo => $rainy) {
+        heardWindow($sensor, now()->getTimestamp() - $secondsAgo, $rainy);
+    }
+
+    expect(Artisan::call('rain:watch'))->toBe(0);
+
+    Http::assertNothingSent();
+    assertDatabaseCount('rain_reports', 1);
+})->with([
+    'one dry window so far' => [[60 => false]],
+    'rain twenty minutes ago' => [[1260 => true, 660 => false, 60 => false]],
+    'rain ten minutes ago' => [[1260 => false, 660 => true, 60 => false]],
+]);
 
 it('stays quiet while the detector keeps its mind', function (?bool $lastDetected, bool $rainy): void {
     freezeTime();

@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Models\Measurement;
+use App\ValueObject\ChartWindow;
 use App\ValueObject\Readout;
 
 /** What the detector makes of a station's newest noise window. */
 final readonly class RainHearing
 {
+    public const int DRY_SPELL_SECONDS = 30 * 60;
+
     /**
      * @return ?array{timestamp: int, heard: bool}
      */
@@ -34,5 +37,14 @@ final readonly class RainHearing
         }
 
         return Readout::of($measurement->data)->rain();
+    }
+
+    /** Every window of the half hour up to $until heard no rain, and none is missing. */
+    public function dryThrough(int $sensorId, int $until): bool
+    {
+        $windows = new StationRecord($sensorId)->readoutsSince($until - self::DRY_SPELL_SECONDS + 1);
+
+        return count($windows) >= intdiv(self::DRY_SPELL_SECONDS, ChartWindow::STEP_SECONDS)
+            && ! in_array(true, array_column($windows, 'r'), true);
     }
 }
