@@ -440,6 +440,7 @@ it('says it is raining now and since when, without marking the trace', function 
 
     Livewire::test(Overview::class)
         ->assertSee('Raining now, 19:19-19:49')
+        ->assertSeeHtml('class="rain-blink')
         ->assertDontSeeHtml('data-rain-mark');
 });
 

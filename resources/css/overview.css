@@ -154,6 +154,19 @@
     }
 }
 
+.instrument .rain-blink {
+    animation: rain-blink 3s ease-in-out infinite;
+}
+@keyframes rain-blink {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
+}
+
 .instrument .arrival.just-arrived {
     animation: arrival-flash 1.8s ease-out;
 }
@@ -498,7 +511,8 @@
         opacity: 0;
     }
     .instrument .electron,
-    .instrument .arrival {
+    .instrument .arrival,
+    .instrument .rain-blink {
         animation: none !important;
     }
     .instrument .wire-electron {
