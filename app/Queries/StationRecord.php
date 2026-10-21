@@ -32,6 +32,17 @@ final readonly class StationRecord
     }
 
     /**
+     * @return list<array{timestamp: int, rain: ?bool}>
+     */
+    public function rainSince(int $from): array
+    {
+        return array_map(
+            fn (Measurement $measurement): array => ['timestamp' => $measurement->timestamp, 'rain' => Readout::of($measurement->data)->rain()],
+            $this->since($from),
+        );
+    }
+
+    /**
      * @return list<Measurement>
      */
     private function since(int $from): array

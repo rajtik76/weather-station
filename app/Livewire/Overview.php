@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire;
 
 use App\Enums\Channel;
+use App\Queries\RainHearing;
 use App\Queries\TemperatureHistory;
+use App\ValueObject\ChartWindow;
 use App\ValueObject\DayFigures;
-use App\ValueObject\RainMarks;
+use App\ValueObject\RainSpell;
 use App\ValueObject\Readout;
 use App\ValueObject\StationSite;
 use App\ValueObject\TemperatureTrace;
@@ -28,7 +30,7 @@ use Livewire\Attributes\Title;
  * @property-read ?float $dewPoint
  * @property-read TemperatureTrace $temperatureTrace
  * @property-read ?bool $rainHeard
- * @property-read list<array{from: float, to: float}> $rainStretches
+ * @property-read ?RainSpell $rainNow
  * @property-read list<Channel> $silentChannels
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  */
@@ -141,13 +143,18 @@ class Overview extends StationPage
         return $this->newestMeasurement === null ? null : Readout::of($this->newestMeasurement->data)->dewPoint();
     }
 
-    /**
-     * @return list<array{from: float, to: float}>
-     */
+    /** Pauses shorter than RainHearing::DRY_SPELL_SECONDS belong to the same rain, as in rain:watch. */
     #[Computed]
-    public function rainStretches(): array
+    public function rainNow(): ?RainSpell
     {
-        return RainMarks::stretches(array_column($this->lastDay, 'r'));
+        if ($this->isSilent) {
+            return null;
+        }
+
+        return RainSpell::current(
+            $this->record()->rainSince($this->dayStart()),
+            intdiv(RainHearing::DRY_SPELL_SECONDS, ChartWindow::STEP_SECONDS),
+        );
     }
 
     #[Computed]

@@ -424,36 +424,40 @@ it('does not flash on switching to a sensor with a newer reading', function (): 
         ->assertDontSee('just-arrived', false);
 });
 
-it('shades the hours the microphone heard rain in on the temperature trace', function (): void {
+it('says it is raining now and since when, without marking the trace', function (): void {
     $this->travelTo(Date::parse('2026-10-21 18:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
+    $rainy = [1 => true, 3 => true];
 
     foreach (range(0, 4) as $slot) {
         Measurement::factory()->for($sensor)->v3()->create([
-            'timestamp' => now()->subMinutes(45 - $slot * 10)->getTimestamp(),
-            'data' => (string) (in_array($slot, [1, 2], true)
+            'timestamp' => now()->subMinutes(41 - $slot * 10)->getTimestamp(),
+            'data' => (string) (isset($rainy[$slot])
                 ? spectrumWindow(43.8, 0.5, laeq: 60.8, la90: 54.6, humidity: 8410)
                 : spectrumWindow(30.0, 0.0, laeq: 58.0, la90: 52.0, humidity: 8410)),
         ]);
     }
 
-    $html = Livewire::test(Overview::class)->html();
-
-    expect(substr_count($html, 'data-rain-mark'))->toBe(1)
-        ->and($html)->toContain('<rect data-rain-mark x="12.5" y="0" width="50" height="100"')
-        ->toContain('data-rain-legend')
-        ->toContain('Shaded where the microphone heard rain.');
-});
-
-it('shades nothing on a dry day', function (): void {
-    $this->travelTo(Date::parse('2026-10-21 18:00:00', 'UTC'));
-    Measurement::factory()->for(Sensor::factory())->v3()->create([
-        'timestamp' => now()->subMinutes(5)->getTimestamp(),
-        'data' => (string) spectrumWindow(30.0, 0.0, laeq: 58.0, la90: 52.0, humidity: 8410),
-    ]);
-
     Livewire::test(Overview::class)
-        ->assertDontSeeHtml('data-rain-mark')
-        ->assertDontSeeHtml('data-rain-legend')
-        ->assertDontSee('Shaded where the microphone heard rain.');
+        ->assertSee('Raining now, 19:19-19:49')
+        ->assertDontSeeHtml('data-rain-mark');
 });
+
+it('says nothing about rain once it has stopped or the station is silent', function (int $lastRainMinutesAgo, int $newestMinutesAgo): void {
+    $this->travelTo(Date::parse('2026-10-21 18:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+
+    foreach (range($lastRainMinutesAgo, $newestMinutesAgo, -10) as $minutesAgo) {
+        Measurement::factory()->for($sensor)->v3()->create([
+            'timestamp' => now()->subMinutes($minutesAgo)->getTimestamp(),
+            'data' => (string) ($minutesAgo === $lastRainMinutesAgo
+                ? spectrumWindow(43.8, 0.5, laeq: 60.8, la90: 54.6, humidity: 8410)
+                : spectrumWindow(30.0, 0.0, laeq: 58.0, la90: 52.0, humidity: 8410)),
+        ]);
+    }
+
+    Livewire::test(Overview::class)->assertDontSeeHtml('data-rain-now');
+})->with([
+    'three dry windows since' => [35, 5],
+    'silent station' => [45, 45],
+]);
