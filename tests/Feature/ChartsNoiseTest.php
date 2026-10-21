@@ -112,6 +112,17 @@ it('marks the waterfall slots the microphone heard rain in', function (): void {
     Livewire::test(Charts::class)->assertSet('rainSlots', [[LocalTime::of($rain)->wallClockMs(), $rain]]);
 });
 
+it('marks a slot of light rain the shield did not ring for', function (): void {
+    $this->travelTo(Date::parse('2026-10-21 17:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $lightRain = now()->subMinutes(60)->getTimestamp();
+    $humidDusk = now()->subMinutes(10)->getTimestamp();
+    Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $lightRain, 'data' => (string) spectrumWindow(43.8, 0.5, laeq: 60.8, la90: 54.6, humidity: 8410)]);
+    Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $humidDusk, 'data' => (string) spectrumWindow(30.0, 0.0, laeq: 58.0, la90: 52.0, humidity: 9100)]);
+
+    Livewire::test(Charts::class)->assertSet('rainSlots', [[LocalTime::of($lightRain)->wallClockMs(), $lightRain]]);
+});
+
 it('keeps a shower on a wide bucket among dry windows', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();

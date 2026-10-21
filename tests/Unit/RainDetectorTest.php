@@ -18,11 +18,11 @@ function ringingSpectrum(int $ring, int $high): array
     return $bands;
 }
 
-function heardAsRain(float $high, float $ring, float $laeq, float $la90): bool
+function heardAsRain(float $high, float $ring, float $laeq, float $la90, float $humidity = 60.0): bool
 {
     $bands = ringingSpectrum((int) round($ring * 100), (int) round($high * 100));
 
-    return RainDetector::hears($bands, (int) round($laeq * 100), (int) round($la90 * 100));
+    return RainDetector::hears($bands, (int) round($laeq * 100), (int) round($la90 * 100), (int) round($humidity * 100));
 }
 
 it('hears rain loud at the top with the shield ringing all window long', function (float $high, float $ring, float $laeq, float $la90): void {
@@ -47,14 +47,32 @@ it('hears no rain without all three signs', function (float $high, float $ring, 
 ]);
 
 it('hears no rain in a spectrum missing its top band', function (): void {
-    expect(RainDetector::hears(array_slice(ringingSpectrum(300, 5000), 0, 25), 6600, 5600))->toBeFalse();
+    expect(RainDetector::hears(array_slice(ringingSpectrum(300, 5000), 0, 25), 6600, 5600, 9000))->toBeFalse();
 });
 
 it('reads the levels as the protocol stores them, in hundredths of dB', function (int $high, int $laeq, int $la90, bool $isRain): void {
-    expect(RainDetector::hears(ringingSpectrum(300, $high), $laeq, $la90))->toBe($isRain);
+    expect(RainDetector::hears(ringingSpectrum(300, $high), $laeq, $la90, 6000))->toBe($isRain);
 })->with([
     'rain' => [5000, 6600, 5600, true],
     'too quiet at the top' => [4400, 6600, 5600, false],
     'a transient' => [5000, 6600, 4500, false],
     'twenty dB apart, odd hundredths' => [5000, 6543, 4543, true],
+]);
+
+it('hears light rain as a steady hiss at the top in humid air, without the ring', function (float $high, float $ring, float $laeq, float $la90, float $humidity): void {
+    expect(heardAsRain($high, $ring, $laeq, $la90, $humidity))->toBeTrue();
+})->with([
+    '21 October 2026 18:39' => [43.8, 0.5, 60.8, 54.6, 84.1],
+    '10 October 2026 12:29' => [48.4, -0.8, 62.0, 51.3, 90.3],
+    'on every threshold' => [40.0, 0.0, 61.0, 50.0, 83.0],
+]);
+
+it('hears no light rain without all three signs', function (float $high, float $laeq, float $la90, float $humidity): void {
+    expect(heardAsRain($high, 0.0, $laeq, $la90, $humidity))->toBeFalse();
+})->with([
+    // 18 October 2026 15:59, sunny.
+    'gusty wind' => [50.6, 65.0, 51.1, 76.9],
+    'humid but quiet at the top' => [39.99, 58.0, 50.0, 91.0],
+    'just under the humidity threshold' => [45.0, 58.0, 50.0, 82.99],
+    'just over the steadiness threshold' => [45.0, 61.01, 50.0, 90.0],
 ]);

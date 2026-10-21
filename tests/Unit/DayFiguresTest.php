@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\ValueObject\DayFigures;
 
 /**
- * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
+ * @return array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, r: ?bool, l: ?float, lMin: ?float, lMax: ?float}
  */
 function dayEntry(float $temperature, ?float $tMin = null, ?float $tMax = null, ?float $noise = null, ?float $light = null, ?float $lightMin = null, ?float $lightMax = null): array
 {
@@ -14,7 +14,7 @@ function dayEntry(float $temperature, ?float $tMin = null, ?float $tMax = null, 
         'tMin' => $tMin ?? $temperature - 1.0, 'tMax' => $tMax ?? $temperature + 1.0,
         'hMin' => 55.0, 'hMax' => 65.0,
         'pMin' => 1009.0, 'pMax' => 1011.0,
-        'n' => $noise, 'l' => $light, 'lMin' => $lightMin, 'lMax' => $lightMax,
+        'n' => $noise, 'r' => null, 'l' => $light, 'lMin' => $lightMin, 'lMax' => $lightMax,
     ];
 }
 

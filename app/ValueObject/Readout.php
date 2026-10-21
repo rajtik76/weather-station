@@ -7,7 +7,7 @@ namespace App\ValueObject;
 /**
  * An entry in dashboard units: °C and %, pressure reduced to sea level at the station's height.
  *
- * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, l: ?float, lMin: ?float, lMax: ?float}
+ * @phpstan-type DayRow array{t: float, h: float, p: float, tMin: float, tMax: float, hMin: float, hMax: float, pMin: float, pMax: float, n: ?float, r: ?bool, l: ?float, lMin: ?float, lMax: ?float}
  */
 final readonly class Readout
 {
@@ -62,17 +62,28 @@ final readonly class Readout
     /** LAeq in dB, tenths. Null without microphone data. */
     public function noise(): ?float
     {
-        if (! $this->data instanceof CarriesNoise || ! $this->data->noise instanceof NoiseWindow) {
-            return null;
-        }
+        $noise = $this->noiseWindow();
 
-        return round($this->data->noise->laeq / 100, 1);
+        return $noise instanceof NoiseWindow ? round($noise->laeq / 100, 1) : null;
+    }
+
+    /** Null without microphone data. */
+    public function rain(): ?bool
+    {
+        $noise = $this->noiseWindow();
+
+        return $noise instanceof NoiseWindow ? RainDetector::hears($noise->bands, $noise->laeq, $noise->la90, $this->data->humidity) : null;
     }
 
     /** Lux behind the shield, from hundredths. Null without light. */
     public function light(): ?float
     {
         return $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminance) : null;
+    }
+
+    private function noiseWindow(): ?NoiseWindow
+    {
+        return $this->data instanceof CarriesNoise ? $this->data->noise : null;
     }
 
     private function lightWindow(): ?LightWindow
@@ -98,6 +109,7 @@ final readonly class Readout
             'pMin' => $this->seaLevel($this->data->pressureMin),
             'pMax' => $this->seaLevel($this->data->pressureMax),
             'n' => $this->noise(),
+            'r' => $this->rain(),
             'l' => $this->light(),
             'lMin' => $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminanceMin) : null,
             'lMax' => $this->lightWindow() instanceof LightWindow ? self::hundredths($this->lightWindow()->illuminanceMax) : null,

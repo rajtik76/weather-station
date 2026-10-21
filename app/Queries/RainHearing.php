@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Models\Measurement;
-use App\ValueObject\CarriesNoise;
-use App\ValueObject\NoiseWindow;
-use App\ValueObject\RainDetector;
+use App\ValueObject\Readout;
 
 /** What the detector makes of a station's newest noise window. */
 final readonly class RainHearing
@@ -35,12 +33,6 @@ final readonly class RainHearing
             return null;
         }
 
-        $data = $measurement->data;
-
-        if (! $data instanceof CarriesNoise || ! $data->noise instanceof NoiseWindow) {
-            return null;
-        }
-
-        return RainDetector::hears($data->noise->bands, $data->noise->laeq, $data->noise->la90);
+        return Readout::of($measurement->data)->rain();
     }
 }

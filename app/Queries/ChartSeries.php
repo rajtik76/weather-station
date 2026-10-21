@@ -87,7 +87,7 @@ final readonly class ChartSeries
             /** @var list<int> $bands */
             $bands = json_decode($noise->bands, true, flags: JSON_THROW_ON_ERROR);
 
-            if (RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90)) {
+            if (RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90, (int) $noise->humidity)) {
                 $rainy[(int) $noise->bucket] = true;
             }
         }
