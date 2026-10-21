@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace App\Livewire;
 
 use App\Enums\Channel;
+use App\Queries\RainHearing;
 use App\Queries\TemperatureHistory;
-use App\ValueObject\CarriesNoise;
 use App\ValueObject\DayFigures;
-use App\ValueObject\NoiseWindow;
-use App\ValueObject\RainDetector;
 use App\ValueObject\Readout;
 use App\ValueObject\StationSite;
 use App\ValueObject\TemperatureTrace;
@@ -142,17 +140,10 @@ class Overview extends StationPage
         return $this->newestMeasurement === null ? null : Readout::of($this->newestMeasurement->data)->dewPoint();
     }
 
-    /** Null without a spectrum or while the station is silent: neither may read as a dry sky. */
     #[Computed]
     public function rainHeard(): ?bool
     {
-        $data = $this->newestMeasurement?->data;
-
-        if ($this->isSilent || ! $data instanceof CarriesNoise || ! $data->noise instanceof NoiseWindow) {
-            return null;
-        }
-
-        return RainDetector::hears($data->noise->bands, $data->noise->laeq, $data->noise->la90);
+        return new RainHearing()->heard($this->newestMeasurement, now()->getTimestamp());
     }
 
     /**

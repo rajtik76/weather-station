@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Models\Measurement;
+use App\ValueObject\ChartWindow;
 use App\ValueObject\Readout;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final readonly class StationRecord
 {
+    public const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
+
     public function __construct(private ?int $sensorId) {}
 
     public function newest(): ?Measurement

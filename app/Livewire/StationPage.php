@@ -11,7 +11,6 @@ use App\Queries\LatestStationReport;
 use App\Queries\StationRecord;
 use App\Queries\Stations;
 use App\ValueObject\BoardReport;
-use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
@@ -33,8 +32,6 @@ use Livewire\Component;
  */
 abstract class StationPage extends Component
 {
-    private const int SILENT_AFTER_SECONDS = 3 * ChartWindow::STEP_SECONDS;
-
     #[Url]
     public ?string $sensor = null;
 
@@ -87,7 +84,7 @@ abstract class StationPage extends Component
     public function isSilent(): bool
     {
         return $this->newestMeasurement === null
-            || $this->newestMeasurement->timestamp < now()->getTimestamp() - self::SILENT_AFTER_SECONDS;
+            || $this->newestMeasurement->timestamp < now()->getTimestamp() - StationRecord::SILENT_AFTER_SECONDS;
     }
 
     #[Computed]
