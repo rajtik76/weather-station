@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuthenticateSensor;
+use App\Http\Middleware\VerifyDiscordSignature;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,7 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(append: [ThrottleRequests::class.':10,1']);
 
-        $middleware->alias(['sensor.auth' => AuthenticateSensor::class]);
+        $middleware->alias([
+            'sensor.auth' => AuthenticateSensor::class,
+            'discord.signature' => VerifyDiscordSignature::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
