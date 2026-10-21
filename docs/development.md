@@ -36,7 +36,12 @@ and reduced to sea level for display.
 
 Sound and light appear when the selected station has sent them. Light is
 measured behind the radiation shield's louvers. The sound spectrum, LAeq and
-LA90 provide an experimental rain indication through `RainDetector`.
+LA90 provide an experimental rain indication through `RainDetector`, by
+either of two rules. Heavy rain is loud at 8 kHz and rings the shield at
+1 kHz. Light rain does not ring it, so it needs a steady hiss at 8 kHz in
+humid air (LAeq within 11 dB of LA90, humidity of at least 83 %). The
+overview shades the windows with rain behind the 24-hour temperature trace
+and the charts page marks them above the spectrum.
 
 ## Structure
 
@@ -127,9 +132,10 @@ routes and views. Migrations run separately during deployment.
 
 ## Rain confirmation on Discord
 
-`rain:watch` runs every two minutes. When `RainDetector` changes its mind
-about a station's newest noise window, it posts "Is it raining?" to a Discord
-channel with ✅ and ❌ buttons; ✅ always means raining. Windows older than
+`rain:watch` runs every two minutes. When `RainDetector` starts hearing rain
+in a station's newest noise window, or has heard none for 30 minutes after
+rain, it posts "Is it raining?" to a Discord channel with ✅ and ❌ buttons;
+✅ always means raining. Windows older than
 30 minutes are ignored rather than read as dry. `/rain` and `/dry` log a
 report without a prompt, together with what the detector hears at that
 moment. Every prompt and answer lands in `rain_reports` as labels for

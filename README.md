@@ -117,8 +117,9 @@ INMP441  --I2S--+                                      |
 
 Light behind the shield's louvers is specific to this mounting. Its absolute
 lux values are not an open-sky radiation measurement. The microphone's rain
-indication is experimental and has only been checked on a small number of
-showers.
+indication is experimental: its thresholds were fitted to this mounting
+against ČHMÚ Mikulka's rain gauge, and the owner's reports on Discord keep
+checking it.
 
 ## Run it
 
