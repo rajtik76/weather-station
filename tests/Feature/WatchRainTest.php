@@ -8,6 +8,8 @@ use App\Models\Measurement;
 use App\Models\RainReport;
 use App\Models\Sensor;
 use App\Queries\Discord;
+use App\ValueObject\LocalTime;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -15,6 +17,8 @@ use Illuminate\Support\Facades\Http;
 use function Pest\Laravel\assertDatabaseCount;
 use function Pest\Laravel\assertDatabaseHas;
 use function Pest\Laravel\freezeTime;
+use function Pest\Laravel\travel;
+use function Pest\Laravel\travelTo;
 
 const DISCORD_CHANNEL = '1400000000000000001';
 
@@ -29,6 +33,10 @@ function configureDiscord(): string
     return Discord::BASE_URL.'/channels/'.DISCORD_CHANNEL.'/messages';
 }
 
+beforeEach(function (): void {
+    travelTo(CarbonImmutable::parse('2026-10-25 12:00', LocalTime::TIMEZONE));
+});
+
 function heardWindow(Sensor $sensor, int $timestamp, bool $rainy): void
 {
     Measurement::factory()->for($sensor)->create([
@@ -38,7 +46,8 @@ function heardWindow(Sensor $sensor, int $timestamp, bool $rainy): void
     ]);
 }
 
-it('asks on Discord when the detector starts hearing rain', function (): void {
+it('asks on Discord when the detector starts hearing rain', function (string $localTime): void {
+    travelTo(CarbonImmutable::parse('2026-10-25 '.$localTime, LocalTime::TIMEZONE));
     freezeTime();
     Http::preventStrayRequests();
     Http::fake([configureDiscord() => Http::response(['id' => '1500000000000000001'])]);
@@ -58,7 +67,7 @@ it('asks on Discord when the detector starts hearing rain', function (): void {
         && str_starts_with($request['content'], '🌧️ Rain heard at')
         && $request['components'][0]['components'][0]['custom_id'] === "rain-report:{$report->id}:yes"
         && $request['components'][0]['components'][1]['custom_id'] === "rain-report:{$report->id}:no");
-});
+})->with(['07:01', '12:00', '21:59']);
 
 it('asks again when the detector stops hearing rain', function (): void {
     freezeTime();
@@ -119,6 +128,55 @@ it('stays quiet while the detector keeps its mind', function (?bool $lastDetecte
     'still raining' => [true, true],
     'still dry' => [false, false],
 ]);
+
+it('does not ask at night', function (string $localTime): void {
+    travelTo(CarbonImmutable::parse('2026-10-25 '.$localTime, LocalTime::TIMEZONE));
+    freezeTime();
+    Http::preventStrayRequests();
+    configureDiscord();
+    heardWindow(Sensor::factory()->create(), now()->getTimestamp() - 60, rainy: true);
+
+    expect(Artisan::call('rain:watch'))->toBe(0);
+
+    Http::assertNothingSent();
+    expect(RainReport::query()->sole()->discord_message_id)->toBeNull();
+})->with(['22:00', '23:30', '06:59']);
+
+it('does not ask in the morning about a change heard at night', function (): void {
+    travelTo(CarbonImmutable::parse('2026-10-25 07:05', LocalTime::TIMEZONE));
+    freezeTime();
+    Http::preventStrayRequests();
+    configureDiscord();
+    RainReport::factory()->create(['timestamp' => now()->getTimestamp() - 8 * 3600, 'discord_message_id' => null]);
+
+    expect(Artisan::call('rain:watch'))->toBe(0);
+
+    Http::assertNothingSent();
+});
+
+it('waits half an hour after a prompt before asking again', function (): void {
+    freezeTime();
+    Http::preventStrayRequests();
+    Http::fake([configureDiscord() => Http::sequence()
+        ->push(['id' => '1500000000000000005'])
+        ->push(['id' => '1500000000000000006'])]);
+    $sensor = Sensor::factory()->create();
+    RainReport::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp() - 60, 'detected' => false, 'discord_message_id' => null]);
+    Artisan::call('rain:watch');
+
+    travel(10)->minutes();
+    $next = RainReport::factory()->for($sensor)->create(['timestamp' => now()->getTimestamp() - 60, 'detected' => true, 'discord_message_id' => null]);
+    Artisan::call('rain:watch');
+
+    Http::assertSentCount(1);
+    expect($next->refresh()->discord_message_id)->toBeNull();
+
+    travel(20)->minutes();
+    Artisan::call('rain:watch');
+
+    Http::assertSentCount(2);
+    expect($next->refresh()->discord_message_id)->toBe('1500000000000000006');
+});
 
 it('reads a stale window as no answer, not as a dry sky', function (): void {
     freezeTime();
