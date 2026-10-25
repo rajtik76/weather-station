@@ -142,7 +142,11 @@ report without a prompt, together with what the detector hears at that
 moment. Every prompt and answer lands in `rain_reports` as labels for
 calibrating the detector.
 
-A prompt Discord refuses is posted again on the next run. Discord calls
+Prompts go out only between 07:00 and 22:00 Prague time and at least 30
+minutes apart across all stations. Only the newest unasked change since 07:00
+is posted, so a change heard at night, or one still waiting at 22:00, is never
+asked about. Within those hours, a prompt Discord refuses is posted again on
+the next run. Discord calls
 `POST /api/discord/interactions`, which accepts only requests signed with the
 application's Ed25519 key within the last five minutes, and takes reports
 only from the configured channel. The route is exempt from the sensor
