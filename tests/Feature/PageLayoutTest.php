@@ -82,3 +82,19 @@ it('links the remaining pages without offering forecasts', function (string $rou
     'charts with selected sensor' => ['charts', true],
     'comparison with selected sensor' => ['comparison', true],
 ]);
+
+it('loads the Umami tracker when a website id is configured', function (): void {
+    config(['services.umami.website_id' => 'test-website-id']);
+
+    $this->get(route('overview'))
+        ->assertOk()
+        ->assertSee('<script defer src="https://stats.rajtik.com/script.js" data-website-id="test-website-id" data-domains="weather.rajtik.com"></script>', false);
+});
+
+it('leaves the Umami tracker out without a website id', function (): void {
+    config(['services.umami.website_id' => null]);
+
+    $this->get(route('overview'))
+        ->assertOk()
+        ->assertDontSee('stats.rajtik.com/script.js', false);
+});

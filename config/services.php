@@ -35,6 +35,10 @@ return [
         'channel_id' => env('DISCORD_CHANNEL_ID'),
     ],
 
+    'umami' => [
+        'website_id' => env('UMAMI_WEBSITE_ID'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

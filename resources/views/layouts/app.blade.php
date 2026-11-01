@@ -16,6 +16,10 @@
 
         @livewireStyles
         @fluxAppearance
+
+        @if (config('services.umami.website_id'))
+            <script defer src="https://stats.rajtik.com/script.js" data-website-id="{{ config('services.umami.website_id') }}" data-domains="weather.rajtik.com"></script>
+        @endif
     </head>
     <body class="min-h-screen bg-[#f5f6f8] dark:bg-[#0a111d]">
         {{ $slot }}
