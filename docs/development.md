@@ -121,7 +121,7 @@ php artisan test --parallel
 npm run build
 ```
 
-`composer review` runs formatting, Rector, PHPStan, JavaScript tests and
+`composer ci:check` runs formatting, Rector, PHPStan, JavaScript tests and
 PHP tests. Regression coverage includes ingest authentication, validation,
 resends, protocol versions, station selection and chart behavior.
 

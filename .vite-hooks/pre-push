@@ -1,1 +1,1 @@
-composer review
+composer ci:check
