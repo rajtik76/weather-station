@@ -110,7 +110,7 @@
         "npm:test": [
             "npm run test"
         ],
-        "review": [
+        "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "@lint:check",
             "@rector:check",
