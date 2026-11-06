@@ -59,7 +59,7 @@ class TemperatureCalibration extends Model
 
     public function features(): ShieldFeatures
     {
-        return new ShieldFeatures($this->geometry['latitude'], $this->geometry['longitude'], $this->geometry['wall_azimuth']);
+        return new ShieldFeatures($this->geometry['latitude'], $this->geometry['longitude'], $this->geometry['wall_azimuth'], $this->feature_version);
     }
 
     public function model(): ShieldModel

@@ -26,7 +26,7 @@ class TemperatureCalibrationFactory extends Factory
             'validated_until' => 1_792_008_000,
             'accepted' => true,
             'geometry' => ['latitude' => StationSite::LATITUDE, 'longitude' => StationSite::LONGITUDE, 'wall_azimuth' => 65.0],
-            'coefficients' => [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'coefficients' => [1.0, ...array_fill(0, ShieldFeatures::featureCount(ShieldFeatures::VERSION) - 1, 0.0)],
             'limits' => ['max_lux' => 3000.0, 'max_heating' => 12.0],
             'scores' => [],
         ];

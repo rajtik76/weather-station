@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Enums\ProtocolVersion;
 use App\Models\Measurement;
+use App\ValueObject\LightWindow;
 use App\ValueObject\MeasurementDataV4;
+use App\ValueObject\NoiseWindow;
 use App\ValueObject\ShieldFeatures;
 use App\ValueObject\StationSite;
 
@@ -33,7 +35,7 @@ function shieldReadings(int $start, array $lux): array
 
 function balconyFeatures(): ShieldFeatures
 {
-    return new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0);
+    return new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0, version: 1);
 }
 
 it('uses measured lux and causal heating histories after an uninterrupted hour', function (): void {
@@ -106,4 +108,46 @@ it('starts the filters from zero after a gap instead of decaying over it', funct
     expect(array_last($samples)?->timestamp)->toBe($start + 3600)
         ->and(array_last($samples)?->features[3])->toEqualWithDelta(0.8552, 0.001)
         ->and(array_last($samples)?->features[6])->toEqualWithDelta(0.5689, 0.001);
+});
+
+it('scales the short heating history by low sun and wind noise in version 2', function (): void {
+    $start = strtotime('2026-10-01T06:00:00Z');
+    $readings = [];
+
+    for ($index = 0; $index < 7; $index++) {
+        $readings[] = Measurement::factory()->make([
+            'timestamp' => $start + $index * 600,
+            'protocol_version' => ProtocolVersion::V4,
+            'data' => (string) new MeasurementDataV4(temperature: 1200, humidity: 6000, pressure: 97000,
+                temperatureMin: 1200, temperatureMax: 1200, humidityMin: 6000, humidityMax: 6000,
+                pressureMin: 97000, pressureMax: 97000, samples: 20,
+                noise: new NoiseWindow(600, 5000, 6000, 5200, 4800, [7600, ...array_fill(0, NoiseWindow::BANDS_COUNT - 1, 4000)]),
+                light: new LightWindow(140000, 140000, 140000)),
+        ]);
+    }
+
+    $features = new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0);
+    $sample = $features->samples($readings)[0];
+    $fast = 0.9 * (1 - exp(-6));
+
+    expect($features->version)->toBe(ShieldFeatures::VERSION)
+        ->and($sample->features)->toHaveCount(15)
+        ->and($sample->features[3])->toEqualWithDelta($fast, 0.0001)
+        ->and($sample->features[6])->toEqualWithDelta(0.9 * (1 - exp(-2)), 0.0001)
+        ->and($sample->features[9])->toEqualWithDelta($fast * max(0.0, 20.0 - $sample->sun->elevation) / 10, 0.0001)
+        ->and($sample->features[12])->toEqualWithDelta($fast, 0.0001)
+        ->and($features->unconstrained())->toBe([12, 13, 14]);
+});
+
+it('treats a window without the microphone as calm air', function (): void {
+    $sample = new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0)
+        ->samples(shieldReadings(strtotime('2026-10-01T06:00:00Z'), array_fill(0, 7, 1400)))[0];
+
+    expect(array_slice($sample->features, 12, 3))->toBe([0.0, 0.0, 0.0])
+        ->and($sample->features[3])->toBeGreaterThan(0.0);
+});
+
+it('refuses an unknown feature version', function (): void {
+    expect(fn (): ShieldFeatures => new ShieldFeatures(StationSite::LATITUDE, StationSite::LONGITUDE, 65.0, version: 3))
+        ->toThrow(InvalidArgumentException::class, 'Unsupported shield feature version 3.');
 });

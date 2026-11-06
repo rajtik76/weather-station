@@ -26,7 +26,7 @@ final readonly class ShieldCalibrations
     public function validationEndedBy(int $until): Collection
     {
         return TemperatureCalibration::query()
-            ->where('feature_version', ShieldFeatures::VERSION)
+            ->whereIn('feature_version', ShieldFeatures::SUPPORTED_VERSIONS)
             ->where('accepted', false)
             ->where('validated_until', '<=', $until)
             ->orderBy('id')->get()
@@ -47,7 +47,7 @@ final readonly class ShieldCalibrations
     {
         return TemperatureCalibration::query()
             ->where('sensor_id', $sensorId)
-            ->where('feature_version', ShieldFeatures::VERSION)
+            ->whereIn('feature_version', ShieldFeatures::SUPPORTED_VERSIONS)
             ->orderByDesc('id');
     }
 }

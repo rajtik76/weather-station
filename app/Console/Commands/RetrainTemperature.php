@@ -26,7 +26,7 @@ class RetrainTemperature extends Command
         $until = Date::now(LocalTime::TIMEZONE)->toImmutable()->startOfDay();
         $from = $until->subDays(self::TRAINING_DAYS);
         $validatedUntil = $until->addDays(TemperatureCalibrator::VALIDATION_DAYS);
-        $sensorIds = TemperatureCalibration::query()->where('feature_version', ShieldFeatures::VERSION)
+        $sensorIds = TemperatureCalibration::query()->whereIn('feature_version', ShieldFeatures::SUPPORTED_VERSIONS)
             ->distinct()->orderBy('sensor_id')->pluck('sensor_id');
 
         foreach ($sensorIds as $sensorId) {
@@ -37,7 +37,7 @@ class RetrainTemperature extends Command
             }
 
             try {
-                $calibration = $calibrator->train($sensorId, $from->getTimestamp(), $until->getTimestamp(), $validatedUntil->getTimestamp(), $newest->features());
+                $calibration = $calibrator->train($sensorId, $from->getTimestamp(), $until->getTimestamp(), $validatedUntil->getTimestamp(), new ShieldFeatures($newest->geometry['latitude'], $newest->geometry['longitude'], $newest->geometry['wall_azimuth']));
             } catch (InvalidArgumentException $exception) {
                 $this->warn('Sensor '.$sensorId.' not retrained: '.$exception->getMessage());
 

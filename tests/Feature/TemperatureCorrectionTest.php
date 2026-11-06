@@ -36,6 +36,15 @@ it('computes a shade estimate from one sensor without contacting a reference or 
     Http::assertNothingSent();
 });
 
+it('keeps correcting with a calibration of the previous feature version', function (): void {
+    $sensor = Sensor::factory()->create();
+    $end = strtotime('2026-10-16T07:00:00Z');
+    TemperatureCalibration::factory()->for($sensor)->create(['feature_version' => 1, 'coefficients' => [1.0, ...array_fill(0, ShieldFeatures::featureCount(1) - 1, 0.0)]]);
+    correctionHistory($sensor, $end);
+
+    expect(new CorrectedTemperature(new TemperatureDataset)->at($sensor->id, $end)['estimated'] ?? null)->toEqualWithDelta(11.1, 0.001);
+});
+
 it('does not use a calibration before its validation period ended', function (): void {
     $sensor = Sensor::factory()->create();
     $end = strtotime('2026-10-14T07:00:00Z');

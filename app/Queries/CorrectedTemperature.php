@@ -29,7 +29,7 @@ final readonly class CorrectedTemperature
         $calibrations = TemperatureCalibration::query()
             ->where('sensor_id', $sensorId)
             ->where('accepted', true)
-            ->where('feature_version', ShieldFeatures::VERSION)
+            ->whereIn('feature_version', ShieldFeatures::SUPPORTED_VERSIONS)
             ->where('validated_until', '<', $until)
             ->orderByDesc('id')->get();
         $spans = CalibrationSpans::of($calibrations);

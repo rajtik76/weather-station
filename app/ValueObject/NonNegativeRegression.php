@@ -11,9 +11,10 @@ final readonly class NonNegativeRegression
     /**
      * @param  list<list<float>>  $features
      * @param  list<float>  $targets
+     * @param  list<int>  $unconstrained  Columns whose coefficient and values may be negative.
      * @return list<float>
      */
-    public static function fit(array $features, array $targets): array
+    public static function fit(array $features, array $targets, array $unconstrained = []): array
     {
         if ($features === [] || $features[0] === [] || count($features) !== count($targets)) {
             throw new InvalidArgumentException('Regression requires matching non-empty features and targets.');
@@ -26,8 +27,8 @@ final readonly class NonNegativeRegression
                 throw new InvalidArgumentException('Regression requires finite rectangular data.');
             }
 
-            foreach ($values as $value) {
-                if (! is_finite($value) || $value < 0) {
+            foreach ($values as $column => $value) {
+                if (! is_finite($value) || ($value < 0 && ! in_array($column, $unconstrained, true))) {
                     throw new InvalidArgumentException('Heating features must be finite and non-negative.');
                 }
             }
@@ -50,7 +51,7 @@ final readonly class NonNegativeRegression
                     $denominator += $value * $value;
                 }
 
-                $updated = max(0.0, $numerator / $denominator);
+                $updated = in_array($column, $unconstrained, true) ? $numerator / $denominator : max(0.0, $numerator / $denominator);
                 $delta = $updated - $coefficients[$column];
                 $change = max($change, abs($delta));
                 $coefficients[$column] = $updated;

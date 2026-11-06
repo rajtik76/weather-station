@@ -40,7 +40,11 @@ it('does not fit validation references and retains a rejected candidate separate
     $data = heatingCalibrationData();
     $calibrator = resolve(TemperatureCalibrator::class);
     $original = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
-    ReferenceTemperature::query()->where('timestamp', '>=', $data['validateFrom'])->update(['temperature' => 30.0]);
+    ReferenceTemperature::query()->where('timestamp', '>=', $data['validateFrom'])->get()->each(function (ReferenceTemperature $reference): void {
+        if (SolarPosition::at($reference->timestamp - 330, StationSite::LATITUDE, StationSite::LONGITUDE)->faces(StationSite::WALL_AZIMUTH)) {
+            $reference->update(['temperature' => 30.0]);
+        }
+    });
 
     $candidate = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
 
@@ -127,6 +131,56 @@ it('rejects a retrained model that beats the raw sensor but not the model in use
         ->and($retrained->accepted)->toBeFalse();
 });
 
+it('counts a day as complete before its unanchored sun is left out', function (): void {
+    $data = heatingCalibrationData();
+    $local = fn (string $moment): int => Date::parse($moment, LocalTime::TIMEZONE)->getTimestamp();
+
+    foreach (['2026-10-02', '2026-10-03', '2026-10-04'] as $day) {
+        Measurement::query()->whereBetween('timestamp', [$local($day.' 12:00'), $local($day.' 13:30')])->delete();
+        Measurement::query()->whereBetween('timestamp', [$local($day.' 00:00'), $local($day.' 02:30')])->delete();
+    }
+
+    $calibration = resolve(TemperatureCalibrator::class)->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+
+    expect($calibration->exists)->toBeTrue();
+});
+
+it('accepts a retrained model level with the model in use', function (): void {
+    $data = heatingCalibrationData();
+    $calibrator = resolve(TemperatureCalibrator::class);
+    $inUse = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features'])->replicate();
+    $inUse->fill(['trained_from' => $data['from'] - 20 * 86400, 'trained_until' => $data['from'] - 10 * 86400, 'validated_until' => $data['validateFrom']])->save();
+    ReferenceTemperature::query()->where('timestamp', '<', $data['validateFrom'])->get()->each(function (ReferenceTemperature $reference): void {
+        $lit = SolarPosition::at($reference->timestamp - 330, StationSite::LATITUDE, StationSite::LONGITUDE)->faces(StationSite::WALL_AZIMUTH);
+        $reference->update(['temperature' => $lit ? 10.01 : 10.0]);
+    });
+
+    $retrained = $calibrator->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    $current = $retrained->scores['versus_current']['current']['sun_facing']['corrected_mae'] ?? INF;
+    $replacement = $retrained->scores['versus_current']['retrained']['sun_facing']['corrected_mae'] ?? INF;
+
+    expect($replacement - $current)->toBeGreaterThan(0.0)->toBeLessThan(0.02)
+        ->and($retrained->accepted)->toBeTrue();
+});
+
+it('does not ask for a tenth better than the raw sensor on validation days without sun', function (): void {
+    $data = heatingCalibrationData();
+    $calibrator = resolve(TemperatureCalibrator::class);
+    $calibration = $calibrator->train($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
+    Measurement::query()->where('timestamp', '>=', $data['validateFrom'])->get()->each(function (Measurement $measurement): void {
+        $lux = SolarPosition::at($measurement->timestamp - 300, StationSite::LATITUDE, StationSite::LONGITUDE)->faces(StationSite::WALL_AZIMUTH) ? 52000 : 0;
+        $measurement->update(['data' => (string) litWindow($lux, $lux, $lux)]);
+    });
+    ReferenceTemperature::query()->where('timestamp', '>=', $data['validateFrom'])->update(['temperature' => 12.0]);
+
+    $calibration = $calibrator->validate($calibration);
+    $sun = $calibration->validationScores()['sun_facing'];
+
+    expect($sun['raw_mae'])->toEqual(0.0)
+        ->and($sun['corrected_mae'])->toBeGreaterThan(0.0)->toBeLessThan(0.05)
+        ->and($calibration->accepted)->toBeTrue();
+});
+
 it('accepts the default until date while it is already tomorrow in UTC terms', function (): void {
     $sensor = Sensor::factory()->create();
     $this->travelTo(Date::parse('2026-10-15 22:30:00', 'UTC'));
@@ -144,7 +198,7 @@ it('trains on the days before local midnight and validates on the three days aft
     $geometry = ['latitude' => StationSite::LATITUDE, 'longitude' => StationSite::LONGITUDE, 'wall_azimuth' => StationSite::WALL_AZIMUTH];
     $previous = TemperatureCalibration::factory()->for($data['sensor'])->create([
         'trained_from' => $data['from'] - 20 * 86400, 'trained_until' => $data['from'] - 10 * 86400, 'validated_until' => $data['from'] - 7 * 86400,
-        'geometry' => $geometry,
+        'geometry' => $geometry, 'feature_version' => 1, 'coefficients' => array_fill(0, ShieldFeatures::featureCount(1), 0.0),
     ]);
     Sensor::factory()->create();
     $this->travelTo(Date::parse('2026-10-08 00:15:00', LocalTime::TIMEZONE));
@@ -158,6 +212,7 @@ it('trains on the days before local midnight and validates on the three days aft
         ->and($retrained->trained_until)->toBe($data['validateFrom'])
         ->and($retrained->validated_until)->toBe($data['until'])
         ->and($retrained->geometry)->toEqual($geometry)
+        ->and($retrained->feature_version)->toBe(ShieldFeatures::VERSION)
         ->and($retrained->accepted)->toBeFalse()
         ->and($retrained->isValidating())->toBeTrue();
 

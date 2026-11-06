@@ -14,6 +14,13 @@ it('never learns to warm the sensor when the reference is warmer', function (): 
     expect(NonNegativeRegression::fit([[1.0], [2.0]], [-1.0, -2.0]))->toBe([0.0]);
 });
 
+it('learns a negative coefficient on an unconstrained column', function (): void {
+    $coefficients = NonNegativeRegression::fit([[1.0, 1.0], [1.0, -1.0], [2.0, 1.0], [2.0, -1.0]], [1.0, 3.0, 3.0, 5.0], unconstrained: [1]);
+
+    expect($coefficients[0])->toEqualWithDelta(2.0, 0.05)
+        ->and($coefficients[1])->toBeLessThan(-0.9);
+});
+
 it('handles a feature that stayed zero throughout calibration', function (): void {
     expect(NonNegativeRegression::fit([[0.0, 1.0], [0.0, 2.0]], [2.0, 4.0])[0])->toBe(0.0);
 });

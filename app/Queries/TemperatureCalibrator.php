@@ -7,6 +7,7 @@ namespace App\Queries;
 use App\Models\TemperatureCalibration;
 use App\ValueObject\LocalTime;
 use App\ValueObject\NonNegativeRegression;
+use App\ValueObject\ShadeReference;
 use App\ValueObject\ShieldFeatures;
 use App\ValueObject\ShieldModel;
 use App\ValueObject\ShieldSample;
@@ -25,6 +26,16 @@ final readonly class TemperatureCalibrator
     public const int VALIDATION_DAYS = 3;
 
     private const float REQUIRED_MAE_RATIO = 0.9;
+
+    private const int SUNNY_MORNINGS = 2;
+
+    private const float SUNNY_LUX = 1800.0;
+
+    /** °C a retrained model may trail the model in use and still count as level. */
+    private const float TIE_TOLERANCE = 0.02;
+
+    /** °C a correction may add over the raw sensor where there is no sun to correct. */
+    private const float HARMLESS_TOLERANCE = 0.05;
 
     public function __construct(private TemperatureDataset $dataset, private CorrectedTemperature $corrections) {}
 
@@ -78,7 +89,7 @@ final readonly class TemperatureCalibrator
             return [];
         }
 
-        $pairs = $this->pairs($calibration->sensor_id, $calibration->trained_from, $calibration->trained_until, $validateUntil, $calibration->features());
+        $pairs = ShadeReference::anchor($this->pairs($calibration->sensor_id, $calibration->trained_from, $calibration->trained_until, $validateUntil, $calibration->features()));
 
         $validation = $this->withHeating($pairs, $calibration->model());
         $versusCurrent = $this->versusCurrent($calibration->sensor_id, $calibration->trained_until, $validateUntil, $validation);
@@ -86,9 +97,10 @@ final readonly class TemperatureCalibrator
         return $versusCurrent === [] ? ['retrained' => $this->scores($validation)] : $versusCurrent;
     }
 
-    /** @param list<Pair> $pairs */
-    private function scoreValidation(TemperatureCalibration $calibration, array $pairs): TemperatureCalibration
+    /** @param list<Pair> $unanchored */
+    private function scoreValidation(TemperatureCalibration $calibration, array $unanchored): TemperatureCalibration
     {
+        $pairs = ShadeReference::anchor($unanchored);
         $validation = $this->withHeating($pairs, $calibration->model());
         $versusCurrent = $this->versusCurrent($calibration->sensor_id, $calibration->trained_until, $calibration->validated_until, $validation);
         $scores = [
@@ -101,10 +113,12 @@ final readonly class TemperatureCalibrator
         $sun = $scores['validation']['sun_facing'];
         $night = $scores['validation']['night'];
         $shade = $scores['validation']['shade'];
-        $accepted = $this->completeDays($pairs) >= self::VALIDATION_DAYS
+        $correctsSun = $this->sunnyMornings($pairs) >= self::SUNNY_MORNINGS
+            ? $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
+            : $this->harmless($sun);
+        $accepted = $this->completeDays($unanchored) >= self::VALIDATION_DAYS
             && $all['count'] >= 0.9 * count($validation)
-            && $this->improves($all)
-            && $this->improves($sun) && abs($sun['corrected_bias'] ?? INF) < abs($sun['raw_bias'] ?? 0.0)
+            && $correctsSun && $this->harmless($all)
             && $night['count'] > 0 && $night['corrected_mae'] <= $night['raw_mae'] + 0.05
             && $shade['count'] > 0 && $shade['corrected_mae'] <= $shade['raw_mae'] + 0.1
             && $this->beatsCurrent($versusCurrent);
@@ -113,24 +127,19 @@ final readonly class TemperatureCalibrator
         return $calibration;
     }
 
-    /** @param list<Pair> $training */
-    private function fit(int $sensorId, int $from, int $until, int $validatedUntil, ShieldFeatures $features, array $training): TemperatureCalibration
+    /** @param list<Pair> $unanchored */
+    private function fit(int $sensorId, int $from, int $until, int $validatedUntil, ShieldFeatures $features, array $unanchored): TemperatureCalibration
     {
-        $sunnyDays = [];
+        $training = ShadeReference::anchor($unanchored);
 
-        foreach ($training as $pair) {
-            if ($pair['sample']->facesSun && $pair['sample']->illuminance > 1800) {
-                $sunnyDays[Date::createFromTimestamp($pair['sample']->timestamp, LocalTime::TIMEZONE)->format('Y-m-d')] = true;
-            }
-        }
-
-        if (count($sunnyDays) < 2) {
+        if ($this->sunnyMornings($training) < self::SUNNY_MORNINGS) {
             throw new InvalidArgumentException('Calibration requires at least two mornings above 1800 lx on the sun-facing shield.');
         }
 
         $coefficients = NonNegativeRegression::fit(
             array_column(array_column($training, 'sample'), 'features'),
             array_map(fn (array $pair): float => $pair['sample']->measured - $pair['reference'], $training),
+            $features->unconstrained(),
         );
         $sunFacing = array_values(array_filter($training, fn (array $pair): bool => $pair['sample']->facesSun));
         $limits = [
@@ -141,7 +150,7 @@ final readonly class TemperatureCalibrator
 
         return TemperatureCalibration::query()->create([
             'sensor_id' => $sensorId,
-            'feature_version' => ShieldFeatures::VERSION,
+            'feature_version' => $features->version,
             'trained_from' => $from,
             'trained_until' => $until,
             'validated_until' => $validatedUntil,
@@ -154,7 +163,7 @@ final readonly class TemperatureCalibrator
     }
 
     /**
-     * Sample and reference in [from, until); feature history from max(historyFrom, from - HISTORY_SECONDS).
+     * Sample and Mikulka in [from, until), not yet anchored; feature history from max(historyFrom, from - HISTORY_SECONDS).
      *
      * @return list<Pair>
      */
@@ -164,6 +173,20 @@ final readonly class TemperatureCalibrator
 
         return array_values(array_filter($this->dataset->pair($samples), fn (array $pair): bool => $pair['sample']->timestamp >= $from
             && $pair['reference_at'] >= $from && $pair['reference_at'] < $until));
+    }
+
+    /** @param list<Pair> $pairs */
+    private function sunnyMornings(array $pairs): int
+    {
+        $days = [];
+
+        foreach ($pairs as $pair) {
+            if ($pair['sample']->facesSun && $pair['sample']->illuminance > self::SUNNY_LUX) {
+                $days[Date::createFromTimestamp($pair['sample']->timestamp, LocalTime::TIMEZONE)->format('Y-m-d')] = true;
+            }
+        }
+
+        return count($days);
     }
 
     /** @param list<Pair> $pairs */
@@ -217,7 +240,7 @@ final readonly class TemperatureCalibrator
             $current = $versusCurrent['current'][$group]['corrected_mae'];
             $retrained = $versusCurrent['retrained'][$group]['corrected_mae'];
 
-            if ($current !== null && ($retrained === null || $retrained > $current)) {
+            if ($current !== null && ($retrained === null || $retrained > $current + self::TIE_TOLERANCE)) {
                 return false;
             }
         }
@@ -230,6 +253,13 @@ final readonly class TemperatureCalibrator
     {
         return $score['raw_mae'] !== null && $score['corrected_mae'] !== null
             && $score['corrected_mae'] <= $score['raw_mae'] * self::REQUIRED_MAE_RATIO;
+    }
+
+    /** @param Score $score */
+    private function harmless(array $score): bool
+    {
+        return $score['raw_mae'] !== null && $score['corrected_mae'] !== null
+            && $score['corrected_mae'] <= $score['raw_mae'] + self::HARMLESS_TOLERANCE;
     }
 
     /**
