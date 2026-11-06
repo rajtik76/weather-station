@@ -18,8 +18,9 @@ corrected estimate alongside them.
 **Current status:** a PHP correction model can be calibrated and evaluated
 against ČHMÚ observations through Artisan. Overview and Charts display
 the original temperature alongside the calculated shade estimate. The
-Mikulka page compares all three temperatures by day, up to 30 days back,
-and reports deviations over the last 30 days.
+Reference page compares the shade estimate with the shade reference and
+Mikulka by day, up to 30 days back, and reports deviations over the last
+30 days.
 
 Running at [weather.rajtik.com](https://weather.rajtik.com).
 
@@ -31,6 +32,19 @@ are available through [ČHMÚ open data](https://opendata.chmi.cz/meteorology/cl
 Location, elevation and microclimate can produce real differences between
 Mikulka and the balcony; agreement with Mikulka is a measurable reference,
 with that limitation.
+
+The correction is therefore fitted and judged against a shade reference
+(`ShadeReference`): Mikulka shifted by the balcony's own offset from it.
+The offset is read while the shield is in shade, in the hour before the
+sun reaches it (below 300 lx) and 30 to 60 minutes after the sun has left,
+and runs in a straight line between the two from the moment the sun
+reaches the shield until an hour after it leaves, while the shield's
+heating history decays. Outside that window the shade reference is
+Mikulka. A day without both anchors has no reference in that window, and
+its readings there are left out of calibration and validation. On overcast mornings between 1 October
+and 5 November 2026, when the right difference is zero, the shade reference
+was 0.21 °C from zero on average and Mikulka 0.52 °C. The straight line
+between the anchors is an assumption that overcast mornings cannot check.
 
 The correction will be evaluated against the uncorrected sensor on the
 same observations, using days excluded from calibration. Both the mean
@@ -49,15 +63,21 @@ They do not block calibration or invalidate an existing correction model.
 ## Temperature correction
 
 The model estimates solar heating from light inside the shield and the
-Sun's position relative to the balcony wall. It combines the current light
-with exponentially weighted histories of 20 and 60 minutes to represent
-heating and cooling. Non-negative, regularized regression learns the
-response of this installation. The shade estimate is the measured
-temperature minus the estimated heating; original records are unchanged.
+Sun's position relative to the balcony wall. Feature version 2 combines
+the current light with exponentially weighted histories of 10 and 30
+minutes, and scales the 10 minute history by low sun (below 20° elevation
+the shield heats more for the same light) and by the microphone's 25 Hz
+band (wind ventilates the shield). Regularized regression learns the
+response of this installation; heating coefficients stay non-negative, the
+wind term takes either sign. Version 1 (light with 20 and 60 minute histories)
+is still applied for calibrations trained with it. The shade estimate is
+the measured temperature minus the estimated heating; original records
+are unchanged.
 
 Calibration and inference run in PHP, without a separate service. ČHMÚ
 temperature is used for calibration and evaluation only. The running model
-uses the station's light history, time and calibrated installation geometry.
+uses the station's light and sound history, time and calibrated
+installation geometry.
 The wall direction is the balcony facade at 71.8° clockwise from true north;
 override it when calibrating another installation.
 
@@ -87,15 +107,22 @@ missing and flagged observations are excluded.
 
 The model needs an uninterrupted hour of light measurements after startup
 or a gap. Unsupported readings and inputs beyond its calibrated light or
-heating range return no estimate. Acceptance requires improvement overall
-and on the sun-facing side, at least 90% validation coverage, and no MAE
-increase above 0.05 °C at night or 0.1 °C in daytime shade.
+heating range return no estimate. Validation scores against the shade
+reference. With at least two sunlit validation mornings, acceptance
+requires a sun-facing MAE at least 10% below the raw sensor and a smaller
+sun-facing bias; with fewer, the sun-facing MAE may not exceed the raw
+sensor's by more than 0.05 °C. Always: no overall MAE increase above
+0.05 °C, at least 90% validation coverage, no MAE increase above 0.05 °C at
+night or 0.1 °C in daytime shade. A retrained model must also be within
+0.02 °C of the model in use, overall and sun-facing, on the same pairs.
 
-This first model corrects solar heating. Local air differences, reflected
-heat from the building, ventilation and night-time radiation are not
-independently identified by the distant reference. A smaller error against
-Mikulka is evidence of agreement with that station, not a measurement of
-the remaining error on the balcony. Calibration over a few autumn days
+The model corrects solar heating. Local air differences, reflected heat
+from the building and night-time radiation are not corrected: in afternoon
+shade the balcony runs up to about a degree colder than Mikulka on sunny,
+calm days and warmer on windy, overcast ones, and that is the balcony's
+air, not the shield. A smaller error against the shade reference is
+evidence of a better shield correction, not a measurement of the remaining
+error on the balcony. Calibration over a few autumn days
 does not establish accuracy in other seasons.
 
 ## Measurements

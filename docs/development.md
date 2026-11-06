@@ -23,11 +23,11 @@ under a new `sensor_name`. The picker appears once two stations exist; its
 selection survives navigation through the `sensor` query parameter.
 Links use station slugs so they remain stable across reseeding.
 
-| Page     | Path          | Content                                                                                                        |
-| -------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| Overview | `/`           | Current measurements, last 24 hours, hardware, station report and approximate location; polls every 60 seconds |
-| Charts   | `/charts`     | Measurement history with shade correction, time window, channel switches, station events and raw transmissions |
-| Mikulka  | `/comparison` | Daily sensor, shade and ČHMÚ comparison up to 30 days back; 30-day deviation statistics                        |
+| Page      | Path          | Content                                                                                                        |
+| --------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| Overview  | `/`           | Current measurements, last 24 hours, hardware, station report and approximate location; polls every 60 seconds |
+| Charts    | `/charts`     | Measurement history with shade correction, time window, channel switches, station events and raw transmissions |
+| Reference | `/comparison` | Daily shade estimate against the shade reference and ČHMÚ up to 30 days back; 30-day deviation statistics      |
 
 The charts average measurements into PostgreSQL buckets, preserving gaps
 and sample extremes. The selected window is limited to a month, with a
