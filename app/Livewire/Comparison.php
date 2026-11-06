@@ -23,12 +23,12 @@ use Livewire\Attributes\Url;
  *
  * @property-read ComparisonDay $day
  * @property-read ?TemperatureCalibration $dayCandidate
- * @property-read list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> $comparisonRows
+ * @property-read list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float}> $comparisonRows
  * @property-read Summary $summary
  * @property-read list<HistoryRow> $modelHistory
  * @property-read ?TemperatureCalibration $latestCandidate
  */
-#[Title('Balcony Station · Mikulka comparison')]
+#[Title('Balcony Station · Shade reference')]
 class Comparison extends StationPage
 {
     #[Url]
@@ -64,7 +64,7 @@ class Comparison extends StationPage
         return resolve(ShieldCalibrations::class)->validatingWithin($this->selectedSensor?->id, $this->day->from, $this->day->until);
     }
 
-    /** @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float}> */
+    /** @return list<array{0: int, 1: ?float, 2: ?float, 3: ?float, 4: ?float}> */
     #[Computed]
     public function comparisonRows(): array
     {

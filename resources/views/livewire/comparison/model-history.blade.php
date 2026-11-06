@@ -3,7 +3,7 @@
     <table class="num w-full border-collapse text-left font-mono text-[14px]">
         <thead>
             <tr class="border-b border-line text-ink-2">
-                @foreach (['Model', 'Status', 'Trained', 'Validated', 'Observations', 'Previous model MAE, °C', 'This model MAE, °C', 'Improvement, °C', 'Sun-facing improvement, °C', 'In use'] as $heading)
+                @foreach (['Model', 'Status', 'Trained', 'Validated', 'Observations', 'Judged against', 'Previous model MAE, °C', 'This model MAE, °C', 'Improvement, °C', 'Sun-facing improvement, °C', 'In use'] as $heading)
                     <th scope="col" class="px-5 py-4 font-normal whitespace-nowrap">{{ $heading }}</th>
                 @endforeach
             </tr>
@@ -16,6 +16,7 @@
                     <td class="px-5 py-3 whitespace-nowrap">{{ \App\ValueObject\LocalTime::of($row['trained_from'])->day() }} - {{ \App\ValueObject\LocalTime::of($row['trained_until'] - 1)->day() }}</td>
                     <td class="px-5 py-3 whitespace-nowrap">{{ \App\ValueObject\LocalTime::of($row['trained_until'])->day() }} - {{ \App\ValueObject\LocalTime::of($row['validated_until'] - 1)->day() }}</td>
                     <td class="px-5 py-3">{{ $row['observations'] === null ? '-' : \App\ValueObject\Figure::format($row['observations'], 0) }}</td>
+                    <td class="px-5 py-3 whitespace-nowrap">{{ $row['judged_against'] }}</td>
                     <td class="px-5 py-3">{{ $figure($row['previous_mae']) }}</td>
                     <td class="px-5 py-3">{{ $figure($row['own_mae']) }}</td>
                     <td class="px-5 py-3">{{ $figure($row['improvement'], true) }}</td>

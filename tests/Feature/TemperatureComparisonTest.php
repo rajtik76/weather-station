@@ -8,13 +8,14 @@ use App\Models\Sensor;
 use App\Models\TemperatureCalibration;
 use App\Queries\CorrectedTemperature;
 use App\Queries\TemperatureHistory;
+use App\ValueObject\MeasurementDataV4;
 use App\ValueObject\TemperatureComparison;
 use Illuminate\Support\Facades\Date;
 
 it('scores raw and corrected temperatures on the same nearby usable observations', function (): void {
-    $this->travelTo(Date::parse('2026-10-16 08:00:00', 'UTC'));
+    $this->travelTo(Date::parse('2026-10-16 14:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
-    $end = strtotime('2026-10-16T07:00:00Z');
+    $end = strtotime('2026-10-16T13:00:00Z');
     TemperatureCalibration::factory()->for($sensor)->create();
     correctionHistory($sensor, $end);
     ReferenceTemperature::factory()->create(['timestamp' => $end, 'temperature' => 10.0]);
@@ -29,8 +30,21 @@ it('scores raw and corrected temperatures on the same nearby usable observations
 
     expect($summary['count'])->toBe(1)
         ->and($summary['measured']['mae'])->toBe(2.0)
-        ->and($summary['estimated']['mae'])->toEqualWithDelta(1.1, 0.001)
+        ->and($summary['estimated']['mae'])->toBe(2.0)
         ->and($readings[1]['reference'])->toBeNull();
+});
+
+it('gives a reading without light Mikulka as its reference outside the sun', function (): void {
+    $sensor = Sensor::factory()->create();
+    $night = strtotime('2026-10-16T01:00:00Z');
+    Measurement::factory()->v4()->for($sensor)->create(['timestamp' => $night, 'data' => (string) new MeasurementDataV4(temperature: 1200, humidity: 6000, pressure: 97000,
+        temperatureMin: 1200, temperatureMax: 1200, humidityMin: 6000, humidityMax: 6000, pressureMin: 97000, pressureMax: 97000, samples: 20)]);
+    ReferenceTemperature::factory()->create(['timestamp' => $night, 'temperature' => 10.0]);
+
+    $readings = resolve(TemperatureHistory::class)->readings($sensor->id, $night, $night + 600, withReference: true);
+
+    expect($readings)->toHaveCount(1)
+        ->and($readings[0]['reference'])->toBe(10.0);
 });
 
 it('does not score missing estimates or replace them with the sensor reading', function (): void {

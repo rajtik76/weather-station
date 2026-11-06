@@ -11,6 +11,7 @@ use App\Models\Sensor;
 use App\Models\TemperatureCalibration;
 use App\Queries\TemperatureCalibrator;
 use App\ValueObject\LocalTime;
+use App\ValueObject\ShieldFeatures;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -26,8 +27,8 @@ it('plots the difference from Mikulka even when only reference data exists', fun
 
     expect($rows)->toHaveCount(91)
         ->and(array_values(array_filter($rows, fn (array $row): bool => $row[2] !== null))[0])
-        ->toBe([1792141200000, null, 10.0, null]);
-    $page->assertSee('Mikulka − shade estimate')->assertSee('No matched observations for this day yet.')
+        ->toBe([1792141200000, null, 10.0, null, null]);
+    $page->assertSee('Shade reference − shade estimate')->assertSee('Mikulka − shade estimate')->assertSee('The shade reference')->assertSee('No matched observations for this day yet.')
         ->assertSee('No matched corrected observations yet.')->assertDontSee('wire:poll', false);
     Http::assertNothingSent();
 });
@@ -65,10 +66,10 @@ it('uses local calendar days including daylight saving transitions', function (s
 ]);
 
 it('keeps the thirty day summary when changing the chart date and scopes it to the chosen sensor', function (): void {
-    $this->travelTo(Date::parse('2026-10-16 08:00:00', 'UTC'));
+    $this->travelTo(Date::parse('2026-10-16 14:00:00', 'UTC'));
     $sensor = Sensor::factory()->create();
     $other = Sensor::factory()->create();
-    $end = strtotime('2026-10-16T07:00:00Z');
+    $end = strtotime('2026-10-16T13:00:00Z');
     TemperatureCalibration::factory()->for($sensor)->create();
     correctionHistory($sensor, $end);
     ReferenceTemperature::factory()->create(['timestamp' => $end, 'temperature' => 10.0]);
@@ -128,6 +129,25 @@ it('draws a retrained model only on its own validation days', function (): void 
     $laterDay->assertDontSee('data-strip="improvement"', false);
 });
 
+it('draws the shade reference beside Mikulka and leaves the sun out on a day without both anchors', function (): void {
+    heatingCalibrationData();
+    ReferenceTemperature::query()->update(['temperature' => 9.0]);
+    $this->travelTo(Date::parse('2026-10-16 12:00:00', 'UTC'));
+    $night = 6;
+    $sunOnShield = 54;
+
+    $rows = Livewire::withQueryParams(['date' => '2026-10-09'])->test(Comparison::class)->get('comparisonRows');
+    Measurement::query()->where('timestamp', '>=', Date::parse('2026-10-09 11:30', LocalTime::TIMEZONE)->getTimestamp())->delete();
+    $withoutAnchor = Livewire::withQueryParams(['date' => '2026-10-09'])->test(Comparison::class)->get('comparisonRows');
+
+    expect($rows[$sunOnShield][2])->toBe(9.0)
+        ->and($rows[$sunOnShield][4])->toEqualWithDelta(10.0, 0.0001)
+        ->and($rows[$night][4])->toBe(9.0)
+        ->and($withoutAnchor[$sunOnShield][2])->toBe(9.0)
+        ->and($withoutAnchor[$sunOnShield][4])->toBeNull()
+        ->and($withoutAnchor[$night][4])->toBe(9.0);
+});
+
 it('leaves training readings out of the first validation slot', function (): void {
     $data = heatingCalibrationData();
     resolve(TemperatureCalibrator::class)->calibrate($data['sensor']->id, $data['from'], $data['validateFrom'], $data['until'], $data['features']);
@@ -176,6 +196,7 @@ it('lists every calibration with its scores and highlights the one in use whatev
     $versus = fn (float $current, float $retrained): array => ['current' => ['all' => ['corrected_mae' => $current], 'sun_facing' => ['corrected_mae' => $current + 1.0]],
         'retrained' => ['all' => ['count' => 420, 'corrected_mae' => $retrained], 'sun_facing' => ['corrected_mae' => $retrained + 0.5]]];
     $first = TemperatureCalibration::factory()->for($sensor)->create(['validated_until' => strtotime('2026-10-14T22:00:00Z'),
+        'feature_version' => 1, 'coefficients' => array_fill(0, ShieldFeatures::featureCount(1), 0.0),
         'scores' => ['validation' => ['all' => ['count' => 431, 'corrected_mae' => 0.9]]]]);
     $inUse = TemperatureCalibration::factory()->for($sensor)->create(['validated_until' => strtotime('2026-10-18T22:00:00Z'),
         'scores' => ['validation' => [], 'versus_current' => $versus(0.61, 0.48)]]);
@@ -186,14 +207,14 @@ it('lists every calibration with its scores and highlights the one in use whatev
     $rows = array_column($page->get('modelHistory'), null, 'id');
 
     expect(array_keys($rows))->toBe([$rejected->id, $inUse->id, $first->id])
-        ->and($rows[$first->id])->toMatchArray(['observations' => 431, 'previous_mae' => null, 'own_mae' => 0.9, 'improvement' => null,
+        ->and($rows[$first->id])->toMatchArray(['observations' => 431, 'previous_mae' => null, 'own_mae' => 0.9, 'improvement' => null, 'judged_against' => 'Mikulka',
             'in_use_from' => $first->validated_until, 'in_use_until' => $inUse->validated_until, 'in_use_now' => false])
         ->and($rows[$inUse->id]['improvement'])->toEqualWithDelta(0.13, 0.0001)
         ->and($rows[$inUse->id]['sun_improvement'])->toEqualWithDelta(0.63, 0.0001)
-        ->and($rows[$inUse->id])->toMatchArray(['in_use_from' => $inUse->validated_until, 'in_use_until' => null, 'in_use_now' => true])
+        ->and($rows[$inUse->id])->toMatchArray(['in_use_from' => $inUse->validated_until, 'in_use_until' => null, 'in_use_now' => true, 'judged_against' => 'Shade reference'])
         ->and($rows[$rejected->id])->toMatchArray(['status' => 'rejected', 'in_use_from' => null, 'in_use_now' => false])
         ->and($rows[$rejected->id]['improvement'])->toEqualWithDelta(-0.07, 0.0001);
-    $page->assertSee('Model history')->assertSeeInOrder(['data-model-in-use', '#'.$inUse->id, 'in use', '420', '0,61', '0,48', '+0,13', '19.10.2026 00:00 - now'], false)
+    $page->assertSee('Model history')->assertSee('Judged against')->assertSeeInOrder(['data-model-in-use', '#'.$inUse->id, 'in use', '420', 'Shade reference', '0,61', '0,48', '+0,13', '19.10.2026 00:00 - now'], false)
         ->assertDontSee('No model corrects the page now');
 });
 

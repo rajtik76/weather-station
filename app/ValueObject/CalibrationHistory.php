@@ -10,7 +10,7 @@ use App\Models\TemperatureCalibration;
  * @phpstan-import-type Score from TemperatureScore
  *
  * @phpstan-type VersusCurrent array{current?: array<string, Score>, retrained?: array<string, Score>}
- * @phpstan-type HistoryRow array{id: int, status: string, trained_from: int, trained_until: int, validated_until: int, observations: ?int, previous_mae: ?float, own_mae: ?float, improvement: ?float, sun_improvement: ?float, in_use_from: ?int, in_use_until: ?int, in_use_now: bool}
+ * @phpstan-type HistoryRow array{id: int, status: string, trained_from: int, trained_until: int, validated_until: int, observations: ?int, previous_mae: ?float, own_mae: ?float, improvement: ?float, sun_improvement: ?float, in_use_from: ?int, in_use_until: ?int, in_use_now: bool, judged_against: string}
  */
 final readonly class CalibrationHistory
 {
@@ -45,6 +45,7 @@ final readonly class CalibrationHistory
                 'in_use_from' => $span['from'] ?? null,
                 'in_use_until' => $span['until'] ?? null,
                 'in_use_now' => $span !== null && $span['from'] <= $now && ($span['until'] === null || $now < $span['until']),
+                'judged_against' => $calibration->feature_version >= ShadeReference::SINCE_FEATURE_VERSION ? 'Shade reference' : 'Mikulka',
             ];
         }
 

@@ -6,9 +6,14 @@ import { colourFor } from "../theme";
 const UNIT = "°C";
 const DECIMALS = 2;
 
-export function difference(row, column = COMPARISON_COLUMN.estimated) {
+/** Reference minus a model's estimate, °C. */
+export function difference(
+    row,
+    column = COMPARISON_COLUMN.estimated,
+    referenceColumn = COMPARISON_COLUMN.shade,
+) {
     const estimated = row[column] ?? null;
-    const reference = row[COMPARISON_COLUMN.reference];
+    const reference = row[referenceColumn] ?? null;
 
     return estimated === null || reference === null ? null : reference - estimated;
 }
@@ -23,31 +28,39 @@ export function formatDifference(value) {
     return `${sign}${formatNumber(Math.abs(value), DECIMALS)} ${UNIT}`;
 }
 
-/** One °C line over the comparison rows. */
-export function differenceStrip({ key, label, colourKey, value, markZero = false }) {
+/** °C lines over the comparison rows; each line is { label, colourKey, value, dashed }. */
+export function differenceStrip({ key, lines, markZero = false }) {
     return {
         key,
         zoom: false,
         time: COMPARISON_COLUMN.time,
         rows: () => state.comparisonRows,
-        lines: (row) => [
-            { label, value: formatDifference(value(row)), colour: colourFor(colourKey) },
-        ],
+        lines: (row) =>
+            lines.map((line) => ({
+                label: line.label,
+                value: formatDifference(line.value(row)),
+                colour: colourFor(line.colourKey),
+            })),
         option: (strip, colours) => ({
             yAxis: {
                 type: "value",
                 axisLabel: { color: colours.label, fontSize: 10 },
                 splitLine: { lineStyle: { color: colours.grid } },
             },
-            series: [
-                {
-                    name: label,
-                    type: "line",
-                    showSymbol: false,
-                    connectNulls: false,
-                    lineStyle: { width: 1.5, color: colourFor(colourKey) },
-                    itemStyle: { color: colourFor(colourKey) },
-                    ...(markZero && {
+            series: lines.map((line, index) => ({
+                name: line.label,
+                type: "line",
+                showSymbol: false,
+                connectNulls: false,
+                z: lines.length - index,
+                lineStyle: {
+                    width: line.dashed ? 1 : 1.5,
+                    type: line.dashed ? "dashed" : "solid",
+                    color: colourFor(line.colourKey),
+                },
+                itemStyle: { color: colourFor(line.colourKey) },
+                ...(markZero &&
+                    index === 0 && {
                         markLine: {
                             silent: true,
                             symbol: "none",
@@ -56,12 +69,11 @@ export function differenceStrip({ key, label, colourKey, value, markZero = false
                             data: [{ yAxis: 0 }],
                         },
                     }),
-                    data: state.comparisonRows.map((row) => [
-                        row[COMPARISON_COLUMN.time],
-                        value(row),
-                    ]),
-                },
-            ],
+                data: state.comparisonRows.map((row) => [
+                    row[COMPARISON_COLUMN.time],
+                    line.value(row),
+                ]),
+            })),
         }),
     };
 }

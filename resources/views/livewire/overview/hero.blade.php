@@ -75,7 +75,7 @@
                     <span>24 h ago</span>
                     <span class="text-ink-2">now</span>
                 </div>
-                <p class="m-0 px-5 pb-4 text-[13px] leading-relaxed text-ink-3 sm:px-6">Measured inside the radiation shield. The shade estimate subtracts the modelled heating of the shield. <a href="{{ route('comparison', $this->sensorQuery()) }}" class="link-ink">Compare with Mikulka</a>.</p>
+                <p class="m-0 px-5 pb-4 text-[13px] leading-relaxed text-ink-3 sm:px-6">Measured inside the radiation shield. The shade estimate subtracts the modelled heating of the shield. <a href="{{ route('comparison', $this->sensorQuery()) }}" class="link-ink">Compare with the shade reference</a>.</p>
             </figure>
 
             <aside class="flex flex-col p-5 sm:p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1" aria-label="Channel 1 measurements">
