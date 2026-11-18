@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../../vendor/livewire/flux/dist/flux.css";
 @import "./overview.css";
+@import "./horizon.css";
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -10,7 +11,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-    --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+    --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
     --font-mono: "Red Hat Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

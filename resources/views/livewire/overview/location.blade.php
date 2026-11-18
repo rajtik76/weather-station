@@ -1,11 +1,9 @@
 {{-- Public page: a blurred circle, no marker, no exact spot. --}}
 @php($location = $this->approximateLocation)
-<section class="page-wrap mt-20 sm:mt-24" aria-labelledby="where-h">
-    <div class="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-1">
-        <h2 id="where-h" class="m-0 font-display text-[26px] leading-tight font-semibold tracking-[-0.01em] sm:text-[30px]">Where it is</h2>
-        <p class="num m-0 font-mono text-[13px] text-ink-3">Plzeň-Slovany · within {{ \App\ValueObject\Figure::format($location['radius'], 0) }} m</p>
-    </div>
-    <div class="overflow-hidden rounded-[10px] border border-line bg-screen">
+<x-horizon.section aria-labelledby="where-h">
+    <x-horizon.heading id="where-h">Where it is</x-horizon.heading>
+    <p class="hz-lede">Plzeň-Slovany, within {{ \App\ValueObject\Figure::format($location['radius'], 0) }} m.</p>
+    <div class="hz-card mt-10 overflow-hidden p-0!">
         <div
             wire:ignore
             data-station-map
@@ -17,4 +15,4 @@
             aria-label="Map showing the approximate area the station reports from"
         ></div>
     </div>
-</section>
+</x-horizon.section>

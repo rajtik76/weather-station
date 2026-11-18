@@ -17,7 +17,7 @@ it('reports when the station last transmitted', function (): void {
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['RUN', '15.3.2026 12:48']);
+        ->assertSeeInOrder(['Live,', '15.3.2026 12:48']);
 });
 
 it('still reports the last measurement when the window holds nothing', function (): void {
@@ -27,8 +27,8 @@ it('still reports the last measurement when the window holds nothing', function 
 
     Livewire::test(Overview::class)
         ->assertSee('12.3.2026 13:00')
-        ->assertSee('STOP')
-        ->assertSee('Measure · CH1')
+        ->assertSee('Silent,')
+        ->assertSee('Sensor in the shield')
         ->assertDontSee('Waiting for the first reading');
 });
 
@@ -39,28 +39,28 @@ it('calls the station silent after three missed slots', function (): void {
 
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(20)->getTimestamp()]);
     Livewire::test(Overview::class)
-        ->assertSee('RUN')
-        ->assertDontSee('STOP');
+        ->assertSee('Live,')
+        ->assertDontSee('Silent,');
 
     Measurement::query()->delete();
 
     Measurement::factory()->for($sensor)->create(['timestamp' => now()->subMinutes(40)->getTimestamp()]);
     Livewire::test(Overview::class)
-        ->assertSee('STOP')
-        ->assertDontSee('RUN');
+        ->assertSee('Silent,')
+        ->assertDontSee('Live,');
 });
 
 it('turns the station silent on a poll once the uploads stop', function (): void {
     $this->travelTo(Date::parse('2026-09-24 08:00:00', 'UTC'));
     Measurement::factory()->create(['timestamp' => now()->subMinute()->getTimestamp()]);
 
-    $overview = Livewire::test(Overview::class)->assertSee('RUN');
+    $overview = Livewire::test(Overview::class)->assertSee('Live,');
 
     $this->travel(40)->minutes();
 
     $overview->call('$refresh')
-        ->assertSee('STOP')
-        ->assertDontSee('RUN');
+        ->assertSee('Silent,')
+        ->assertDontSee('Live,');
 });
 
 it('names each sensor in the picker', function (): void {
@@ -74,8 +74,8 @@ it('names each sensor in the picker', function (): void {
 it('reports when no sensor has registered yet', function (): void {
     Livewire::test(Overview::class)
         ->assertSee('Waiting for the first reading')
-        ->assertDontSee('RUN')
-        ->assertDontSee('STOP')
+        ->assertDontSee('Live,')
+        ->assertDontSee('Silent,')
         ->assertSet('sensor', null);
 });
 

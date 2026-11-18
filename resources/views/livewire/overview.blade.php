@@ -1,13 +1,14 @@
-<div wire:poll.60s class="instrument min-h-screen">
-    @include('livewire.overview.header')
-
-    <main id="main">
+<x-horizon.page wire:poll.60s :year="$this->currentYear">
+    <x-slot:hero>
         @include('livewire.overview.hero')
-        @include('livewire.overview.channels')
-        @include('livewire.overview.about')
-        @include('livewire.overview.status')
-        @include('livewire.overview.location')
-    </main>
+    </x-slot:hero>
 
-    @include('livewire.overview.footer')
-</div>
+    @include('livewire.overview.channels')
+    @include('livewire.overview.about')
+    @include('livewire.overview.verdict')
+    @include('livewire.overview.location')
+
+    <x-slot:status>
+        @include('livewire.overview.status')
+    </x-slot:status>
+</x-horizon.page>

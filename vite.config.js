@@ -21,10 +21,11 @@ export default defineConfig({
             input: ["resources/css/app.css", "resources/js/app.js"],
             refresh: true,
             fonts: [
-                bunny("Red Hat Display", {
-                    weights: [500, 600, 700],
+                bunny("Instrument Serif", {
+                    weights: [400],
+                    styles: ["normal", "italic"],
                 }),
-                bunny("Red Hat Text", {
+                bunny("Hanken Grotesk", {
                     weights: [400, 500, 600],
                 }),
                 bunny("Red Hat Mono", {

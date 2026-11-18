@@ -112,7 +112,7 @@ it('keeps a missing current correction explicit on overview', function (): void 
     TemperatureCalibration::factory()->for($sensor)->create();
     correctionHistory($sensor, now()->getTimestamp(), missingAt: 6);
 
-    Livewire::test(Overview::class)->assertSee('Unavailable for this reading.')->assertDontSee('11,10');
+    Livewire::test(Overview::class)->assertSee('Shade estimate unavailable for this reading.')->assertDontSee('11,10');
 });
 
 it('draws a retrained model only on its own validation days', function (): void {

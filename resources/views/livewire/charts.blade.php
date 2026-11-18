@@ -1,12 +1,10 @@
 {{-- No wire:poll: the reader holds a window they chose. --}}
-<div class="instrument min-h-screen">
-    @include('livewire.overview.header', ['page' => 'charts'])
+<x-horizon.page compact :year="$this->currentYear">
+    <x-slot:hero>
+        @include('livewire.overview.header', ['page' => 'charts'])
+    </x-slot:hero>
 
-    <main id="main">
-        @include('livewire.charts.window')
-        @include('livewire.charts.strips')
-        @include('livewire.charts.station')
-    </main>
-
-    @include('livewire.overview.footer')
-</div>
+    @include('livewire.charts.window')
+    @include('livewire.charts.strips')
+    @include('livewire.charts.station')
+</x-horizon.page>

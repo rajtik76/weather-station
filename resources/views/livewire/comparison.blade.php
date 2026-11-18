@@ -1,7 +1,9 @@
-<div class="instrument min-h-screen">
-    @include('livewire.overview.header', ['page' => 'comparison'])
+<x-horizon.page compact :year="$this->currentYear">
+    <x-slot:hero>
+        @include('livewire.overview.header', ['page' => 'comparison'])
+    </x-slot:hero>
 
-    <main id="main" class="page-wrap pt-10 sm:pt-14">
+    <div class="page-wrap pt-10 sm:pt-14">
         <section aria-labelledby="comparison-h">
             <div class="flex flex-wrap items-end justify-between gap-5">
                 <div>
@@ -74,7 +76,5 @@
                 <p class="mt-4 max-w-3xl text-[14px] leading-relaxed text-ink-3">Mean absolute deviation on each model's validation days, against the model that was in use before it, on the observations where both have an estimate. The reference is the one the model was judged against when it was validated: Mikulka itself until the shade reference arrived, the shade reference since. Improvement is the previous model's MAE minus this model's; positive means this model is closer to that reference. A model under validation shows its days so far. A dash under the previous model means none was in use; this model's MAE then covers all its validation observations. The highlighted row corrects the page now.</p>
             @endif
         </section>
-    </main>
-
-    @include('livewire.overview.footer')
-</div>
+    </div>
+</x-horizon.page>

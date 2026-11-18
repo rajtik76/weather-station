@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Livewire;
 
 use App\Enums\Channel;
+use App\Enums\RainIntensity;
 use App\Queries\RainHearing;
 use App\Queries\TemperatureHistory;
 use App\ValueObject\ChartWindow;
+use App\ValueObject\ComparisonDay;
 use App\ValueObject\DayFigures;
 use App\ValueObject\RainSpell;
 use App\ValueObject\Readout;
 use App\ValueObject\StationSite;
+use App\ValueObject\TemperatureComparison;
 use App\ValueObject\TemperatureTrace;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -23,6 +27,7 @@ use Livewire\Attributes\Title;
  *
  * @phpstan-import-type DayRow from Readout
  * @phpstan-import-type Figures from DayFigures
+ * @phpstan-import-type Summary from TemperatureComparison
  *
  * @property-read list<DayRow> $lastDay
  * @property-read array<string, Figures> $metrics
@@ -31,6 +36,8 @@ use Livewire\Attributes\Title;
  * @property-read TemperatureTrace $temperatureTrace
  * @property-read ?bool $rainHeard
  * @property-read ?RainSpell $rainNow
+ * @property-read ?RainIntensity $rainIntensity
+ * @property-read Summary $referenceSummary
  * @property-read list<Channel> $silentChannels
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
  */
@@ -155,6 +162,34 @@ class Overview extends StationPage
             $this->record()->rainSince($this->dayStart()),
             intdiv(RainHearing::DRY_SPELL_SECONDS, ChartWindow::STEP_SECONDS),
         );
+    }
+
+    /** Heavy while the newest window rings the shield, light for the rest of a spell. */
+    #[Computed]
+    public function rainIntensity(): ?RainIntensity
+    {
+        if (! $this->rainNow instanceof RainSpell || $this->newestMeasurement === null) {
+            return null;
+        }
+
+        return Readout::of($this->newestMeasurement->data)->heavyRain() === true ? RainIntensity::Heavy : RainIntensity::Light;
+    }
+
+    /**
+     * The reference page's thirty-day deviation, reused for ten minutes: the page polls every minute.
+     *
+     * @return Summary
+     */
+    #[Computed]
+    public function referenceSummary(): array
+    {
+        return Cache::remember('overview:reference-summary:'.($this->selectedSensor->id ?? 'none'), now()->addMinutes(10),
+            fn (): array => TemperatureComparison::summary(resolve(TemperatureHistory::class)->readings(
+                $this->selectedSensor?->id,
+                now()->subDays(ComparisonDay::HISTORY_DAYS)->getTimestamp(),
+                now()->getTimestamp() + 1,
+                withReference: true,
+            )));
     }
 
     #[Computed]

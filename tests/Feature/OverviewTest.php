@@ -16,7 +16,7 @@ it('shows the current readings and polls for new ones', function (): void {
     $this->get(route('overview'))
         ->assertOk()
         ->assertSee('wire:poll.60s', false)
-        ->assertSeeInOrder(['Measure · CH1', '21,50'])
+        ->assertSeeInOrder(['Sensor in the shield', '21,50'])
         ->assertSeeInOrder(['Humidity', '48,00'])
         ->assertSeeInOrder(['Pressure, MSL', '1 013,48'])
         ->assertDontSee('Waiting for the first reading');
@@ -37,7 +37,7 @@ it('prints the board\'s report without its network identity', function (): void 
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['ACQ RUN', 'RSSI', '−64 dBm', 'fw', '4.0.2'])
+        ->assertSeeInOrder(['Station <b>online</b>', 'Firmware <b>4.0.2</b>', 'Wi-Fi <b>−64 dBm</b>'], false)
         ->assertDontSee('192.168.0.42')
         ->assertDontSee('>home<', false);
 });

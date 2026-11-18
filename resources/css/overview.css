@@ -15,27 +15,27 @@
     --color-aux: var(--aux);
     --color-ref: var(--ref);
     --color-rain: var(--rain);
-    --font-display: "Red Hat Display", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
 }
 
 .instrument {
-    --bg: #f5f6f8;
-    --screen: #ffffff;
-    --line: #dce1e9;
-    --line-2: #c3cad6;
-    --grid: rgba(22, 38, 70, 0.075);
-    --grid-2: rgba(22, 38, 70, 0.22);
-    --ink: #0c1424;
-    --ink-2: #334055;
-    --ink-3: #536077;
-    --ch1: #c3610d;
-    --ch2: #0079a2;
-    --ch3: #6e3ead;
-    --ch4: #008760;
-    --aux: #a8890f;
-    --ref: #536077;
-    --rain: #0284c7;
-    --glow: 0;
+    --bg: #060914;
+    --screen: #0b1126;
+    --line: #1c2438;
+    --line-2: #2c3652;
+    --grid: rgba(238, 242, 253, 0.08);
+    --grid-2: rgba(238, 242, 253, 0.22);
+    --ink: #eef2fd;
+    --ink-2: #c6cbd8;
+    --ink-3: #959aaa;
+    --ch1: #ffbd7a;
+    --ch2: #5ad0e7;
+    --ch3: #a58bec;
+    --ch4: #5aca94;
+    --aux: #ece189;
+    --ref: #a9d2ff;
+    --rain: #38bdf8;
+    --glow: 1;
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-sans);
@@ -43,24 +43,10 @@
     line-height: 1.6;
 }
 
-.dark .instrument {
-    --bg: #0a111d;
-    --screen: #0d1625;
-    --line: #1c2840;
-    --line-2: #2b3b58;
-    --grid: rgba(160, 182, 220, 0.085);
-    --grid-2: rgba(160, 182, 220, 0.24);
-    --ink: #e9eef6;
-    --ink-2: #bdc8da;
-    --ink-3: #95a3ba;
-    --ch1: #f7ab5d;
-    --ch2: #5ad0e7;
-    --ch3: #a58bec;
-    --ch4: #5aca94;
-    --aux: #ece189;
-    --ref: #95a3ba;
-    --rain: #38bdf8;
-    --glow: 1;
+/* Instrument Serif has one weight; a bold class would only fake it. */
+.instrument .font-display {
+    font-weight: 400;
+    letter-spacing: -0.01em;
 }
 
 .instrument .num {
@@ -333,7 +319,7 @@
 .instrument .sch .t-fn {
     fill: var(--ink-2);
     font-size: 12px;
-    font-family: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans);
 }
 .instrument .sch .t-pin,
 .instrument .sch .t-note {

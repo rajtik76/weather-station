@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="color-scheme" content="dark">
 
         <title>{{ $title ?? config('app.name') }}</title>
         <meta name="description" content="Temperature, humidity and pressure from a balcony in Plzeň. A project to estimate outdoor air temperature by correcting radiation shield heating, using ČHMÚ Plzeň-Mikulka as a reference.">
@@ -15,13 +16,12 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
 
         @livewireStyles
-        @fluxAppearance
 
         @if (config('services.umami.website_id'))
             <script defer src="https://stats.rajtik.com/script.js" data-website-id="{{ config('services.umami.website_id') }}" data-domains="weather.rajtik.com"></script>
         @endif
     </head>
-    <body class="min-h-screen bg-[#f5f6f8] dark:bg-[#0a111d]">
+    <body class="min-h-screen bg-[#060914]">
         {{ $slot }}
 
         @livewireScripts

@@ -43,10 +43,9 @@ it('reads the day\'s extremes off the samples rather than the means', function (
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['Measure · CH1', '21,50'])
-        ->assertSeeInOrder(['Min', '1,05 °C', 'Max', '24,90 °C'])
+        ->assertSeeInOrder(['Sensor in the shield', '21,50'])
         ->assertSee('min 1,05 · max 24,90 °C')
-        ->assertSeeInOrder(['Humidity', 'min', '44,00', 'max', '93,00']);
+        ->assertSeeInOrder(['>Humidity</dt>', 'min', '44,00', 'max', '93,00'], false);
 });
 
 /**
@@ -93,12 +92,10 @@ it('prints every temperature in the hero to the hundredth', function (): void {
         ->assertSee('min 11,05 · max 24,93 °C')
         ->assertSee('between 11,05 and 24,93 °C, now 21,57 °C')
         ->assertSeeInOrder([
-            'Measure · CH1', '21,57',
+            'Sensor in the shield', '21,57 °C',
             'rising', '9,23 °C', 'an hour',
-            'Min', '11,05 °C',
-            'Max', '24,93 °C',
-            'Δ / h', '+9,23 °C',
-            'Dew pt', '10,24 °C',
+            'Dew point', '10,24', '°C',
+            'min 11,05 · max 24,93 °C',
         ]);
 });
 
@@ -120,13 +117,13 @@ it('shows every channel with its day extremes right below the hero', function ()
     $this->get(route('overview'))
         ->assertOk()
         ->assertSeeInOrder([
-            'Measured temperature, last 24 h',
-            'Measure · CH1', '16,48',
-            '>Channels</h2>',
-            '>Humidity</h3>', '87,84', '%', 'min', '87,00', 'max', '88,00',
-            '>Pressure, MSL</h3>', '1 021,39', 'hPa', 'min', '1 021,27', 'max', '1 021,48',
-            '>Noise, LAeq</h3>', '59,1', 'dB(A)', 'min', '59,1', 'max', '59,1',
-            '>Light</h3>', '266', 'lx', 'min', '260', 'max', '270',
+            'Sensor in the shield', '16,48',
+            '>The rest of the balcony</h2>',
+            '>Humidity</dt>', '87,84', '%', 'min', '87,00', 'max', '88,00',
+            '>Pressure, MSL</dt>', '1 021,39', 'hPa', 'min', '1 021,27', 'max', '1 021,48',
+            '>Noise, LAeq</dt>', '59,1', 'dB(A)', 'min', '59,1', 'max', '59,1',
+            '>Light</dt>', '266', 'lx', 'min', '260', 'max', '270',
+            '>Last 24 hours</h3>',
         ], false);
 });
 
@@ -138,7 +135,7 @@ it('leaves channels the station does not send out of the channels row', function
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['Measure · CH1', '16,48', '>Channels</h2>', '>Humidity</h3>', '87,84', '>Pressure, MSL</h3>', '1 021,39'], false)
+        ->assertSeeInOrder(['Sensor in the shield', '16,48', '>The rest of the balcony</h2>', '>Humidity</dt>', '87,84', '>Pressure, MSL</dt>', '1 021,39'], false)
         ->assertDontSee('dB(A)')
         ->assertDontSee('lx</span>', false);
 });
@@ -171,7 +168,7 @@ it('updates every readout on the page when a poll brings a new reading', functio
     ]);
 
     $overview = Livewire::test(Overview::class);
-    $overview->assertSeeInOrder(['Measure · CH1', '16,48'])->assertDontSee('18,73');
+    $overview->assertSeeInOrder(['Sensor in the shield', '16,48'])->assertDontSee('18,73');
 
     Measurement::factory()->for($sensor)->v4()->create([
         'timestamp' => now()->subMinutes(5)->getTimestamp(),
@@ -183,19 +180,15 @@ it('updates every readout on the page when a poll brings a new reading', functio
         ->assertSee('between 16,00 and 19,37 °C, now 18,73 °C');
 
     $this->assertThat([
-        'Measured temperature, last 24 h',
-        'Measure · CH1', '18,73',
+        'Sensor in the shield', '18,73',
         'rising', '2,25 °C', 'an hour',
-        'Min', '16,00 °C',
-        'Max', '19,37 °C',
-        'Δ / h', '+2,25 °C',
-        'Dew pt', '15,03 °C',
-        'Channels',
-        'Temperature', '18,73', 'min', '16,00', 'max', '19,37', 'Δ/h', '+2,25', 'Dew point 15,03 °C.',
+        'The rest of the balcony',
         'Humidity', '79,12', 'min', '78,55', 'max', '88,00', 'Δ/h', '−8,72',
         'Pressure, MSL', '1 021,51', 'min', '1 021,27', 'max', '1 021,79', 'Δ/h', '+0,12',
         'Noise, LAeq', '62,3', 'min', '59,1', 'max', '62,3', 'Δ/h', '+3,2',
         'Light', '512', 'min', '260', 'max', '533', 'Δ/h', '+246',
+        'Dew point', '15,03',
+        'Last 24 hours', 'min 16,00 · max 19,37 °C',
     ], new SeeInOrder($overview->html()));
 });
 
@@ -223,10 +216,10 @@ it('prints temperature, humidity and pressure in the channels to the hundredth',
     $this->get(route('overview'))
         ->assertOk()
         ->assertSeeInOrder([
-            'Channels',
-            'Temperature', '21,57', '°C', 'min', '11,05', 'max', '24,93', 'Δ/h', '+9,23', 'Dew point 10,24 °C.',
+            'The rest of the balcony',
             'Humidity', '48,50', '%', 'min', '44,19', 'max', '93,33', 'Δ/h', '−41,62',
             'Pressure, MSL', '1 013,71', 'hPa', 'min', '1 013,38', 'max', '1 014,84', 'Δ/h', '−1,06',
+            'Dew point', '10,24', '°C',
         ]);
 });
 
@@ -290,7 +283,7 @@ it('reads the light into the hero with the day\'s brightest and darkest sample',
 
     $this->get(route('overview'))
         ->assertOk()
-        ->assertSeeInOrder(['>Channels</h2>', '>Light</h3>', 'AUX', '1 235', 'lx', 'min', '0', 'max', '6 100', 'VEML7700 in the shield'], false);
+        ->assertSeeInOrder(['>The rest of the balcony</h2>', '>Light</dt>', '1 235', 'lx', 'min', '0', 'max', '6 100', 'VEML7700 in the shield'], false);
 });
 
 it('leaves the light out of the hero for a day without it', function (): void {
@@ -320,9 +313,9 @@ it('draws the last day under each readout', function (): void {
 
     $html = Livewire::test(Overview::class)->html();
 
-    expect($html)->toContain('last 24 h · 10 min windows')
-        ->and(substr_count($html, '<article'))->toBe(3)
-        ->and(substr_count($html, 'stroke-width: 1.6px'))->toBe(3);
+    expect($html)->toContain('The last 24 hours in ten-minute windows')
+        ->and(substr_count($html, 'class="hz-reading"'))->toBe(3)
+        ->and(substr_count($html, 'class="hz-spark"'))->toBe(2);
 });
 
 it('says in the noise channel when the microphone hears rain, and nothing otherwise', function (?string $spectrum, string $note): void {
@@ -374,7 +367,7 @@ it('keeps quiet about rain once the station has gone silent', function (): void 
     ]);
 
     Livewire::test(Overview::class)
-        ->assertSee('STOP')
+        ->assertSee('Silent,')
         ->assertSee('Noise, LAeq')
         ->assertDontSee('Rain heard now.')
         ->assertDontSee('No rain heard.');
@@ -387,10 +380,10 @@ it('tells how long ago the station last reported', function (int $minutesAgo, st
     ]);
 
     Livewire::test(Overview::class)
-        ->assertSeeInOrder(['The balcony, right now', $state, "{$minutesAgo} minutes ago", '4.10.2026']);
+        ->assertSeeInOrder(['Newest reading from the station', $state, "{$minutesAgo} minutes ago", '4.10.2026']);
 })->with([
-    'live' => [7, 'RUN'],
-    'silent' => [45, 'STOP'],
+    'live' => [7, 'Live,'],
+    'silent' => [45, 'Silent,'],
 ]);
 
 it('flashes the status pill only when a newer reading arrives', function (): void {
@@ -461,4 +454,47 @@ it('says nothing about rain once it has stopped or the station is silent', funct
 })->with([
     'three dry windows since' => [35, 5],
     'silent station' => [45, 45],
+]);
+
+it('hands the sky the intensity of the rain heard now', function (?MeasurementDataV3 $newest, string $state): void {
+    $this->travelTo(Date::parse('2026-10-21 18:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    Measurement::factory()->for($sensor)->v3()->create([
+        'timestamp' => now()->subMinutes(15)->getTimestamp(),
+        'data' => (string) spectrumWindow(43.8, 0.5, laeq: 60.8, la90: 54.6, humidity: 8410),
+    ]);
+    Measurement::factory()->for($sensor)->v3()->create([
+        'timestamp' => now()->subMinutes(5)->getTimestamp(),
+        'data' => (string) ($newest ?? spectrumWindow(30.0, 0.0, laeq: 58.0, la90: 52.0, humidity: 8410)),
+    ]);
+
+    Livewire::test(Overview::class)
+        ->assertSeeHtml('data-rain-state="'.$state.'"')
+        ->assertSee('Raining now')
+        ->assertSee('· '.$state);
+})->with([
+    'the shield ringing' => [fn (): MeasurementDataV3 => spectrumWindow(52.0, 3.0, laeq: 66.0, la90: 56.0, humidity: 8410), 'heavy'],
+    'a hiss without the ring' => [fn (): MeasurementDataV3 => spectrumWindow(43.8, 0.5, laeq: 60.8, la90: 54.6, humidity: 8410), 'light'],
+    'a dry pause in the spell' => [null, 'light'],
+]);
+
+it('keeps the sky dry without rain', function (): void {
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(5)->getTimestamp()]);
+
+    Livewire::test(Overview::class)->assertSeeHtml('data-rain-state="none"');
+});
+
+it('offers the holiday and weather preview outside production only', function (string $environment, bool $offered): void {
+    $this->app['env'] = $environment;
+    Measurement::factory()->create(['timestamp' => now()->subMinutes(5)->getTimestamp()]);
+
+    $html = Livewire::test(Overview::class)->html();
+
+    expect(str_contains($html, 'data-holiday-pick'))->toBe($offered)
+        ->and(str_contains($html, 'data-rain-pick'))->toBe($offered)
+        ->and(str_contains($html, 'data-preview-wind'))->toBe($offered);
+})->with([
+    'local' => ['local', true],
+    'dev' => ['dev', true],
+    'production' => ['production', false],
 ]);
