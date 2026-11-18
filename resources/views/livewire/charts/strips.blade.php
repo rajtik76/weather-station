@@ -20,6 +20,7 @@
     data-hidden-channels="{{ json_encode($this->hiddenChannels) }}"
     data-noise-rows="{{ json_encode($this->noise) }}"
     data-noise-rain="{{ json_encode($this->rainSlots) }}"
+    data-noise-wind="{{ json_encode($this->windSlots) }}"
     data-light-rows="{{ json_encode($this->light) }}"
     data-light-scale="{{ $this->lightAxis->name }}"
     data-window-from="{{ $this->windowMs['from'] }}"
@@ -92,6 +93,7 @@
 
                 <x-channel-strip key="spectrum" label="Noise spectrum" channel="FFT" height="h-72 sm:h-80">
                     <span class="text-ink-2">Third-octave spectrum, 25 Hz to 8 kHz</span>
+                    <span class="text-ink-3">Rain marked above, wind below, bold when strong</span>
                     <span class="flex items-center gap-2 text-ink-3">
                         <span data-spectrum-low wire:ignore></span>
                         <span data-spectrum-scale wire:ignore class="h-2 w-24 rounded-full" aria-hidden="true"></span>

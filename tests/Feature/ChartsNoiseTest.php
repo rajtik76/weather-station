@@ -139,3 +139,20 @@ it('keeps a shower on a wide bucket among dry windows', function (): void {
     Livewire::test(Charts::class, ['from' => now()->subDays(20)->getTimestamp(), 'to' => now()->getTimestamp()])
         ->assertSet('rainSlots', [[LocalTime::of($hour)->wallClockMs(), $hour]]);
 });
+
+it('marks the waterfall slots the microphone heard wind in, strong when any window was', function (): void {
+    $this->travelTo(Date::parse('2026-11-18 13:00:00', 'UTC'));
+    $sensor = Sensor::factory()->create();
+    $gust = now()->subMinutes(60)->getTimestamp();
+    $breeze = now()->subMinutes(30)->getTimestamp();
+    $traffic = now()->subMinutes(10)->getTimestamp();
+
+    foreach ([$gust => windWindow(7800, 7400, 5900), $breeze => windWindow(7200, 6800, 5100), $traffic => windWindow(7400, 7250, 4800)] as $timestamp => $window) {
+        Measurement::factory()->for($sensor)->v3()->create(['timestamp' => $timestamp, 'data' => (string) $window]);
+    }
+
+    Livewire::test(Charts::class)->assertSet('windSlots', [
+        [LocalTime::of($gust)->wallClockMs(), $gust, true],
+        [LocalTime::of($breeze)->wallClockMs(), $breeze, false],
+    ]);
+});

@@ -240,3 +240,21 @@ function heatingCalibrationData(): array
 
     return ['sensor' => $sensor, 'from' => $from, 'validateFrom' => $validateFrom, 'until' => $until, 'features' => $features];
 }
+
+/** A dry window whose 25 Hz, 31.5 Hz and 160 Hz bands are set, in hundredths of a dB. */
+function windWindow(int $rumble, int $next, int $traffic): MeasurementDataV3
+{
+    $bands = array_fill(0, 26, 3000);
+    $bands[0] = $rumble;
+    $bands[1] = $next;
+    $bands[8] = $traffic;
+
+    return new MeasurementDataV3(
+        temperature: 1200, humidity: 6500, pressure: 97389,
+        temperatureMin: 1150, temperatureMax: 1250,
+        humidityMin: 6400, humidityMax: 6600,
+        pressureMin: 97380, pressureMax: 97395,
+        samples: 20,
+        noise: new NoiseWindow(seconds: 600, laeq: 6000, lamax: 7900, la10: 6300, la90: 5300, bands: $bands),
+    );
+}

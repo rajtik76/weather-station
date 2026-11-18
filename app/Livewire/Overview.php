@@ -6,6 +6,7 @@ namespace App\Livewire;
 
 use App\Enums\Channel;
 use App\Enums\RainIntensity;
+use App\Enums\WindIntensity;
 use App\Queries\RainHearing;
 use App\Queries\TemperatureHistory;
 use App\ValueObject\ChartWindow;
@@ -37,6 +38,7 @@ use Livewire\Attributes\Title;
  * @property-read ?bool $rainHeard
  * @property-read ?RainSpell $rainNow
  * @property-read ?RainIntensity $rainIntensity
+ * @property-read ?WindIntensity $windIntensity
  * @property-read Summary $referenceSummary
  * @property-read list<Channel> $silentChannels
  * @property-read array{lat: float, lng: float, radius: int} $approximateLocation
@@ -173,6 +175,17 @@ class Overview extends StationPage
         }
 
         return Readout::of($this->newestMeasurement->data)->heavyRain() === true ? RainIntensity::Heavy : RainIntensity::Light;
+    }
+
+    /** The newest window alone: a gust spell has no pause rule yet. */
+    #[Computed]
+    public function windIntensity(): ?WindIntensity
+    {
+        if ($this->isSilent || $this->newestMeasurement === null) {
+            return null;
+        }
+
+        return Readout::of($this->newestMeasurement->data)->wind();
     }
 
     /**

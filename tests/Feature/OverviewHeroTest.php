@@ -498,3 +498,18 @@ it('offers the holiday and weather preview outside production only', function (s
     'dev' => ['dev', true],
     'production' => ['production', false],
 ]);
+
+it('hands the sky the wind heard in the newest window and names it', function (int $rumble, string $state, ?string $chip): void {
+    Measurement::factory()->v3()->create([
+        'timestamp' => now()->subMinutes(5)->getTimestamp(),
+        'data' => (string) windWindow($rumble, $rumble - 400, $rumble - 2000),
+    ]);
+
+    $overview = Livewire::test(Overview::class)->assertSeeHtml('data-wind-state="'.$state.'"');
+
+    $chip === null ? $overview->assertDontSeeHtml('data-wind-now') : $overview->assertSee($chip);
+})->with([
+    'a rumble of 78 dB' => [7800, 'strong', 'Strong wind now'],
+    'a rumble of 72 dB' => [7200, 'breeze', 'Windy now'],
+    'a quiet 25 Hz band' => [6000, 'calm', null],
+]);

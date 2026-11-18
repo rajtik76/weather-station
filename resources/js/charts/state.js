@@ -15,6 +15,8 @@ export const state = {
     lightScale: "log",
     /** `[wall-clock ms, epoch]` of the noise slots with rain. */
     rainSlots: [],
+    /** `[wall-clock ms, epoch, strong]` of the noise slots with wind. */
+    windSlots: [],
     /** The navigator's rows, which always span the whole record. */
     overview: [],
     hidden: new Set(),

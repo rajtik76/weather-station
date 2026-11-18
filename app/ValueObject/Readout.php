@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\ValueObject;
 
+use App\Enums\WindIntensity;
+
 /**
  * An entry in dashboard units: °C and %, pressure reduced to sea level at the station's height.
  *
@@ -81,6 +83,14 @@ final readonly class Readout
         $noise = $this->noiseWindow();
 
         return $noise instanceof NoiseWindow ? RainDetector::hearsHeavy($noise->bands, $noise->laeq, $noise->la90) : null;
+    }
+
+    /** Null when calm or without microphone data. */
+    public function wind(): ?WindIntensity
+    {
+        $noise = $this->noiseWindow();
+
+        return $noise instanceof NoiseWindow ? WindDetector::hears($noise->bands) : null;
     }
 
     /** Lux behind the shield, from hundredths. Null without light. */

@@ -4,7 +4,7 @@ import { narrowScreen } from "../frame";
 import { NOISE_COLUMN } from "../rows";
 import { charts, state } from "../state";
 import { isDark, mixColours } from "../theme";
-import { RAIN_LANE, rainSeries } from "./rain";
+import { RAIN_LANE, WIND_LANE, rainSeries, windSeries } from "./marks";
 
 const SPECTRUM_KEY = "spectrum";
 
@@ -248,7 +248,10 @@ function spectrumOption(strip, colours) {
             // No line: trackSpectrumColumn() lights the column.
             axisPointer: { lineStyle: { opacity: 0 } },
         },
-        grid: state.rainSlots.length > 0 ? { top: 12 + RAIN_LANE } : {},
+        grid: {
+            ...(state.rainSlots.length > 0 ? { top: 12 + RAIN_LANE } : {}),
+            ...(state.windSlots.length > 0 ? { bottom: 28 + WIND_LANE } : {}),
+        },
         yAxis: {
             type: "category",
             data: NOISE_BANDS,
@@ -287,6 +290,7 @@ function spectrumOption(strip, colours) {
                 },
             },
             rainSeries(width),
+            windSeries(width),
             // A custom series gives the axis tooltip nothing to snap to; an invisible line does.
             {
                 type: "line",

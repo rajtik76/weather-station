@@ -100,6 +100,7 @@ function render(payload, force) {
 
     // Changes only with the noise rows: neither paintKey() nor the observer needs it.
     state.rainSlots = parsed(payload.dataset.noiseRain);
+    state.windSlots = parsed(payload.dataset.noiseWind);
 
     state.stripSteps.clear();
     STRIPS.forEach((strip) =>

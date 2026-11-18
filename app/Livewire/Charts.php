@@ -35,6 +35,7 @@ use Livewire\Attributes\Url;
  * @property-read list<NoiseRow> $noise
  * @property-read list<LightRow> $light
  * @property-read list<array{0: int, 1: int}> $rainSlots
+ * @property-read list<array{0: int, 1: int, 2: bool}> $windSlots
  * @property-read list<ReadingRow> $overview
  * @property-read array{from: int, to: int} $windowMs
  * @property-read array{from: string, to: string} $window
@@ -188,6 +189,15 @@ class Charts extends StationPage
     public function rainSlots(): array
     {
         return $this->noise === [] ? [] : $this->series()->rainSlots($this->chartWindow());
+    }
+
+    /**
+     * @return list<array{0: int, 1: int, 2: bool}>
+     */
+    #[Computed]
+    public function windSlots(): array
+    {
+        return $this->noise === [] ? [] : $this->series()->windSlots($this->chartWindow());
     }
 
     #[Computed]

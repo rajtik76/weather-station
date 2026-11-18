@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Enums\WindIntensity;
 use App\Models\Measurement;
 use App\ValueObject\ChartRow;
 use App\ValueObject\ChartWindow;
 use App\ValueObject\LocalTime;
 use App\ValueObject\RainDetector;
+use App\ValueObject\WindDetector;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -81,22 +83,51 @@ final readonly class ChartSeries
      */
     public function rainSlots(ChartWindow $window): array
     {
-        $rainy = [];
+        $heard = $this->heardSlots($window, fn (object $noise, array $bands): ?bool => RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90, (int) $noise->humidity) ? true : null);
+
+        return array_map(fn (array $slot): array => [$slot[0], $slot[1]], $heard);
+    }
+
+    /**
+     * `[wall-clock ms, epoch, strong]` per windy slot, heard window by window like the rain; strong if any window was.
+     *
+     * @return list<array{0: int, 1: int, 2: bool}>
+     */
+    public function windSlots(ChartWindow $window): array
+    {
+        return $this->heardSlots($window, function (object $noise, array $bands): ?bool {
+            $wind = WindDetector::hears($bands);
+
+            return $wind instanceof WindIntensity ? $wind === WindIntensity::Strong : null;
+        });
+    }
+
+    /**
+     * Slots where `$hears` returned a verdict for any window; a true verdict in the slot wins.
+     *
+     * @param  callable(object{bucket: int, bands: string, laeq: int, la90: int, humidity: int}, list<int>): ?bool  $hears
+     * @return list<array{0: int, 1: int, 2: bool}>
+     */
+    private function heardSlots(ChartWindow $window, callable $hears): array
+    {
+        $heard = [];
 
         foreach ($this->buckets->noiseWindows($window) as $noise) {
             /** @var list<int> $bands */
             $bands = json_decode($noise->bands, true, flags: JSON_THROW_ON_ERROR);
+            $verdict = $hears($noise, $bands);
 
-            if (RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90, (int) $noise->humidity)) {
-                $rainy[(int) $noise->bucket] = true;
+            if ($verdict !== null) {
+                $heard[(int) $noise->bucket] = ($heard[(int) $noise->bucket] ?? false) || $verdict;
             }
         }
 
-        ksort($rainy);
+        ksort($heard);
 
         return array_map(
-            fn (int $bucket): array => [LocalTime::of($bucket)->wallClockMs(), $bucket],
-            array_keys($rainy),
+            fn (int $bucket, bool $verdict): array => [LocalTime::of($bucket)->wallClockMs(), $bucket, $verdict],
+            array_keys($heard),
+            array_values($heard),
         );
     }
 

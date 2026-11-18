@@ -12,6 +12,7 @@
     </label>
     <label>Wind
         <select class="hz-select" data-wind-pick>
+            <option value="detected">As detected</option>
             <option value="calm">Calm</option>
             <option value="breeze">Breeze</option>
             <option value="strong">Strong wind</option>

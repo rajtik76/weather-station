@@ -9,7 +9,7 @@
 @endunless
 
 <div class="hz-copy hz-gutter">
-    <span hidden data-rain-state="{{ $this->rainIntensity?->value ?? 'none' }}"></span>
+    <span hidden data-rain-state="{{ $this->rainIntensity?->value ?? 'none' }}" data-wind-state="{{ $this->windIntensity?->value ?? 'calm' }}"></span>
     @if ($temperature === null)
         <p class="hz-kicker">Waiting for the first reading.</p>
     @else
@@ -35,6 +35,9 @@
     <ul class="hz-chips">
         @if ($this->rainNow !== null)
             <x-horizon.chip icon="rain" data-rain-now>Raining now, {{ $this->rainNow->span() }} · {{ $this->rainIntensity?->value }}</x-horizon.chip>
+        @endif
+        @if ($this->windIntensity !== null)
+            <x-horizon.chip icon="wind" data-wind-now>{{ $this->windIntensity === \App\Enums\WindIntensity::Strong ? 'Strong wind now' : 'Windy now' }}</x-horizon.chip>
         @endif
         @unless (app()->isProduction())
             <x-horizon.chip icon="rain" data-preview-rain wire:ignore hidden></x-horizon.chip>
