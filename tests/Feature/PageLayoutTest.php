@@ -98,3 +98,13 @@ it('leaves the Umami tracker out without a website id', function (): void {
         ->assertOk()
         ->assertDontSee('stats.rajtik.com/script.js', false);
 });
+
+it('previews every page with the Open Graph image when shared', function (string $route): void {
+    $this->get(route($route))
+        ->assertOk()
+        ->assertSee('<meta property="og:image" content="'.asset('og.png').'">', false)
+        ->assertSee('<meta property="og:url" content="'.route($route).'">', false)
+        ->assertSee('<meta name="twitter:card" content="summary_large_image">', false);
+
+    expect(public_path('og.png'))->toBeReadableFile();
+})->with(['overview', 'charts', 'comparison']);

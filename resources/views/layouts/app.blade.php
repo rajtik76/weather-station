@@ -6,7 +6,18 @@
         <meta name="color-scheme" content="dark">
 
         <title>{{ $title ?? config('app.name') }}</title>
-        <meta name="description" content="Temperature, humidity and pressure from a balcony in Plzeň. A project to estimate outdoor air temperature by correcting radiation shield heating, using ČHMÚ Plzeň-Mikulka as a reference.">
+        @php($description = 'Temperature, humidity and pressure from a balcony in Plzeň. A project to estimate outdoor air temperature by correcting radiation shield heating, using ČHMÚ Plzeň-Mikulka as a reference.')
+        <meta name="description" content="{{ $description }}">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="Balcony Station">
+        <meta property="og:title" content="{{ $title ?? config('app.name') }}">
+        <meta property="og:description" content="{{ $description }}">
+        <meta property="og:url" content="{{ url()->current() }}">
+        <meta property="og:image" content="{{ asset('og.png') }}">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta property="og:image:alt" content="Balcony Station over the Plzeň skyline at sunset">
+        <meta name="twitter:card" content="summary_large_image">
 
         <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48 64x64">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
