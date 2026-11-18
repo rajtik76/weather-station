@@ -13,11 +13,6 @@ use Stringable;
 
 class StoreMeasurementRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return true;
-    }
-
     /**
      * @return array<string, array<int, ValidationRule|Stringable|string>>
      */
