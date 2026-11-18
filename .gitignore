@@ -35,3 +35,5 @@ firmware/secrets.h
 
 /.venv
 __pycache__/
+
+/docs/re-design
