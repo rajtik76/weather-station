@@ -75,6 +75,14 @@ final readonly class Readout
         return $noise instanceof NoiseWindow ? RainDetector::hears($noise->bands, $noise->laeq, $noise->la90, $this->data->humidity) : null;
     }
 
+    /** Null without microphone data. */
+    public function heavyRain(): ?bool
+    {
+        $noise = $this->noiseWindow();
+
+        return $noise instanceof NoiseWindow ? RainDetector::hearsHeavy($noise->bands, $noise->laeq, $noise->la90) : null;
+    }
+
     /** Lux behind the shield, from hundredths. Null without light. */
     public function light(): ?float
     {

@@ -76,3 +76,12 @@ it('hears no light rain without all three signs', function (float $high, float $
     'just under the humidity threshold' => [45.0, 58.0, 50.0, 82.99],
     'just over the steadiness threshold' => [45.0, 61.01, 50.0, 90.0],
 ]);
+
+it('calls rain heavy only when the shield rings', function (float $high, float $ring, float $laeq, float $la90, bool $heavy): void {
+    $bands = ringingSpectrum((int) round($ring * 100), (int) round($high * 100));
+
+    expect(RainDetector::hearsHeavy($bands, (int) round($laeq * 100), (int) round($la90 * 100)))->toBe($heavy);
+})->with([
+    'heavy drops' => [60.8, 5.2, 73.6, 57.4, true],
+    'light hiss without the ring' => [44.0, 0.4, 52.0, 44.0, false],
+]);

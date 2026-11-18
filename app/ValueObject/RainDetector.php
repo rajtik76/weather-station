@@ -44,25 +44,42 @@ final readonly class RainDetector
      */
     public static function hears(array $bands, int $laeq, int $la90, int $humidity): bool
     {
-        $high = $bands[self::HIGH_BAND] ?? null;
-        $ring = $bands[self::RING_BAND] ?? null;
-        $below = $bands[self::RING_BAND - 1] ?? null;
-        $above = $bands[self::RING_BAND + 1] ?? null;
+        return self::hearsHeavy($bands, $laeq, $la90) || self::hearsLight($bands, $laeq, $la90, $humidity);
+    }
 
-        if ($high === null || $ring === null || $below === null || $above === null) {
+    /**
+     * @param  list<int>  $bands  the 26 band levels, 25 Hz to 8 kHz
+     */
+    public static function hearsHeavy(array $bands, int $laeq, int $la90): bool
+    {
+        if (! self::carriesBands($bands)) {
             return false;
         }
 
-        $steadiness = ($laeq - $la90) / 100;
+        return $bands[self::HIGH_BAND] / 100 >= self::MIN_HIGH_DB
+            && ($bands[self::RING_BAND] - max($bands[self::RING_BAND - 1], $bands[self::RING_BAND + 1])) / 100 >= self::MIN_RING_DB
+            && ($laeq - $la90) / 100 <= self::MAX_LAEQ_ABOVE_LA90_DB;
+    }
 
-        $heavy = $high / 100 >= self::MIN_HIGH_DB
-            && ($ring - max($below, $above)) / 100 >= self::MIN_RING_DB
-            && $steadiness <= self::MAX_LAEQ_ABOVE_LA90_DB;
+    /**
+     * @param  list<int>  $bands  the 26 band levels, 25 Hz to 8 kHz
+     */
+    private static function hearsLight(array $bands, int $laeq, int $la90, int $humidity): bool
+    {
+        if (! self::carriesBands($bands)) {
+            return false;
+        }
 
-        $light = $high / 100 >= self::LIGHT_MIN_HIGH_DB
-            && $steadiness <= self::LIGHT_MAX_LAEQ_ABOVE_LA90_DB
+        return $bands[self::HIGH_BAND] / 100 >= self::LIGHT_MIN_HIGH_DB
+            && ($laeq - $la90) / 100 <= self::LIGHT_MAX_LAEQ_ABOVE_LA90_DB
             && $humidity / 100 >= self::LIGHT_MIN_HUMIDITY_PERCENT;
+    }
 
-        return $heavy || $light;
+    /**
+     * @param  list<int>  $bands
+     */
+    private static function carriesBands(array $bands): bool
+    {
+        return isset($bands[self::HIGH_BAND], $bands[self::RING_BAND], $bands[self::RING_BAND - 1], $bands[self::RING_BAND + 1]);
     }
 }
