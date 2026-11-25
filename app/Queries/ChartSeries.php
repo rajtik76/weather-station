@@ -83,7 +83,7 @@ final readonly class ChartSeries
      */
     public function rainSlots(ChartWindow $window): array
     {
-        $heard = $this->heardSlots($window, fn (object $noise, array $bands): ?bool => RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90, (int) $noise->humidity) ? true : null);
+        $heard = $this->heardSlots($window, fn (object $noise, array $bands): ?bool => RainDetector::hears($bands, (int) $noise->laeq, (int) $noise->la90, (int) $noise->humidity, (int) $noise->temperature) ? true : null);
 
         return array_map(fn (array $slot): array => [$slot[0], $slot[1]], $heard);
     }
@@ -105,7 +105,7 @@ final readonly class ChartSeries
     /**
      * Slots where `$hears` returned a verdict for any window; a true verdict in the slot wins.
      *
-     * @param  callable(object{bucket: int, bands: string, laeq: int, la90: int, humidity: int}, list<int>): ?bool  $hears
+     * @param  callable(object{bucket: int, bands: string, laeq: int, la90: int, humidity: int, temperature: int}, list<int>): ?bool  $hears
      * @return list<array{0: int, 1: int, 2: bool}>
      */
     private function heardSlots(ChartWindow $window, callable $hears): array

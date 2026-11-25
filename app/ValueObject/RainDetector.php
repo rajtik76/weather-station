@@ -8,6 +8,7 @@ namespace App\ValueObject;
  * Rain in a noise window, by either of two rules. Heavy rain: loud at 8 kHz, ringing the shield around 1 kHz,
  * lasting the whole window. Light rain: no ring, but a steady hiss at 8 kHz in humid air.
  * Wet-road tyres are loud at 8 kHz without the ring; a single transient rings the shield but lifts LAeq far above LA90.
+ * Below freezing frosty air passes the light-rain humidity and traffic the hiss, so no rule hears rain there.
  * Thresholds fit this mounting.
  */
 final readonly class RainDetector
@@ -36,14 +37,21 @@ final readonly class RainDetector
     /** Below this, dry windows reached the light-rain levels. */
     private const float LIGHT_MIN_HUMIDITY_PERCENT = 83.0;
 
+    /** Confirmed rain read 1.6 °C at the coldest; frosty mornings of 6, 24 and 25 November 2026 at -0.7 to -6.2 °C were dry. */
+    private const float MIN_TEMPERATURE_CELSIUS = 0.0;
+
     /**
-     * Levels in hundredths of a dB and humidity in hundredths of a percent, as stored; differences are taken
-     * before the division, so a threshold is exact.
+     * Levels in hundredths of a dB, humidity in hundredths of a percent and temperature in hundredths of a °C,
+     * as stored; differences are taken before the division, so a threshold is exact.
      *
      * @param  list<int>  $bands  the 26 band levels, 25 Hz to 8 kHz
      */
-    public static function hears(array $bands, int $laeq, int $la90, int $humidity): bool
+    public static function hears(array $bands, int $laeq, int $la90, int $humidity, int $temperature): bool
     {
+        if ($temperature / 100 < self::MIN_TEMPERATURE_CELSIUS) {
+            return false;
+        }
+
         return self::hearsHeavy($bands, $laeq, $la90) || self::hearsLight($bands, $laeq, $la90, $humidity);
     }
 

@@ -74,7 +74,7 @@ final readonly class Readout
     {
         $noise = $this->noiseWindow();
 
-        return $noise instanceof NoiseWindow ? RainDetector::hears($noise->bands, $noise->laeq, $noise->la90, $this->data->humidity) : null;
+        return $noise instanceof NoiseWindow ? RainDetector::hears($noise->bands, $noise->laeq, $noise->la90, $this->data->humidity, $this->data->temperature) : null;
     }
 
     /** Null without microphone data. */

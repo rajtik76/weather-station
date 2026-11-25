@@ -117,13 +117,13 @@ final readonly class MeasurementBuckets
      * Each noise window on its own, not averaged: a shower would vanish into dry
      * windows on a wide bucket. Levels in hundredths of a dB.
      *
-     * @return Collection<int, object{bucket: int, bands: string, laeq: int, la90: int, humidity: int}>
+     * @return Collection<int, object{bucket: int, bands: string, laeq: int, la90: int, humidity: int, temperature: int}>
      */
     public function noiseWindows(ChartWindow $window): Collection
     {
         $step = $window->range()->bucketSeconds();
 
-        /** @var Collection<int, object{bucket: int, bands: string, laeq: int, la90: int, humidity: int}> $windows */
+        /** @var Collection<int, object{bucket: int, bands: string, laeq: int, la90: int, humidity: int, temperature: int}> $windows */
         $windows = DB::query()
             ->from('measurements')
             ->selectRaw('(timestamp / ?::int) * ?::int AS bucket', [$step, $step])
@@ -131,6 +131,7 @@ final readonly class MeasurementBuckets
             ->selectRaw("(data->'noise'->>'laeq')::int AS laeq")
             ->selectRaw("(data->'noise'->>'la90')::int AS la90")
             ->selectRaw("(data->>'humidity')::int AS humidity")
+            ->selectRaw("(data->>'temperature')::int AS temperature")
             ->where('sensor_id', $this->sensorId)
             ->whereBetween('timestamp', [$this->slotOf($window->from, $step), $this->slotOf($window->to, $step) + $step - 1])
             ->whereRaw("data->'noise' IS NOT NULL")

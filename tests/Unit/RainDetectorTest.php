@@ -18,11 +18,11 @@ function ringingSpectrum(int $ring, int $high): array
     return $bands;
 }
 
-function heardAsRain(float $high, float $ring, float $laeq, float $la90, float $humidity = 60.0): bool
+function heardAsRain(float $high, float $ring, float $laeq, float $la90, float $humidity = 60.0, float $temperature = 8.0): bool
 {
     $bands = ringingSpectrum((int) round($ring * 100), (int) round($high * 100));
 
-    return RainDetector::hears($bands, (int) round($laeq * 100), (int) round($la90 * 100), (int) round($humidity * 100));
+    return RainDetector::hears($bands, (int) round($laeq * 100), (int) round($la90 * 100), (int) round($humidity * 100), (int) round($temperature * 100));
 }
 
 it('hears rain loud at the top with the shield ringing all window long', function (float $high, float $ring, float $laeq, float $la90): void {
@@ -47,11 +47,11 @@ it('hears no rain without all three signs', function (float $high, float $ring, 
 ]);
 
 it('hears no rain in a spectrum missing its top band', function (): void {
-    expect(RainDetector::hears(array_slice(ringingSpectrum(300, 5000), 0, 25), 6600, 5600, 9000))->toBeFalse();
+    expect(RainDetector::hears(array_slice(ringingSpectrum(300, 5000), 0, 25), 6600, 5600, 9000, 800))->toBeFalse();
 });
 
 it('reads the levels as the protocol stores them, in hundredths of dB', function (int $high, int $laeq, int $la90, bool $isRain): void {
-    expect(RainDetector::hears(ringingSpectrum(300, $high), $laeq, $la90, 6000))->toBe($isRain);
+    expect(RainDetector::hears(ringingSpectrum(300, $high), $laeq, $la90, 6000, 800))->toBe($isRain);
 })->with([
     'rain' => [5000, 6600, 5600, true],
     'too quiet at the top' => [4400, 6600, 5600, false],
@@ -76,6 +76,18 @@ it('hears no light rain without all three signs', function (float $high, float $
     'just under the humidity threshold' => [45.0, 58.0, 50.0, 82.99],
     'just over the steadiness threshold' => [45.0, 61.01, 50.0, 90.0],
 ]);
+
+it('hears no rain below freezing', function (float $high, float $ring, float $laeq, float $la90, float $humidity, float $temperature): void {
+    expect(heardAsRain($high, $ring, $laeq, $la90, $humidity, $temperature))->toBeFalse();
+})->with([
+    // 25 November 2026 07:29, frost and morning traffic, Mikulka dry.
+    'frosty traffic hiss' => [48.79, -1.2, 63.35, 53.35, 85.64, -5.88],
+    'a ringing shield just below zero' => [55.0, 5.0, 66.0, 56.0, 90.0, -0.01],
+]);
+
+it('hears rain right at freezing', function (): void {
+    expect(heardAsRain(43.8, 0.5, 60.8, 54.6, 84.1, 0.0))->toBeTrue();
+});
 
 it('calls rain heavy only when the shield rings', function (float $high, float $ring, float $laeq, float $la90, bool $heavy): void {
     $bands = ringingSpectrum((int) round($ring * 100), (int) round($high * 100));
